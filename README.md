@@ -1,4 +1,4 @@
-# Azure Market Data Function
+# Azure Live Market Data
 
 An Azure Function that fetches real-time stock prices using the yfinance API.
 
