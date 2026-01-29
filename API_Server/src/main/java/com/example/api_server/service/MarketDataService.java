@@ -1,37 +1,74 @@
 package com.example.api_server.service;
 
+import com.example.api_server.dto.MarketDataRequest;
 import com.example.api_server.dto.MarketDataResponse;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.converter.StringHttpMessageConverter;
+import com.example.api_server.dto.TickerData;
+import com.example.api_server.exception.MarketDataException;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 public class MarketDataService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private static final Logger logger = LoggerFactory.getLogger(MarketDataService.class);
+    private final WebClient webClient;
 
-    @Value("${azure.function.url:http://localhost:7071/api/MarketDataFunction}")
-    private String functionUrl;
+    public MarketDataService(WebClient webClient) {
+        this.webClient = webClient;
+    }
 
+    @Cacheable(value = "marketData", key = "#tickers.toString()")
+    @CircuitBreaker(name = "marketData", fallbackMethod = "getMarketDataFallback")
     public MarketDataResponse getMarketData(List<String> tickers) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+        logger.info("Fetching market data for tickers: {}", tickers);
 
-        // Manually build JSON string
-        String tickersJson = tickers.stream()
-                .map(t -> "\"" + t + "\"")
-                .collect(Collectors.joining(","));
-        String jsonBody = "{\"tickers\":[" + tickersJson + "]}";
+        MarketDataRequest request = new MarketDataRequest(tickers);
 
-        HttpEntity<String> request = new HttpEntity<>(jsonBody, headers);
+        MarketDataResponse response = webClient.post()
+                .bodyValue(request)
+                .retrieve()
+                .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                        clientResponse.bodyToMono(String.class)
+                                .flatMap(body -> Mono.error(new MarketDataException(
+                                        "Client error: " + body, clientResponse.statusCode().value()))))
+                .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
+                        clientResponse.bodyToMono(String.class)
+                                .flatMap(body -> Mono.error(new MarketDataException(
+                                        "Server error from market data service", clientResponse.statusCode().value()))))
+                .bodyToMono(MarketDataResponse.class)
+                .block();
 
-        return restTemplate.postForObject(functionUrl, request, MarketDataResponse.class);
+        logger.info("Successfully fetched market data");
+        return response;
+    }
+
+    public MarketDataResponse getMarketDataFallback(List<String> tickers, Exception ex) {
+        logger.warn("Circuit breaker fallback triggered for tickers: {}. Reason: {}", tickers, ex.getMessage());
+
+        MarketDataResponse fallbackResponse = new MarketDataResponse();
+        fallbackResponse.setTimestamp(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+
+        List<TickerData> fallbackTickers = tickers.stream()
+                .map(symbol -> {
+                    TickerData tickerData = new TickerData();
+                    tickerData.setSymbol(symbol);
+                    tickerData.setPrice(null);
+                    return tickerData;
+                })
+                .toList();
+
+        fallbackResponse.setTickers(fallbackTickers.isEmpty() ? Collections.emptyList() : fallbackTickers);
+        return fallbackResponse;
     }
 }
