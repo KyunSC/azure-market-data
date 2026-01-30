@@ -4,60 +4,33 @@ import time
 import json
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
-    # Try to get data from JSON body first (POST), then query params (GET)
+    # Try to get tickers from JSON body first (POST), then query params (GET)
     try:
         req_body = req.get_json()
-        ticker1 = req_body.get('ticker1', 'SPY')
-        ticker2 = req_body.get('ticker2', 'ES=F')
-        tickers_list = req_body.get('tickers', None)  # Support list of tickers
+        tickers_list = req_body.get('tickers', ['SPY', 'ES=F'])
     except ValueError:
-        # No JSON body, use query parameters
-        ticker1 = req.params.get('ticker1', 'SPY')
-        ticker2 = req.params.get('ticker2', 'ES=F')
-        tickers_list = None
+        # No JSON body, check for comma-separated query param
+        tickers_param = req.params.get('tickers', None)
+        if tickers_param:
+            tickers_list = [t.strip() for t in tickers_param.split(',')]
+        else:
+            tickers_list = ['SPY', 'ES=F']
 
-    # If tickers list provided, use that instead
-    if tickers_list:
-        results = []
-        for symbol in tickers_list:
-            ticker_obj = yf.Ticker(symbol)
-            info = ticker_obj.fast_info
-            results.append({
-                "symbol": symbol,
-                "price": info['lastPrice']
-            })
+    # Fetch data for all tickers
+    results = []
+    for symbol in tickers_list:
+        ticker_obj = yf.Ticker(symbol)
+        info = ticker_obj.fast_info
+        results.append({
+            "symbol": symbol,
+            "price": info['lastPrice'],
+            "volume": info['lastVolume']
+        })
 
-        result = {
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-            "tickers": results
-        }
-
-        return func.HttpResponse(
-            json.dumps(result, indent=2),
-            mimetype="application/json",
-            status_code=200
-        )
-
-    # Fetch market data for two tickers
-    spy_ticker = yf.Ticker(ticker1)
-    es_ticker = yf.Ticker(ticker2)
-
-    spy_info = spy_ticker.fast_info
-    es_info = es_ticker.fast_info
-
-    # Build response
     result = {
         "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-        "tickers": [
-            {
-                "symbol": ticker1,
-                "price": spy_info['lastPrice']
-            },
-            {
-                "symbol": ticker2,
-                "price": es_info['lastPrice']
-            }
-        ]
+        "tickers": results,
+        "tickers_requested": tickers_list
     }
 
     return func.HttpResponse(
