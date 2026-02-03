@@ -2,6 +2,7 @@ package com.example.api_server.exception;
 
 import com.example.api_server.dto.ErrorResponse;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -58,6 +59,17 @@ public class GlobalExceptionHandler {
                 "Market data service is temporarily unavailable. Please try again later."
         );
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(error);
+    }
+
+    @ExceptionHandler(RequestNotPermitted.class)
+    public ResponseEntity<ErrorResponse> handleRateLimitExceeded(RequestNotPermitted ex) {
+        logger.warn("Rate limit exceeded: {}", ex.getMessage());
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.TOO_MANY_REQUESTS.value(),
+                "Too Many Requests",
+                "Rate limit exceeded. Please slow down and try again."
+        );
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(error);
     }
 
     @ExceptionHandler(Exception.class)
