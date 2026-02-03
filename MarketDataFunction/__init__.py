@@ -3,6 +3,11 @@ import yfinance as yf
 import time
 import json
 import math
+import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+
+MAX_TICKERS = 20
+TICKER_TIMEOUT_SECONDS = 10
 
 def is_valid_number(value):
     """Check if value is a valid, usable number."""
@@ -14,7 +19,33 @@ def is_valid_number(value):
     except (TypeError, ValueError):
         return False
 
+def fetch_ticker_data(symbol):
+    """Fetch data for a single ticker."""
+    ticker_obj = yf.Ticker(symbol)
+    info = ticker_obj.fast_info
+
+    price = info.get('lastPrice')
+    volume = info.get('lastVolume')
+
+    ticker_data = {"symbol": symbol}
+
+    if is_valid_number(price) and float(price) >= 0:
+        ticker_data["price"] = float(price)
+    else:
+        ticker_data["price"] = None
+        ticker_data["price_error"] = "unavailable or invalid"
+
+    if is_valid_number(volume) and float(volume) >= 0:
+        ticker_data["volume"] = int(volume)
+    else:
+        ticker_data["volume"] = None
+        ticker_data["volume_error"] = "unavailable or invalid"
+
+    return ticker_data
+
 def main(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("Market data request received")
+
     # Try to get tickers from JSON body first (POST), then query params (GET)
     try:
         req_body = req.get_json()
@@ -27,38 +58,70 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         else:
             tickers_list = ['SPY', 'ES=F']
 
-    # Fetch data for all tickers
+    # Input validation
+    if not isinstance(tickers_list, list):
+        logging.warning(f"Invalid tickers format: {type(tickers_list)}")
+        return func.HttpResponse(
+            json.dumps({"error": "tickers must be a list"}),
+            mimetype="application/json",
+            status_code=400
+        )
+
+    if len(tickers_list) > MAX_TICKERS:
+        logging.warning(f"Too many tickers requested: {len(tickers_list)}")
+        return func.HttpResponse(
+            json.dumps({"error": f"Maximum {MAX_TICKERS} tickers allowed"}),
+            mimetype="application/json",
+            status_code=400
+        )
+
+    logging.info(f"Fetching data for {len(tickers_list)} tickers: {tickers_list}")
+
+    # Fetch data for all tickers with timeout
     results = []
+    failed_count = 0
+
     for symbol in tickers_list:
         try:
-            ticker_obj = yf.Ticker(symbol)
-            info = ticker_obj.fast_info
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(fetch_ticker_data, symbol)
+                ticker_data = future.result(timeout=TICKER_TIMEOUT_SECONDS)
+                results.append(ticker_data)
 
-            price = info.get('lastPrice')
-            volume = info.get('lastVolume')
+                if "error" in ticker_data:
+                    failed_count += 1
+                    logging.warning(f"Ticker {symbol} returned with error")
+                else:
+                    logging.info(f"Successfully fetched {symbol}")
 
-            ticker_data = {"symbol": symbol}
-
-            if is_valid_number(price) and float(price) >= 0:
-                ticker_data["price"] = float(price)
-            else:
-                ticker_data["price"] = None
-                ticker_data["price_error"] = "unavailable or invalid"
-
-            if is_valid_number(volume) and float(volume) >= 0:
-                ticker_data["volume"] = int(volume)
-            else:
-                ticker_data["volume"] = None
-                ticker_data["volume_error"] = "unavailable or invalid"
-
-            results.append(ticker_data)
+        except TimeoutError:
+            logging.error(f"Timeout fetching {symbol}")
+            failed_count += 1
+            results.append({
+                "symbol": symbol,
+                "price": None,
+                "volume": None,
+                "error": "request timed out"
+            })
         except Exception as e:
+            logging.error(f"Error fetching {symbol}: {str(e)}")
+            failed_count += 1
             results.append({
                 "symbol": symbol,
                 "price": None,
                 "volume": None,
                 "error": str(e)
             })
+
+    # Determine status code
+    if failed_count == 0:
+        status_code = 200
+    elif failed_count == len(tickers_list):
+        status_code = 500
+    else:
+        status_code = 207  # Partial success
+
+    logging.info(f"Request complete: {len(tickers_list) - failed_count}/{len(tickers_list)} successful, status {status_code}")
 
     result = {
         "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
@@ -69,5 +132,5 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse(
         json.dumps(result, indent=2),
         mimetype="application/json",
-        status_code=200
+        status_code=status_code
     )
