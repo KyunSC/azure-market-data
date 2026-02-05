@@ -3,7 +3,7 @@ import { Routes, Route } from 'react-router-dom'
 import Dashboard from './components/Dashboard'
 import TickerDetail from './components/TickerDetail'
 
-const DEFAULT_TICKERS = ['SPY', 'AAPL', 'MSFT', 'GOOGL', 'AMZN']
+const DEFAULT_TICKERS = ['ES=F', 'NQ=F']
 const REFRESH_INTERVAL = 15000
 
 function App() {
@@ -15,7 +15,7 @@ function App() {
   const fetchData = async () => {
     try {
       const tickerParam = DEFAULT_TICKERS.join(',')
-      const response = await fetch(`/api/MarketDataFunction?tickers=${tickerParam}`)
+      const response = await fetch(`/api/market?tickers=${tickerParam}`)
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
