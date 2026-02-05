@@ -3,6 +3,7 @@ package com.example.api_server.controller;
 import com.example.api_server.dto.MarketDataResponse;
 import com.example.api_server.service.MarketDataService;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -12,6 +13,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/market")
+@CrossOrigin(origins = "http://localhost:5173")
 public class MarketDataController {
 
     private final MarketDataService marketDataService;
