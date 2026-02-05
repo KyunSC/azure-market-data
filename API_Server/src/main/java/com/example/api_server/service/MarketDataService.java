@@ -6,7 +6,7 @@ import com.example.api_server.dto.TickerData;
 import com.example.api_server.entity.MarketDataEntity;
 import com.example.api_server.exception.MarketDataException;
 import com.example.api_server.repository.local.LocalMarketDataRepository;
-import com.example.api_server.repository.supabase.SupabaseMarketDataRepository;
+// import com.example.api_server.repository.supabase.SupabaseMarketDataRepository;  // TEMPORARILY DISABLED
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,14 +27,13 @@ public class MarketDataService {
     private static final Logger logger = LoggerFactory.getLogger(MarketDataService.class);
     private final WebClient webClient;
     private final LocalMarketDataRepository localRepository;
-    private final SupabaseMarketDataRepository supabaseRepository;
+    // private final SupabaseMarketDataRepository supabaseRepository;  // TEMPORARILY DISABLED
 
     public MarketDataService(WebClient webClient,
-                             LocalMarketDataRepository localRepository,
-                             SupabaseMarketDataRepository supabaseRepository) {
+                             LocalMarketDataRepository localRepository) {
         this.webClient = webClient;
         this.localRepository = localRepository;
-        this.supabaseRepository = supabaseRepository;
+        // this.supabaseRepository = supabaseRepository;  // TEMPORARILY DISABLED
     }
 
     @Cacheable(value = "marketData", key = "#tickers.toString()")
@@ -79,21 +78,21 @@ public class MarketDataService {
                     logger.error("Failed to save {} to local database: {}", ticker.getSymbol(), e.getMessage());
                 }
 
-                // Save to Supabase (new entity instance to avoid ID conflicts)
-                try {
-                    MarketDataEntity supabaseEntity = new MarketDataEntity(
-                            ticker.getSymbol(),
-                            ticker.getPrice(),
-                            ticker.getVolume(),
-                            now
-                    );
-                    supabaseRepository.save(supabaseEntity);
-                    logger.info("Saved {} to Supabase", ticker.getSymbol());
-                } catch (Exception e) {
-                    logger.error("Failed to save {} to Supabase: {}", ticker.getSymbol(), e.getMessage());
-                }
+                // Save to Supabase - TEMPORARILY DISABLED
+                // try {
+                //     MarketDataEntity supabaseEntity = new MarketDataEntity(
+                //             ticker.getSymbol(),
+                //             ticker.getPrice(),
+                //             ticker.getVolume(),
+                //             now
+                //     );
+                //     supabaseRepository.save(supabaseEntity);
+                //     logger.info("Saved {} to Supabase", ticker.getSymbol());
+                // } catch (Exception e) {
+                //     logger.error("Failed to save {} to Supabase: {}", ticker.getSymbol(), e.getMessage());
+                // }
             }
-            logger.info("Saved {} ticker(s) to both databases", response.getTickers().size());
+            logger.info("Saved {} ticker(s) to local database", response.getTickers().size());
         }
 
         return response;

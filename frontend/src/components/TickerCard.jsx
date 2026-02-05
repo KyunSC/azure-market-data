@@ -1,8 +1,15 @@
+import { useNavigate } from 'react-router-dom'
+
 function TickerCard({ ticker }) {
+  const navigate = useNavigate()
   const hasError = ticker.error || ticker.price_error
 
+  const handleClick = () => {
+    navigate(`/ticker/${ticker.symbol}`)
+  }
+
   return (
-    <div className={`ticker-card ${hasError ? 'error' : ''}`}>
+    <div className={`ticker-card ${hasError ? 'error' : ''}`} onClick={handleClick}>
       <h2 className="symbol">{ticker.symbol}</h2>
 
       {ticker.price !== null ? (

@@ -17,13 +17,12 @@ import javax.sql.DataSource;
 import java.util.HashMap;
 import java.util.Map;
 
-@Configuration
-@EnableTransactionManagement
-@EnableJpaRepositories(
-        basePackages = "com.example.api_server.repository.supabase",
-        entityManagerFactoryRef = "supabaseEntityManagerFactory",
-        transactionManagerRef = "supabaseTransactionManager"
-)
+// @Configuration  // TEMPORARILY DISABLED
+/// @EnableJpaRepositories(
+//         basePackages = "com.example.api_server.repository.supabase",
+//         entityManagerFactoryRef = "supabaseEntityManagerFactory",
+//         transactionManagerRef = "supabaseTransactionManager"
+// )
 public class SupabaseDatabaseConfig {
 
     @Bean

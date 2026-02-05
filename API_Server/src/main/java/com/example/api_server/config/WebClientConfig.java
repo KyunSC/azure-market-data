@@ -23,14 +23,19 @@ public class WebClientConfig {
     private int readTimeout;
 
     @Bean
-    public WebClient webClient() {
+    public WebClient.Builder webClientBuilder() {
         HttpClient httpClient = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeout)
                 .responseTimeout(Duration.ofMillis(readTimeout));
 
         return WebClient.builder()
+                .clientConnector(new ReactorClientHttpConnector(httpClient));
+    }
+
+    @Bean
+    public WebClient webClient(WebClient.Builder webClientBuilder) {
+        return webClientBuilder
                 .baseUrl(functionUrl)
-                .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }
 }
