@@ -8,6 +8,11 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 MAX_TICKERS = 20
 TICKER_TIMEOUT_SECONDS = 10
+RATE_LIMIT_REQUESTS = 30
+RATE_LIMIT_WINDOW_SECONDS = 60
+
+# In-memory rate limit tracking (per IP)
+request_log = {}
 
 def is_valid_number(value):
     """Check if value is a valid, usable number."""
@@ -45,6 +50,19 @@ def fetch_ticker_data(symbol):
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Market data request received")
+
+    # Rate limiting
+    client_ip = req.headers.get('X-Forwarded-For', 'unknown')
+    now = time.time()
+    cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+    request_log[client_ip] = [t for t in request_log.get(client_ip, []) if t > cutoff]
+    if len(request_log[client_ip]) >= RATE_LIMIT_REQUESTS:
+        return func.HttpResponse(
+            json.dumps({"error": "Rate limit exceeded"}),
+            mimetype="application/json",
+            status_code=429
+        )
+    request_log[client_ip].append(now)
 
     # Try to get tickers from JSON body first (POST), then query params (GET)
     try:
