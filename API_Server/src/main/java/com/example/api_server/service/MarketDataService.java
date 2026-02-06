@@ -1,23 +1,18 @@
 package com.example.api_server.service;
 
-import com.example.api_server.dto.MarketDataRequest;
 import com.example.api_server.dto.MarketDataResponse;
 import com.example.api_server.dto.TickerData;
 import com.example.api_server.entity.MarketDataEntity;
-import com.example.api_server.exception.MarketDataException;
-import com.example.api_server.repository.local.LocalMarketDataRepository;
-// import com.example.api_server.repository.supabase.SupabaseMarketDataRepository;  // TEMPORARILY DISABLED
+import com.example.api_server.repository.supabase.SupabaseMarketDataRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -25,75 +20,51 @@ import java.util.List;
 public class MarketDataService {
 
     private static final Logger logger = LoggerFactory.getLogger(MarketDataService.class);
-    private final WebClient webClient;
-    private final LocalMarketDataRepository localRepository;
-    // private final SupabaseMarketDataRepository supabaseRepository;  // TEMPORARILY DISABLED
+    private final SupabaseMarketDataRepository supabaseRepository;
 
-    public MarketDataService(WebClient webClient,
-                             LocalMarketDataRepository localRepository) {
-        this.webClient = webClient;
-        this.localRepository = localRepository;
-        // this.supabaseRepository = supabaseRepository;  // TEMPORARILY DISABLED
+    public MarketDataService(SupabaseMarketDataRepository supabaseRepository) {
+        this.supabaseRepository = supabaseRepository;
     }
 
     @Cacheable(value = "marketData", key = "#tickers.toString()")
     @CircuitBreaker(name = "marketData", fallbackMethod = "getMarketDataFallback")
     public MarketDataResponse getMarketData(List<String> tickers) {
-        logger.info("Fetching market data for tickers: {}", tickers);
+        logger.info("Fetching market data for tickers: {} from Supabase", tickers);
 
-        MarketDataRequest request = new MarketDataRequest(tickers);
+        MarketDataResponse response = new MarketDataResponse();
+        response.setTimestamp(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 
-        MarketDataResponse response = webClient.post()
-                .bodyValue(request)
-                .retrieve()
-                .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
-                        clientResponse.bodyToMono(String.class)
-                                .flatMap(body -> Mono.error(new MarketDataException(
-                                        "Client error: " + body, clientResponse.statusCode().value()))))
-                .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
-                        clientResponse.bodyToMono(String.class)
-                                .flatMap(body -> Mono.error(new MarketDataException(
-                                        "Server error from market data service", clientResponse.statusCode().value()))))
-                .bodyToMono(MarketDataResponse.class)
-                .block();
+        List<TickerData> tickerDataList = new ArrayList<>();
 
-        logger.info("Successfully fetched market data");
+        for (String symbol : tickers) {
+            try {
+                MarketDataEntity entity = supabaseRepository.findFirstBySymbolOrderByTimestampDesc(symbol.toUpperCase());
 
-        // Save to both databases
-        if (response != null && response.getTickers() != null) {
-            LocalDateTime now = LocalDateTime.now();
-            for (TickerData ticker : response.getTickers()) {
-                MarketDataEntity entity = new MarketDataEntity(
-                        ticker.getSymbol(),
-                        ticker.getPrice(),
-                        ticker.getVolume(),
-                        now
-                );
+                TickerData tickerData = new TickerData();
+                tickerData.setSymbol(symbol.toUpperCase());
 
-                // Save to local PostgreSQL
-                try {
-                    localRepository.save(entity);
-                    logger.info("Saved {} to local database", ticker.getSymbol());
-                } catch (Exception e) {
-                    logger.error("Failed to save {} to local database: {}", ticker.getSymbol(), e.getMessage());
+                if (entity != null) {
+                    tickerData.setPrice(entity.getPrice());
+                    tickerData.setVolume(entity.getVolume());
+                    logger.info("Found {} in Supabase: price={}, volume={}", symbol, entity.getPrice(), entity.getVolume());
+                } else {
+                    tickerData.setPrice(null);
+                    tickerData.setVolume(null);
+                    logger.warn("No data found for {} in Supabase", symbol);
                 }
 
-                // Save to Supabase - TEMPORARILY DISABLED
-                // try {
-                //     MarketDataEntity supabaseEntity = new MarketDataEntity(
-                //             ticker.getSymbol(),
-                //             ticker.getPrice(),
-                //             ticker.getVolume(),
-                //             now
-                //     );
-                //     supabaseRepository.save(supabaseEntity);
-                //     logger.info("Saved {} to Supabase", ticker.getSymbol());
-                // } catch (Exception e) {
-                //     logger.error("Failed to save {} to Supabase: {}", ticker.getSymbol(), e.getMessage());
-                // }
+                tickerDataList.add(tickerData);
+            } catch (Exception e) {
+                logger.error("Error fetching {} from Supabase: {}", symbol, e.getMessage());
+                TickerData tickerData = new TickerData();
+                tickerData.setSymbol(symbol.toUpperCase());
+                tickerData.setPrice(null);
+                tickerDataList.add(tickerData);
             }
-            logger.info("Saved {} ticker(s) to local database", response.getTickers().size());
         }
+
+        response.setTickers(tickerDataList);
+        logger.info("Successfully fetched {} tickers from Supabase", tickerDataList.size());
 
         return response;
     }

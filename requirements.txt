@@ -1,2 +1,4 @@
 azure-functions
 yfinance
+psycopg2-binary
+pytz
