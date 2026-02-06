@@ -3,7 +3,7 @@ package com.example.api_server.service;
 import com.example.api_server.dto.HistoricalDataResponse;
 import com.example.api_server.dto.OhlcData;
 import com.example.api_server.entity.HistoricalDataEntity;
-import com.example.api_server.repository.supabase.SupabaseHistoricalDataRepository;
+import com.example.api_server.repository.local.LocalHistoricalDataRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,10 +20,10 @@ public class HistoricalDataService {
 
     private static final Logger logger = LoggerFactory.getLogger(HistoricalDataService.class);
 
-    private final SupabaseHistoricalDataRepository supabaseRepository;
+    private final LocalHistoricalDataRepository localRepository;
 
-    public HistoricalDataService(SupabaseHistoricalDataRepository supabaseRepository) {
-        this.supabaseRepository = supabaseRepository;
+    public HistoricalDataService(LocalHistoricalDataRepository localRepository) {
+        this.localRepository = localRepository;
     }
 
     @Cacheable(value = "historicalData", key = "#symbol + '-' + #period + '-' + #interval")
@@ -31,7 +31,7 @@ public class HistoricalDataService {
     public HistoricalDataResponse getHistoricalData(String symbol, String period, String interval) {
         logger.info("Fetching historical data for {} with period={}, interval={} from Supabase", symbol, period, interval);
 
-        List<HistoricalDataEntity> data = supabaseRepository
+        List<HistoricalDataEntity> data = localRepository
                 .findBySymbolAndIntervalTypeOrderByDateAsc(symbol.toUpperCase(), interval);
 
         if (data.isEmpty()) {

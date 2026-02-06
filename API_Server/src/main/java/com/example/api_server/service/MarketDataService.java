@@ -3,7 +3,7 @@ package com.example.api_server.service;
 import com.example.api_server.dto.MarketDataResponse;
 import com.example.api_server.dto.TickerData;
 import com.example.api_server.entity.MarketDataEntity;
-import com.example.api_server.repository.supabase.SupabaseMarketDataRepository;
+import com.example.api_server.repository.local.LocalMarketDataRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,10 +20,10 @@ import java.util.List;
 public class MarketDataService {
 
     private static final Logger logger = LoggerFactory.getLogger(MarketDataService.class);
-    private final SupabaseMarketDataRepository supabaseRepository;
+    private final LocalMarketDataRepository localRepository;
 
-    public MarketDataService(SupabaseMarketDataRepository supabaseRepository) {
-        this.supabaseRepository = supabaseRepository;
+    public MarketDataService(LocalMarketDataRepository localRepository) {
+        this.localRepository = localRepository;
     }
 
     @Cacheable(value = "marketData", key = "#tickers.toString()")
@@ -38,7 +38,7 @@ public class MarketDataService {
 
         for (String symbol : tickers) {
             try {
-                MarketDataEntity entity = supabaseRepository.findFirstBySymbolOrderByTimestampDesc(symbol.toUpperCase());
+                MarketDataEntity entity = localRepository.findFirstBySymbolOrderByTimestampDesc(symbol.toUpperCase());
 
                 TickerData tickerData = new TickerData();
                 tickerData.setSymbol(symbol.toUpperCase());
