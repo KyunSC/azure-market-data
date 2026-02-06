@@ -46,11 +46,18 @@ public class MarketDataService {
                 if (entity != null) {
                     tickerData.setPrice(entity.getPrice());
                     tickerData.setVolume(entity.getVolume());
-                    logger.info("Found {} in Supabase: price={}, volume={}", symbol, entity.getPrice(), entity.getVolume());
+                    System.out.println("========================================");
+                    System.out.println("MARKET DATA: " + symbol);
+                    System.out.println("  Price:     " + entity.getPrice());
+                    System.out.println("  Volume:    " + entity.getVolume());
+                    System.out.println("  Timestamp: " + entity.getTimestamp());
+                    System.out.println("========================================");
                 } else {
                     tickerData.setPrice(null);
                     tickerData.setVolume(null);
-                    logger.warn("No data found for {} in Supabase", symbol);
+                    System.out.println("========================================");
+                    System.out.println("MARKET DATA: " + symbol + " - NO DATA FOUND");
+                    System.out.println("========================================");
                 }
 
                 tickerDataList.add(tickerData);

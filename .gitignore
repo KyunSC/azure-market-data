@@ -10,3 +10,11 @@ venv/
 
 # macOS
 .DS_Store
+
+# Secrets/Environment
+.env
+.env.*
+**/application-local.properties
+
+# Node
+node_modules/

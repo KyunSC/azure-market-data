@@ -66,7 +66,7 @@ def fetch_historical_data(symbol, period='5d', interval='1d'):
 
 def get_ticker_list():
     """Get list of tickers from environment variable."""
-    tickers_env = os.environ.get('TICKER_LIST', 'SPY,ES=F')
+    tickers_env = os.environ.get('TICKER_LIST', 'ES=F,NQ=F')
     return [t.strip().upper() for t in tickers_env.split(',')]
 
 def should_fetch_historical():
