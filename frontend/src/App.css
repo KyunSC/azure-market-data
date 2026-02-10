@@ -43,8 +43,9 @@ body {
 }
 
 .dashboard {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 1.5rem;
 }
 
@@ -54,6 +55,8 @@ body {
   padding: 1.5rem;
   text-align: center;
   transition: transform 0.2s;
+  min-width: 200px;
+  flex: 0 1 220px;
 }
 
 .ticker-card:hover {
