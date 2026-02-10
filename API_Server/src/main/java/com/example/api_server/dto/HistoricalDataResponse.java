@@ -12,8 +12,7 @@ public class HistoricalDataResponse {
     public HistoricalDataResponse() {
     }
 
-    public HistoricalDataResponse(String symbol, String period, String interval,
-                                   String timestamp, List<OhlcData> data) {
+    public HistoricalDataResponse(String symbol, String period, String interval, String timestamp, List<OhlcData> data) {
         this.symbol = symbol;
         this.period = period;
         this.interval = interval;
