@@ -46,18 +46,12 @@ public class MarketDataService {
                 if (entity != null) {
                     tickerData.setPrice(entity.getPrice());
                     tickerData.setVolume(entity.getVolume());
-                    System.out.println("========================================");
-                    System.out.println("MARKET DATA: " + symbol);
-                    System.out.println("  Price:     " + entity.getPrice());
-                    System.out.println("  Volume:    " + entity.getVolume());
-                    System.out.println("  Timestamp: " + entity.getTimestamp());
-                    System.out.println("========================================");
+                    logger.debug("MARKET DATA: {} | Price: {} | Volume: {} | Timestamp: {}",
+                            symbol, entity.getPrice(), entity.getVolume(), entity.getTimestamp());
                 } else {
                     tickerData.setPrice(null);
                     tickerData.setVolume(null);
-                    System.out.println("========================================");
-                    System.out.println("MARKET DATA: " + symbol + " - NO DATA FOUND");
-                    System.out.println("========================================");
+                    logger.debug("MARKET DATA: {} - NO DATA FOUND", symbol);
                 }
 
                 tickerDataList.add(tickerData);
