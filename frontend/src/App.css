@@ -131,6 +131,10 @@ body {
   margin: 1rem 0;
 }
 
+.chart-container a[href*="tradingview"] {
+  display: none !important;
+}
+
 /* Timeframe Selector */
 .timeframe-selector {
   display: flex;
