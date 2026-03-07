@@ -6,8 +6,15 @@ import CandlestickChart from '../../../components/CandlestickChart'
 import TimeframeSelector from '../../../components/TimeframeSelector'
 
 export default function TickerDetail({ params }) {
-  const { symbol } = use(params)
+  const { symbol: rawSymbol } = use(params)
+  const symbol = decodeURIComponent(rawSymbol)
   const router = useRouter()
+
+  const DISPLAY_NAMES = {
+    'ES=F': '/ES',
+    'NQ=F': '/NQ',
+  }
+  const displayName = DISPLAY_NAMES[symbol] || symbol
   const [ohlcData, setOhlcData] = useState([])
   const [period, setPeriod] = useState('1mo')
   const [interval, setInterval] = useState('1d')
@@ -55,7 +62,7 @@ export default function TickerDetail({ params }) {
           ← Back to Dashboard
         </button>
 
-        <h1 className="symbol">{symbol}</h1>
+        <h1 className="symbol">{displayName}</h1>
 
         <TimeframeSelector
           period={period}
