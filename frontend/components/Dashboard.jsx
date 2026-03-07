@@ -1,6 +1,6 @@
 import TickerCard from './TickerCard'
 
-function Dashboard({ tickers }) {
+export default function Dashboard({ tickers }) {
   if (!tickers || tickers.length === 0) {
     return <p className="status">No ticker data available</p>
   }
@@ -13,5 +13,3 @@ function Dashboard({ tickers }) {
     </div>
   )
 }
-
-export default Dashboard

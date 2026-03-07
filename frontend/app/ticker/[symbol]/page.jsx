@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import CandlestickChart from './CandlestickChart'
-import TimeframeSelector from './TimeframeSelector'
+'use client'
 
-function TickerDetail() {
-  const { symbol } = useParams()
-  const navigate = useNavigate()
+import { useState, useEffect, use } from 'react'
+import { useRouter } from 'next/navigation'
+import CandlestickChart from '../../../components/CandlestickChart'
+import TimeframeSelector from '../../../components/TimeframeSelector'
+
+export default function TickerDetail({ params }) {
+  const { symbol } = use(params)
+  const router = useRouter()
   const [ohlcData, setOhlcData] = useState([])
   const [period, setPeriod] = useState('1mo')
   const [interval, setInterval] = useState('1d')
@@ -28,7 +30,7 @@ function TickerDetail() {
             const errorData = await response.json()
             errorMessage = errorData.error || errorMessage
           } catch {
-            // Response wasn't JSON (e.g., proxy error)
+            // Response wasn't JSON
           }
           throw new Error(errorMessage)
         }
@@ -49,7 +51,7 @@ function TickerDetail() {
   return (
     <div className="app">
       <div className="ticker-detail">
-        <button className="back-button" onClick={() => navigate('/')}>
+        <button className="back-button" onClick={() => router.push('/')}>
           ← Back to Dashboard
         </button>
 
@@ -74,5 +76,3 @@ function TickerDetail() {
     </div>
   )
 }
-
-export default TickerDetail

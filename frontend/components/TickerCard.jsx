@@ -1,17 +1,19 @@
-import { useNavigate } from 'react-router-dom'
+'use client'
+
+import { useRouter } from 'next/navigation'
 
 const DISPLAY_NAMES = {
   'ES=F': '/ES',
   'NQ=F': '/NQ',
 }
 
-function TickerCard({ ticker }) {
-  const navigate = useNavigate()
+export default function TickerCard({ ticker }) {
+  const router = useRouter()
   const hasError = ticker.error || ticker.price_error
   const displayName = DISPLAY_NAMES[ticker.symbol] || ticker.symbol
 
   const handleClick = () => {
-    navigate(`/ticker/${ticker.symbol}`)
+    router.push(`/ticker/${ticker.symbol}`)
   }
 
   return (
@@ -34,5 +36,3 @@ function TickerCard({ ticker }) {
     </div>
   )
 }
-
-export default TickerCard

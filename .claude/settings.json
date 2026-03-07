@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/sunnychen/Developper/PersonalProjects/azure-market-data/frontend/app/ticker"
+    ]
+  }
+}

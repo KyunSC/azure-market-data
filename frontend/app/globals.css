@@ -57,6 +57,7 @@ body {
   transition: transform 0.2s;
   min-width: 200px;
   flex: 0 1 220px;
+  cursor: pointer;
 }
 
 .ticker-card:hover {
@@ -93,10 +94,6 @@ body {
   margin-top: 0.5rem;
   color: #ff6b6b;
   font-size: 0.8rem;
-}
-
-.ticker-card {
-  cursor: pointer;
 }
 
 /* Ticker Detail Page */

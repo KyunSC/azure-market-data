@@ -1,7 +1,9 @@
+'use client'
+
 import { useEffect, useRef } from 'react'
 import { createChart, CandlestickSeries } from 'lightweight-charts'
 
-function CandlestickChart({ data }) {
+export default function CandlestickChart({ data }) {
   const chartContainerRef = useRef()
   const chartRef = useRef()
 
@@ -60,5 +62,3 @@ function CandlestickChart({ data }) {
 
   return <div ref={chartContainerRef} className="chart-container" />
 }
-
-export default CandlestickChart

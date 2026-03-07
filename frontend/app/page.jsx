@@ -1,12 +1,12 @@
+'use client'
+
 import { useState, useEffect } from 'react'
-import { Routes, Route } from 'react-router-dom'
-import Dashboard from './components/Dashboard'
-import TickerDetail from './components/TickerDetail'
+import Dashboard from '../components/Dashboard'
 
 const DEFAULT_TICKERS = ['ES=F', 'NQ=F']
 const REFRESH_INTERVAL = 15000
 
-function App() {
+export default function Home() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -39,26 +39,19 @@ function App() {
   }, [])
 
   return (
-    <Routes>
-      <Route path="/" element={
-        <div className="app">
-          <header className="header">
-            <h1>Market Data Dashboard</h1>
-            {lastUpdated && (
-              <p className="last-updated">
-                Last updated: {lastUpdated.toLocaleTimeString()}
-              </p>
-            )}
-          </header>
+    <div className="app">
+      <header className="header">
+        <h1>Market Data Dashboard</h1>
+        {lastUpdated && (
+          <p className="last-updated">
+            Last updated: {lastUpdated.toLocaleTimeString()}
+          </p>
+        )}
+      </header>
 
-          {loading && <p className="status">Loading...</p>}
-          {error && <p className="status error">Error: {error}</p>}
-          {data && <Dashboard tickers={data.tickers} />}
-        </div>
-      } />
-      <Route path="/ticker/:symbol" element={<TickerDetail />} />
-    </Routes>
+      {loading && <p className="status">Loading...</p>}
+      {error && <p className="status error">Error: {error}</p>}
+      {data && <Dashboard tickers={data.tickers} />}
+    </div>
   )
 }
-
-export default App
