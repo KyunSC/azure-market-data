@@ -175,3 +175,167 @@ body {
   background: #4fc3f7;
   color: #1a1a2e;
 }
+
+/* Ticker Header */
+.ticker-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ticker-header .symbol {
+  margin-bottom: 0;
+}
+
+/* Settings Button */
+.settings-button {
+  background: transparent;
+  border: 1px solid #4fc3f7;
+  color: #4fc3f7;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.settings-button:hover {
+  background: #4fc3f7;
+  color: #1a1a2e;
+}
+
+/* Settings Popup */
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.settings-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 101;
+  background: #16213e;
+  border: 1px solid #2a2a4e;
+  border-radius: 12px;
+  padding: 1.5rem;
+  min-width: 300px;
+}
+
+.settings-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.settings-title {
+  color: #4fc3f7;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.settings-close {
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  transition: color 0.2s;
+}
+
+.settings-close:hover {
+  color: #eee;
+}
+
+.settings-section-label {
+  color: #888;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.settings-color-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.settings-color-row label {
+  color: #eee;
+  font-size: 0.9rem;
+}
+
+.settings-color-row input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 48px;
+  height: 32px;
+  border: 1px solid #2a2a4e;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.settings-color-row input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.settings-color-row input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
+
+.settings-preview {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background: #1a1a2e;
+  border-radius: 8px;
+}
+
+.settings-preview-candle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.settings-preview-wick {
+  width: 2px;
+  height: 10px;
+}
+
+.settings-preview-body {
+  width: 16px;
+  height: 24px;
+  border-radius: 1px;
+}
+
+.settings-reset-button {
+  width: 100%;
+  background: transparent;
+  border: 1px solid #4fc3f7;
+  color: #4fc3f7;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.settings-reset-button:hover {
+  background: #4fc3f7;
+  color: #1a1a2e;
+}

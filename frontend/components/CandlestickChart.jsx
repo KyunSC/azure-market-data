@@ -2,10 +2,16 @@
 
 import { useEffect, useRef } from 'react'
 import { createChart, CandlestickSeries } from 'lightweight-charts'
+import { DEFAULT_CHART_COLORS } from './chartDefaults'
 
-export default function CandlestickChart({ data }) {
+export default function CandlestickChart({
+  data,
+  upColor = DEFAULT_CHART_COLORS.upColor,
+  downColor = DEFAULT_CHART_COLORS.downColor,
+}) {
   const chartContainerRef = useRef()
   const chartRef = useRef()
+  const seriesRef = useRef()
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -34,17 +40,18 @@ export default function CandlestickChart({ data }) {
     })
 
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#4caf50',
-      downColor: '#ff6b6b',
-      borderUpColor: '#4caf50',
-      borderDownColor: '#ff6b6b',
-      wickUpColor: '#4caf50',
-      wickDownColor: '#ff6b6b',
+      upColor,
+      downColor,
+      borderUpColor: upColor,
+      borderDownColor: downColor,
+      wickUpColor: upColor,
+      wickDownColor: downColor,
     })
 
     candlestickSeries.setData(data)
     chart.timeScale().fitContent()
     chartRef.current = chart
+    seriesRef.current = candlestickSeries
 
     const handleResize = () => {
       if (chartContainerRef.current) {
@@ -59,6 +66,18 @@ export default function CandlestickChart({ data }) {
       chart.remove()
     }
   }, [data])
+
+  useEffect(() => {
+    if (!seriesRef.current) return
+    seriesRef.current.applyOptions({
+      upColor,
+      downColor,
+      borderUpColor: upColor,
+      borderDownColor: downColor,
+      wickUpColor: upColor,
+      wickDownColor: downColor,
+    })
+  }, [upColor, downColor])
 
   return <div ref={chartContainerRef} className="chart-container" />
 }

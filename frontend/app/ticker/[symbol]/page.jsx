@@ -4,6 +4,8 @@ import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import CandlestickChart from '../../../components/CandlestickChart'
 import TimeframeSelector from '../../../components/TimeframeSelector'
+import SettingsPopup from '../../../components/SettingsPopup'
+import { DEFAULT_CHART_COLORS, CHART_COLORS_STORAGE_KEY } from '../../../components/chartDefaults'
 
 export default function TickerDetail({ params }) {
   const { symbol: rawSymbol } = use(params)
@@ -20,6 +22,21 @@ export default function TickerDetail({ params }) {
   const [interval, setInterval] = useState('1d')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [upColor, setUpColor] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_CHART_COLORS.upColor
+    try {
+      const saved = JSON.parse(localStorage.getItem(CHART_COLORS_STORAGE_KEY))
+      return saved?.upColor || DEFAULT_CHART_COLORS.upColor
+    } catch { return DEFAULT_CHART_COLORS.upColor }
+  })
+  const [downColor, setDownColor] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_CHART_COLORS.downColor
+    try {
+      const saved = JSON.parse(localStorage.getItem(CHART_COLORS_STORAGE_KEY))
+      return saved?.downColor || DEFAULT_CHART_COLORS.downColor
+    } catch { return DEFAULT_CHART_COLORS.downColor }
+  })
 
   useEffect(() => {
     const fetchOHLCData = async () => {
@@ -55,6 +72,15 @@ export default function TickerDetail({ params }) {
     fetchOHLCData()
   }, [symbol, period, interval])
 
+  useEffect(() => {
+    localStorage.setItem(CHART_COLORS_STORAGE_KEY, JSON.stringify({ upColor, downColor }))
+  }, [upColor, downColor])
+
+  const handleResetColors = () => {
+    setUpColor(DEFAULT_CHART_COLORS.upColor)
+    setDownColor(DEFAULT_CHART_COLORS.downColor)
+  }
+
   return (
     <div className="app">
       <div className="ticker-detail">
@@ -62,7 +88,23 @@ export default function TickerDetail({ params }) {
           ← Back to Dashboard
         </button>
 
-        <h1 className="symbol">{displayName}</h1>
+        <div className="ticker-header">
+          <h1 className="symbol">{displayName}</h1>
+          <button className="settings-button" onClick={() => setSettingsOpen(prev => !prev)}>
+            ⚙
+          </button>
+        </div>
+
+        {settingsOpen && (
+          <SettingsPopup
+            upColor={upColor}
+            downColor={downColor}
+            onUpColorChange={setUpColor}
+            onDownColorChange={setDownColor}
+            onClose={() => setSettingsOpen(false)}
+            onReset={handleResetColors}
+          />
+        )}
 
         <TimeframeSelector
           period={period}
@@ -74,7 +116,7 @@ export default function TickerDetail({ params }) {
         {loading && <p className="status">Loading chart...</p>}
         {error && <p className="status error">Error: {error}</p>}
         {!loading && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={ohlcData} symbol={symbol} />
+          <CandlestickChart data={ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} />
         )}
         {!loading && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>
