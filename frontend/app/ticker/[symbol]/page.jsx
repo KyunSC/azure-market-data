@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation'
 import CandlestickChart from '../../../components/CandlestickChart'
 import TimeframeSelector from '../../../components/TimeframeSelector'
 import SettingsPopup from '../../../components/SettingsPopup'
+import IndicatorSelector from '../../../components/IndicatorSelector'
 import { DEFAULT_CHART_COLORS, CHART_COLORS_STORAGE_KEY } from '../../../components/chartDefaults'
+import { INDICATORS_STORAGE_KEY } from '../../../components/indicators'
 
 export default function TickerDetail({ params }) {
   const { symbol: rawSymbol } = use(params)
@@ -23,6 +25,12 @@ export default function TickerDetail({ params }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [activeIndicators, setActiveIndicators] = useState(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      return JSON.parse(localStorage.getItem(INDICATORS_STORAGE_KEY)) || []
+    } catch { return [] }
+  })
   const [upColor, setUpColor] = useState(() => {
     if (typeof window === 'undefined') return DEFAULT_CHART_COLORS.upColor
     try {
@@ -81,6 +89,14 @@ export default function TickerDetail({ params }) {
     setDownColor(DEFAULT_CHART_COLORS.downColor)
   }
 
+  const handleToggleIndicator = (id) => {
+    setActiveIndicators(prev => {
+      const next = prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+      localStorage.setItem(INDICATORS_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
   return (
     <div className="app">
       <div className="ticker-detail">
@@ -90,6 +106,10 @@ export default function TickerDetail({ params }) {
 
         <div className="ticker-header">
           <h1 className="symbol">{displayName}</h1>
+          <IndicatorSelector
+            activeIndicators={activeIndicators}
+            onToggle={handleToggleIndicator}
+          />
           <button className="settings-button" onClick={() => setSettingsOpen(prev => !prev)}>
             ⚙
           </button>
@@ -116,7 +136,7 @@ export default function TickerDetail({ params }) {
         {loading && <p className="status">Loading chart...</p>}
         {error && <p className="status error">Error: {error}</p>}
         {!loading && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} />
+          <CandlestickChart data={ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} activeIndicators={activeIndicators} />
         )}
         {!loading && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>

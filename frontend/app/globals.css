@@ -339,3 +339,87 @@ body {
   background: #4fc3f7;
   color: #1a1a2e;
 }
+
+/* Indicator Selector */
+.indicator-selector {
+  position: relative;
+}
+
+.indicator-button {
+  background: transparent;
+  border: 1px solid #4fc3f7;
+  color: #4fc3f7;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.indicator-button:hover {
+  background: #4fc3f7;
+  color: #1a1a2e;
+}
+
+.indicator-button.has-active {
+  background: rgba(79, 195, 247, 0.15);
+}
+
+.indicator-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: #16213e;
+  border: 1px solid #2a2a4e;
+  border-radius: 8px;
+  padding: 0.4rem 0;
+  min-width: 180px;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.indicator-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #ccc;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.indicator-option:hover {
+  background: #2a3f5f;
+}
+
+.indicator-option.active {
+  color: #eee;
+  background: rgba(79, 195, 247, 0.1);
+}
+
+.indicator-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.indicator-divider {
+  height: 1px;
+  background: #2a2a4e;
+  margin: 0.25rem 0;
+}
+
+.indicator-clear {
+  color: #ff6b6b;
+}
+
+.indicator-clear:hover {
+  background: rgba(255, 107, 107, 0.1);
+}

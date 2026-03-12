@@ -1,17 +1,20 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { createChart, CandlestickSeries } from 'lightweight-charts'
+import { createChart, CandlestickSeries, LineSeries } from 'lightweight-charts'
 import { DEFAULT_CHART_COLORS } from './chartDefaults'
+import { AVAILABLE_INDICATORS, computeIndicator } from './indicators'
 
 export default function CandlestickChart({
   data,
   upColor = DEFAULT_CHART_COLORS.upColor,
   downColor = DEFAULT_CHART_COLORS.downColor,
+  activeIndicators = [],
 }) {
   const chartContainerRef = useRef()
   const chartRef = useRef()
   const seriesRef = useRef()
+  const indicatorSeriesRef = useRef([])
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -52,6 +55,38 @@ export default function CandlestickChart({
     chart.timeScale().fitContent()
     chartRef.current = chart
     seriesRef.current = candlestickSeries
+    indicatorSeriesRef.current = []
+
+    // Add indicator series
+    for (const indId of activeIndicators) {
+      const indicator = AVAILABLE_INDICATORS.find(i => i.id === indId)
+      if (!indicator) continue
+      const result = computeIndicator(indicator, data)
+      if (!result) continue
+
+      if (result.type === 'line') {
+        const series = chart.addSeries(LineSeries, {
+          color: result.color,
+          lineWidth: 1.5,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        })
+        series.setData(result.data)
+        indicatorSeriesRef.current.push(series)
+      } else if (result.type === 'bb') {
+        for (const band of [result.upper, result.middle, result.lower]) {
+          const series = chart.addSeries(LineSeries, {
+            color: band.color,
+            lineWidth: band === result.middle ? 1.5 : 1,
+            lineStyle: band === result.middle ? 0 : 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          })
+          series.setData(band.data)
+          indicatorSeriesRef.current.push(series)
+        }
+      }
+    }
 
     const handleResize = () => {
       if (chartContainerRef.current) {
@@ -65,7 +100,7 @@ export default function CandlestickChart({
       window.removeEventListener('resize', handleResize)
       chart.remove()
     }
-  }, [data])
+  }, [data, activeIndicators])
 
   useEffect(() => {
     if (!seriesRef.current) return
