@@ -4,11 +4,11 @@ const nextConfig = {
     return [
       {
         source: '/api/market',
-        destination: 'http://localhost:7071/api/MarketDataFunction',
+        destination: 'http://localhost:8080/api/market',
       },
       {
         source: '/api/historical',
-        destination: 'http://localhost:7071/api/HistoricalDataFunction',
+        destination: 'http://localhost:8080/api/historical',
       },
     ]
   },

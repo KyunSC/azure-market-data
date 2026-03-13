@@ -10,6 +10,11 @@ TICKER_TIMEOUT_SECONDS = 15
 VALID_PERIODS = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max']
 VALID_INTERVALS = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo']
 
+#HTTP GET parameters:
+# - symbol (required): stock ticker symbol (e.g. AAPL)
+# - period (optional): data period (default '1mo')
+# - interval (optional): data interval (default '1d')
+
 def fetch_historical_data(symbol, period, interval):
     """Fetch OHLC historical data for a ticker."""
     ticker = yf.Ticker(symbol)

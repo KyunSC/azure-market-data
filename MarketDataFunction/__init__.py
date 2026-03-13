@@ -10,7 +10,8 @@ MAX_TICKERS = 20
 TICKER_TIMEOUT_SECONDS = 10
 RATE_LIMIT_REQUESTS = 30
 RATE_LIMIT_WINDOW_SECONDS = 60
-
+# HTTP GET OR POST parameters:
+# - tickers (optional): list of stock ticker symbols (e.g. ["AAPL, "GOOG"]) or comma-separated string (e.g. "AAPL,GOOG"). Default is ["ES=F", "NQ=F"] 
 # In-memory rate limit tracking (per IP)
 request_log = {}
 
