@@ -10,6 +10,10 @@ const nextConfig = {
         source: '/api/historical',
         destination: 'http://localhost:8080/api/historical',
       },
+      {
+        source: '/api/gamma',
+        destination: 'http://localhost:8080/api/gamma',
+      },
     ]
   },
 }

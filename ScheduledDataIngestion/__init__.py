@@ -2,11 +2,16 @@ import azure.functions as func
 import yfinance as yf
 import psycopg2
 import os
+import sys
 import math
 import logging
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import pytz
+
+# Add parent directory to path so we can import shared module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from shared.gex_calculator import fetch_prices_and_compute_gex
 
 TICKER_TIMEOUT_SECONDS = 10
 
@@ -75,6 +80,18 @@ def should_fetch_historical():
     now_et = datetime.now(et_tz)
     return now_et.hour == 16 and 25 <= now_et.minute <= 40
 
+def should_fetch_gex():
+    """Fetch GEX every 15 minutes during market hours (weekday 9:30-16:15 ET)."""
+    et_tz = pytz.timezone('US/Eastern')
+    now_et = datetime.now(et_tz)
+    if now_et.weekday() >= 5:
+        return False
+    if now_et.hour < 9 or (now_et.hour == 9 and now_et.minute < 30):
+        return False
+    if now_et.hour > 16 or (now_et.hour == 16 and now_et.minute > 15):
+        return False
+    return now_et.minute % 15 < 2
+
 def get_db_connection():
     """Create connection to Supabase PostgreSQL."""
     return psycopg2.connect(os.environ['DATABASE_URL'])
@@ -85,6 +102,41 @@ def insert_market_data(cursor, symbol, price, volume, timestamp):
         INSERT INTO market_data (symbol, price, volume, timestamp)
         VALUES (%s, %s, %s, %s)
     """, (symbol, price, volume, timestamp))
+
+def insert_gex_data(cursor, gex_result):
+    """Insert gamma exposure computation and its levels into the database."""
+    cursor.execute("""
+        INSERT INTO gamma_exposure
+            (symbol, computed_at, qqq_price, nq_price, conversion_ratio, expirations_used, market_open)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        'QQQ',
+        datetime.now(pytz.utc),
+        gex_result['qqq_price'],
+        gex_result['nq_price'],
+        gex_result['conversion_ratio'],
+        ','.join(gex_result['expirations_used']),
+        gex_result['market_open'],
+    ))
+    exposure_id = cursor.fetchone()[0]
+
+    for level in gex_result['levels']:
+        cursor.execute("""
+            INSERT INTO gamma_levels
+                (gamma_exposure_id, strike_qqq, strike_nq, gex, gex_call, gex_put, label)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (
+            exposure_id,
+            level['strike_qqq'],
+            level['strike_nq'],
+            level['gex'],
+            level.get('gex_call'),
+            level.get('gex_put'),
+            level['label'],
+        ))
+
+    return exposure_id
 
 def upsert_historical_data(cursor, symbol, data):
     """Upsert historical OHLC data."""
@@ -180,6 +232,26 @@ def main(mytimer: func.TimerRequest) -> None:
 
             conn.commit()
             logging.info('Historical data fetch complete')
+
+        # Fetch GEX data every 15 minutes during market hours
+        if should_fetch_gex():
+            logging.info('Fetching gamma exposure data (15-min run)')
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(fetch_prices_and_compute_gex)
+                    gex_result = future.result(timeout=60)
+
+                exposure_id = insert_gex_data(cursor, gex_result)
+                conn.commit()
+                logging.info(f'Saved GEX data (id={exposure_id}), '
+                             f'QQQ={gex_result["qqq_price"]}, '
+                             f'NQ={gex_result["nq_price"]}, '
+                             f'{len(gex_result["levels"])} levels')
+
+            except FuturesTimeoutError:
+                logging.error('Timeout computing gamma exposure')
+            except Exception as e:
+                logging.error(f'Error computing gamma exposure: {e}')
 
     except Exception as e:
         logging.error(f'Database error: {e}')

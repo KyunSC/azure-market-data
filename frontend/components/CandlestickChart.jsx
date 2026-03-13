@@ -5,11 +5,28 @@ import { createChart, CandlestickSeries, LineSeries } from 'lightweight-charts'
 import { DEFAULT_CHART_COLORS } from './chartDefaults'
 import { AVAILABLE_INDICATORS, computeIndicator } from './indicators'
 
+const GEX_COLORS = {
+  call_wall: '#00e676',
+  put_wall: '#ff1744',
+  zero_gamma: '#ffff00',
+  significant_pos: '#66bb6a',
+  significant_neg: '#ef5350',
+}
+
+const GEX_LABELS = {
+  call_wall: 'Call Wall',
+  put_wall: 'Put Wall',
+  zero_gamma: 'Gamma Flip',
+  significant_pos: 'GEX+',
+  significant_neg: 'GEX-',
+}
+
 export default function CandlestickChart({
   data,
   upColor = DEFAULT_CHART_COLORS.upColor,
   downColor = DEFAULT_CHART_COLORS.downColor,
   activeIndicators = [],
+  gexLevels = null,
 }) {
   const chartContainerRef = useRef()
   const chartRef = useRef()
@@ -88,6 +105,22 @@ export default function CandlestickChart({
       }
     }
 
+    // Add GEX level price lines
+    if (gexLevels && gexLevels.levels && activeIndicators.includes('gex')) {
+      for (const level of gexLevels.levels) {
+        const color = GEX_COLORS[level.label] || '#ffffff'
+        const isKey = level.label === 'call_wall' || level.label === 'put_wall'
+        candlestickSeries.createPriceLine({
+          price: level.strikeNq,
+          color,
+          lineWidth: isKey ? 2 : 1,
+          lineStyle: level.label === 'zero_gamma' ? 2 : 0,
+          axisLabelVisible: true,
+          title: GEX_LABELS[level.label] || level.label,
+        })
+      }
+    }
+
     const handleResize = () => {
       if (chartContainerRef.current) {
         chart.applyOptions({ width: chartContainerRef.current.clientWidth })
@@ -100,7 +133,7 @@ export default function CandlestickChart({
       window.removeEventListener('resize', handleResize)
       chart.remove()
     }
-  }, [data, activeIndicators])
+  }, [data, activeIndicators, gexLevels])
 
   useEffect(() => {
     if (!seriesRef.current) return

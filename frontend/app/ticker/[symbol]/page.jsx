@@ -25,26 +25,45 @@ export default function TickerDetail({ params }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [activeIndicators, setActiveIndicators] = useState(() => {
-    if (typeof window === 'undefined') return []
+  const [activeIndicators, setActiveIndicators] = useState([])
+  const [upColor, setUpColor] = useState(DEFAULT_CHART_COLORS.upColor)
+  const [downColor, setDownColor] = useState(DEFAULT_CHART_COLORS.downColor)
+  const [gexLevels, setGexLevels] = useState(null)
+
+  // Hydrate from localStorage after mount to avoid SSR/client mismatch
+  useEffect(() => {
     try {
-      return JSON.parse(localStorage.getItem(INDICATORS_STORAGE_KEY)) || []
-    } catch { return [] }
-  })
-  const [upColor, setUpColor] = useState(() => {
-    if (typeof window === 'undefined') return DEFAULT_CHART_COLORS.upColor
+      const savedIndicators = JSON.parse(localStorage.getItem(INDICATORS_STORAGE_KEY))
+      if (savedIndicators) setActiveIndicators(savedIndicators)
+    } catch { /* ignore */ }
     try {
-      const saved = JSON.parse(localStorage.getItem(CHART_COLORS_STORAGE_KEY))
-      return saved?.upColor || DEFAULT_CHART_COLORS.upColor
-    } catch { return DEFAULT_CHART_COLORS.upColor }
-  })
-  const [downColor, setDownColor] = useState(() => {
-    if (typeof window === 'undefined') return DEFAULT_CHART_COLORS.downColor
-    try {
-      const saved = JSON.parse(localStorage.getItem(CHART_COLORS_STORAGE_KEY))
-      return saved?.downColor || DEFAULT_CHART_COLORS.downColor
-    } catch { return DEFAULT_CHART_COLORS.downColor }
-  })
+      const savedColors = JSON.parse(localStorage.getItem(CHART_COLORS_STORAGE_KEY))
+      if (savedColors?.upColor) setUpColor(savedColors.upColor)
+      if (savedColors?.downColor) setDownColor(savedColors.downColor)
+    } catch { /* ignore */ }
+  }, [])
+
+  // Fetch GEX data for NQ chart
+  useEffect(() => {
+    if (symbol !== 'NQ=F') return
+
+    const fetchGex = async () => {
+      try {
+        const res = await fetch('/api/gamma?symbol=QQQ')
+        if (res.ok) {
+          const data = await res.json()
+          console.log('GEX Levels:', data)
+          setGexLevels(data)
+        }
+      } catch (err) {
+        console.error('GEX fetch error:', err)
+      }
+    }
+
+    fetchGex()
+    const gexInterval = window.setInterval(fetchGex, 15 * 60 * 1000)
+    return () => window.clearInterval(gexInterval)
+  }, [symbol])
 
   useEffect(() => {
     const fetchOHLCData = async () => {
@@ -133,10 +152,14 @@ export default function TickerDetail({ params }) {
           onIntervalChange={setInterval}
         />
 
+        {gexLevels && !gexLevels.marketOpen && (
+          <p className="status" style={{ color: '#ffeb3b', fontSize: '0.85rem' }}>GEX data from last close</p>
+        )}
+
         {loading && <p className="status">Loading chart...</p>}
         {error && <p className="status error">Error: {error}</p>}
         {!loading && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} activeIndicators={activeIndicators} />
+          <CandlestickChart data={ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} activeIndicators={activeIndicators} gexLevels={gexLevels} />
         )}
         {!loading && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>

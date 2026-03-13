@@ -5,6 +5,7 @@ export const AVAILABLE_INDICATORS = [
   { id: 'ema12', label: 'EMA 12', type: 'ema', period: 12, color: '#00bcd4' },
   { id: 'ema26', label: 'EMA 26', type: 'ema', period: 26, color: '#ffeb3b' },
   { id: 'bb20', label: 'Bollinger Bands', type: 'bb', period: 20, stdDev: 2, color: '#7c4dff' },
+  { id: 'gex', label: 'GEX Levels (NQ)', type: 'gex', color: '#ffff00' },
 ]
 
 export const INDICATORS_STORAGE_KEY = 'chart-active-indicators'
