@@ -55,10 +55,12 @@ def fetch_historical_data(symbol, period='5d', interval='1d'):
     if history.empty:
         return None
 
+    is_intraday = interval in ('1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h')
+
     data = []
     for date, row in history.iterrows():
         data.append({
-            'date': date.date(),
+            'date': date.to_pydatetime() if is_intraday else date.date(),
             'interval_type': interval,
             'open': round(float(row['Open']), 2),
             'high': round(float(row['High']), 2),
@@ -79,6 +81,18 @@ def should_fetch_historical():
     et_tz = pytz.timezone('US/Eastern')
     now_et = datetime.now(et_tz)
     return now_et.hour == 16 and 25 <= now_et.minute <= 40
+
+def should_fetch_intraday():
+    """Check if we should fetch intraday data (during market hours, weekdays)."""
+    et_tz = pytz.timezone('US/Eastern')
+    now_et = datetime.now(et_tz)
+    if now_et.weekday() >= 5:
+        return False
+    if now_et.hour < 9 or (now_et.hour == 9 and now_et.minute < 30):
+        return False
+    if now_et.hour > 16 or (now_et.hour == 16 and now_et.minute > 15):
+        return False
+    return True
 
 def should_fetch_gex():
     """Fetch GEX every 15 minutes during market hours (weekday 9:30-16:15 ET)."""
@@ -232,6 +246,34 @@ def main(mytimer: func.TimerRequest) -> None:
 
             conn.commit()
             logging.info('Historical data fetch complete')
+
+        # Fetch intraday data (1m, 5m) during market hours
+        if should_fetch_intraday():
+            logging.info('Fetching intraday data (1m, 5m)')
+            intraday_intervals = [
+                ('1m', '1d'),
+                ('5m', '5d'),
+            ]
+            for interval, period in intraday_intervals:
+                for symbol in tickers:
+                    try:
+                        with ThreadPoolExecutor(max_workers=1) as executor:
+                            future = executor.submit(fetch_historical_data, symbol, period, interval)
+                            historical = future.result(timeout=TICKER_TIMEOUT_SECONDS)
+
+                        if historical:
+                            upsert_historical_data(cursor, symbol, historical)
+                            logging.info(f'Saved {interval} data for {symbol}')
+                        else:
+                            logging.warning(f'No {interval} data for {symbol}')
+
+                    except FuturesTimeoutError:
+                        logging.error(f'Timeout fetching {interval} for {symbol}')
+                    except Exception as e:
+                        logging.error(f'Error fetching {interval} for {symbol}: {e}')
+
+            conn.commit()
+            logging.info('Intraday data fetch complete')
 
         # Fetch GEX data every 15 minutes during market hours
         if should_fetch_gex():

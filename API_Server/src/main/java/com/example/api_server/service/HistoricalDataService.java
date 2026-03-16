@@ -11,8 +11,10 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -43,11 +45,16 @@ public class HistoricalDataService {
         return buildResponseFromEntities(symbol, period, interval, data);
     }
 
+    private static final Set<String> INTRADAY_INTERVALS = Set.of("1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h");
+
     private HistoricalDataResponse buildResponseFromEntities(String symbol, String period, String interval,
                                                               List<HistoricalDataEntity> entities) {
+        boolean intraday = INTRADAY_INTERVALS.contains(interval);
         List<OhlcData> data = entities.stream()
                 .map(e -> new OhlcData(
-                        e.getDate().toString(),
+                        intraday
+                                ? String.valueOf(e.getDate().toEpochSecond(ZoneOffset.UTC))
+                                : e.getDate().toLocalDate().toString(),
                         e.getOpen(),
                         e.getHigh(),
                         e.getLow(),

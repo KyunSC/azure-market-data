@@ -1,7 +1,6 @@
 package com.example.api_server.entity;
 
 import jakarta.persistence.*;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -18,7 +17,7 @@ public class HistoricalDataEntity {
     private String symbol;
 
     @Column(nullable = false)
-    private LocalDate date;
+    private LocalDateTime date;
 
     @Column(name = "interval_type", nullable = false)
     private String intervalType;
@@ -43,7 +42,7 @@ public class HistoricalDataEntity {
     public HistoricalDataEntity() {
     }
 
-    public HistoricalDataEntity(String symbol, LocalDate date, String intervalType,
+    public HistoricalDataEntity(String symbol, LocalDateTime date, String intervalType,
                                  Double open, Double high, Double low, Double close,
                                  Long volume, LocalDateTime fetchedAt) {
         this.symbol = symbol;
@@ -63,8 +62,8 @@ public class HistoricalDataEntity {
     public String getSymbol() { return symbol; }
     public void setSymbol(String symbol) { this.symbol = symbol; }
 
-    public LocalDate getDate() { return date; }
-    public void setDate(LocalDate date) { this.date = date; }
+    public LocalDateTime getDate() { return date; }
+    public void setDate(LocalDateTime date) { this.date = date; }
 
     public String getIntervalType() { return intervalType; }
     public void setIntervalType(String intervalType) { this.intervalType = intervalType; }

@@ -68,7 +68,12 @@ export default function CandlestickChart({
       wickDownColor: downColor,
     })
 
-    candlestickSeries.setData(data)
+    const parseTime = (arr) => arr.map(d => ({
+      ...d,
+      time: /^\d+$/.test(d.time) ? Number(d.time) : d.time,
+    }))
+    const parsedData = parseTime(data)
+    candlestickSeries.setData(parsedData)
     chart.timeScale().fitContent()
     chartRef.current = chart
     seriesRef.current = candlestickSeries
@@ -78,7 +83,7 @@ export default function CandlestickChart({
     for (const indId of activeIndicators) {
       const indicator = AVAILABLE_INDICATORS.find(i => i.id === indId)
       if (!indicator) continue
-      const result = computeIndicator(indicator, data)
+      const result = computeIndicator(indicator, parsedData)
       if (!result) continue
 
       if (result.type === 'volume') {
