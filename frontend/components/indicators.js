@@ -5,6 +5,7 @@ export const AVAILABLE_INDICATORS = [
   { id: 'ema12', label: 'EMA 12', type: 'ema', period: 12, color: '#00bcd4' },
   { id: 'ema26', label: 'EMA 26', type: 'ema', period: 26, color: '#ffeb3b' },
   { id: 'bb20', label: 'Bollinger Bands', type: 'bb', period: 20, stdDev: 2, color: '#7c4dff' },
+  { id: 'volume', label: 'Volume', type: 'volume', color: '#5c6bc0' },
   { id: 'gex', label: 'GEX Levels (NQ)', type: 'gex', color: '#ffff00' },
 ]
 
@@ -71,6 +72,15 @@ export function computeIndicator(indicator, data) {
   if (!data || data.length === 0) return null
 
   switch (indicator.type) {
+    case 'volume':
+      return {
+        type: 'volume',
+        data: data.map(d => ({
+          time: d.time,
+          value: d.volume || 0,
+          color: d.close >= d.open ? '#26a69a80' : '#ef535080',
+        })),
+      }
     case 'sma':
       if (data.length < indicator.period) return null
       return { type: 'line', data: calcSMA(data, indicator.period), color: indicator.color }

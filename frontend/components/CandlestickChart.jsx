@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { createChart, CandlestickSeries, LineSeries } from 'lightweight-charts'
+import { createChart, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts'
 import { DEFAULT_CHART_COLORS } from './chartDefaults'
 import { AVAILABLE_INDICATORS, computeIndicator } from './indicators'
 
@@ -81,7 +81,19 @@ export default function CandlestickChart({
       const result = computeIndicator(indicator, data)
       if (!result) continue
 
-      if (result.type === 'line') {
+      if (result.type === 'volume') {
+        const series = chart.addSeries(HistogramSeries, {
+          priceFormat: { type: 'volume' },
+          priceScaleId: 'volume',
+          priceLineVisible: false,
+          lastValueVisible: false,
+        })
+        chart.priceScale('volume').applyOptions({
+          scaleMargins: { top: 0.8, bottom: 0 },
+        })
+        series.setData(result.data)
+        indicatorSeriesRef.current.push(series)
+      } else if (result.type === 'line') {
         const series = chart.addSeries(LineSeries, {
           color: result.color,
           lineWidth: 1.5,
