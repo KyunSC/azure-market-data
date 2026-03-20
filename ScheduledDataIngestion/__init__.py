@@ -247,12 +247,14 @@ def main(mytimer: func.TimerRequest) -> None:
             conn.commit()
             logging.info('Historical data fetch complete')
 
-        # Fetch intraday data (1m, 5m) during market hours
+        # Fetch intraday data (1m, 5m, 15m, 1h) during market hours
         if should_fetch_intraday():
-            logging.info('Fetching intraday data (1m, 5m)')
+            logging.info('Fetching intraday data (1m, 5m, 15m, 1h)')
             intraday_intervals = [
                 ('1m', '1d'),
                 ('5m', '5d'),
+                ('15m', '5d'),
+                ('1h', '1mo'),
             ]
             for interval, period in intraday_intervals:
                 for symbol in tickers:
