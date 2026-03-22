@@ -15,6 +15,7 @@ INTERVALS = [
     ('15m', '60d'),     # max 60 days
     ('1h',  '730d'),    # max 730 days
     ('1d',  'max'),     # all available history
+    ('1wk', 'max'),     # weekly all-time
 ]
 
 def log(msg):

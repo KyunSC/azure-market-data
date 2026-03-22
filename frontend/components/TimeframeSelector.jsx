@@ -1,5 +1,5 @@
 export default function TimeframeSelector({ period, interval, onPeriodChange, onIntervalChange }) {
-  const periods = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y']
+  const periods = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', 'max']
   const intervals = ['1m', '5m', '15m', '1h', '4h', '1d', '1wk']
 
   return (
