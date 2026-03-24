@@ -138,6 +138,12 @@ export default function TickerDetail({ params }) {
               Candles
             </button>
             <button
+              className={chartType === 'hollow' ? 'active' : ''}
+              onClick={() => setChartType('hollow')}
+            >
+              Hollow
+            </button>
+            <button
               className={chartType === 'line' ? 'active' : ''}
               onClick={() => setChartType('line')}
             >
