@@ -112,6 +112,7 @@ public class HistoricalDataService {
                                                               List<HistoricalDataEntity> entities) {
         boolean intraday = INTRADAY_INTERVALS.contains(interval);
         List<OhlcData> data = entities.stream()
+                .filter(e -> e.getOpen() != null && e.getHigh() != null && e.getLow() != null && e.getClose() != null)
                 .map(e -> new OhlcData(
                         intraday
                                 ? String.valueOf(e.getDate().toEpochSecond(ZoneOffset.UTC))

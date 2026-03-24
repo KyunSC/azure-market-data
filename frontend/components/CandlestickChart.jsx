@@ -68,11 +68,17 @@ export default function CandlestickChart({
       wickDownColor: downColor,
     })
 
-    const parseTime = (arr) => arr.map(d => ({
-      ...d,
-      time: /^\d+$/.test(d.time) ? Number(d.time) : d.time,
-    }))
-    const parsedData = parseTime(data)
+    const parsedData = data
+      .filter(d => d.open != null && d.high != null && d.low != null && d.close != null)
+      .map(d => ({
+        time: /^\d+$/.test(d.time) ? Number(d.time) : d.time,
+        open: Number(d.open),
+        high: Number(d.high),
+        low: Number(d.low),
+        close: Number(d.close),
+        volume: Number(d.volume),
+      }))
+      .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close))
     candlestickSeries.setData(parsedData)
     chart.timeScale().fitContent()
     chartRef.current = chart
