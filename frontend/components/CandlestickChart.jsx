@@ -27,6 +27,7 @@ export default function CandlestickChart({
   downColor = DEFAULT_CHART_COLORS.downColor,
   activeIndicators = [],
   gexLevels = null,
+  chartType = 'candlestick',
 }) {
   const chartContainerRef = useRef()
   const chartRef = useRef()
@@ -59,15 +60,6 @@ export default function CandlestickChart({
       height: 400,
     })
 
-    const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor,
-      downColor,
-      borderUpColor: upColor,
-      borderDownColor: downColor,
-      wickUpColor: upColor,
-      wickDownColor: downColor,
-    })
-
     const parsedData = data
       .filter(d => d.open != null && d.high != null && d.low != null && d.close != null)
       .map(d => ({
@@ -79,10 +71,28 @@ export default function CandlestickChart({
         volume: Number(d.volume),
       }))
       .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close))
-    candlestickSeries.setData(parsedData)
+
+    let mainSeries
+    if (chartType === 'line') {
+      mainSeries = chart.addSeries(LineSeries, {
+        color: upColor,
+        lineWidth: 2,
+      })
+      mainSeries.setData(parsedData.map(d => ({ time: d.time, value: d.close })))
+    } else {
+      mainSeries = chart.addSeries(CandlestickSeries, {
+        upColor,
+        downColor,
+        borderUpColor: upColor,
+        borderDownColor: downColor,
+        wickUpColor: upColor,
+        wickDownColor: downColor,
+      })
+      mainSeries.setData(parsedData)
+    }
     chart.timeScale().fitContent()
     chartRef.current = chart
-    seriesRef.current = candlestickSeries
+    seriesRef.current = mainSeries
     indicatorSeriesRef.current = []
 
     // Add indicator series
@@ -133,7 +143,7 @@ export default function CandlestickChart({
       for (const level of gexLevels.levels) {
         const color = GEX_COLORS[level.label] || '#ffffff'
         const isKey = level.label === 'call_wall' || level.label === 'put_wall'
-        candlestickSeries.createPriceLine({
+        mainSeries.createPriceLine({
           price: level.strikeNq,
           color,
           lineWidth: isKey ? 2 : 1,
@@ -156,19 +166,23 @@ export default function CandlestickChart({
       window.removeEventListener('resize', handleResize)
       chart.remove()
     }
-  }, [data, activeIndicators, gexLevels])
+  }, [data, activeIndicators, gexLevels, chartType])
 
   useEffect(() => {
     if (!seriesRef.current) return
-    seriesRef.current.applyOptions({
-      upColor,
-      downColor,
-      borderUpColor: upColor,
-      borderDownColor: downColor,
-      wickUpColor: upColor,
-      wickDownColor: downColor,
-    })
-  }, [upColor, downColor])
+    if (chartType === 'line') {
+      seriesRef.current.applyOptions({ color: upColor })
+    } else {
+      seriesRef.current.applyOptions({
+        upColor,
+        downColor,
+        borderUpColor: upColor,
+        borderDownColor: downColor,
+        wickUpColor: upColor,
+        wickDownColor: downColor,
+      })
+    }
+  }, [upColor, downColor, chartType])
 
   return <div ref={chartContainerRef} className="chart-container" />
 }

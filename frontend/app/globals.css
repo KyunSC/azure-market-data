@@ -199,6 +199,35 @@ body {
   margin-bottom: 0;
 }
 
+/* Chart Type Toggle */
+.chart-type-toggle {
+  display: flex;
+  gap: 0.25rem;
+  background: #0d1520;
+  border-radius: 6px;
+  padding: 3px;
+}
+
+.chart-type-toggle button {
+  background: transparent;
+  border: none;
+  color: #888;
+  padding: 0.35rem 0.65rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+
+.chart-type-toggle button:hover {
+  color: #ccc;
+}
+
+.chart-type-toggle button.active {
+  background: #16213e;
+  color: #4fc3f7;
+}
+
 /* Settings Button */
 .settings-button {
   background: transparent;

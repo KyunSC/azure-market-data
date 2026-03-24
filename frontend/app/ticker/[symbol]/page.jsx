@@ -29,6 +29,7 @@ export default function TickerDetail({ params }) {
   const [upColor, setUpColor] = useState(DEFAULT_CHART_COLORS.upColor)
   const [downColor, setDownColor] = useState(DEFAULT_CHART_COLORS.downColor)
   const [gexLevels, setGexLevels] = useState(null)
+  const [chartType, setChartType] = useState('candlestick')
 
   // Hydrate from localStorage after mount to avoid SSR/client mismatch
   useEffect(() => {
@@ -129,6 +130,20 @@ export default function TickerDetail({ params }) {
             activeIndicators={activeIndicators}
             onToggle={handleToggleIndicator}
           />
+          <div className="chart-type-toggle">
+            <button
+              className={chartType === 'candlestick' ? 'active' : ''}
+              onClick={() => setChartType('candlestick')}
+            >
+              Candles
+            </button>
+            <button
+              className={chartType === 'line' ? 'active' : ''}
+              onClick={() => setChartType('line')}
+            >
+              Line
+            </button>
+          </div>
           <button className="settings-button" onClick={() => setSettingsOpen(prev => !prev)}>
             ⚙
           </button>
@@ -159,7 +174,7 @@ export default function TickerDetail({ params }) {
         {loading && <p className="status">Loading chart...</p>}
         {error && <p className="status error">Error: {error}</p>}
         {!loading && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} activeIndicators={activeIndicators} gexLevels={gexLevels} />
+          <CandlestickChart data={ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} />
         )}
         {!loading && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>
