@@ -80,11 +80,10 @@ export default function CandlestickChart({
       })
       mainSeries.setData(parsedData.map(d => ({ time: d.time, value: d.close })))
     } else if (chartType === 'hollow') {
-      // Hollow candles: up candles have transparent body, down candles are filled
       const bgColor = '#1a1a2e'
       mainSeries = chart.addSeries(CandlestickSeries, {
         upColor: bgColor,
-        downColor,
+        downColor: bgColor,
         borderUpColor: upColor,
         borderDownColor: downColor,
         wickUpColor: upColor,
@@ -187,7 +186,7 @@ export default function CandlestickChart({
     } else if (chartType === 'hollow') {
       seriesRef.current.applyOptions({
         upColor: '#1a1a2e',
-        downColor,
+        downColor: '#1a1a2e',
         borderUpColor: upColor,
         borderDownColor: downColor,
         wickUpColor: upColor,
