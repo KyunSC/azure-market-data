@@ -136,6 +136,7 @@ export default function CandlestickChart({
 
       const maxBarWidth = container.clientWidth * 0.15
       const { buckets, maxVol } = vpData
+      const pocBucket = buckets.reduce((max, b) => b.volume > max.volume ? b : max, buckets[0])
 
       for (const bucket of buckets) {
         if (bucket.volume === 0) continue
@@ -147,10 +148,11 @@ export default function CandlestickChart({
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
         const x = container.clientWidth - barWidth - 55 // offset from price scale
 
-        ctx.fillStyle = 'rgba(100, 149, 237, 0.35)'
+        const isPOC = bucket === pocBucket
+        ctx.fillStyle = isPOC ? 'rgba(255, 235, 59, 0.5)' : 'rgba(100, 149, 237, 0.35)'
         ctx.fillRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
-        ctx.strokeStyle = 'rgba(100, 149, 237, 0.6)'
-        ctx.lineWidth = 0.5
+        ctx.strokeStyle = isPOC ? 'rgba(255, 235, 59, 0.8)' : 'rgba(100, 149, 237, 0.6)'
+        ctx.lineWidth = isPOC ? 1 : 0.5
         ctx.strokeRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
       }
     }
