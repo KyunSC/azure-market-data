@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { createChart, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts'
+import { createChart, CandlestickSeries, LineSeries, HistogramSeries, BarSeries, AreaSeries } from 'lightweight-charts'
 import { DEFAULT_CHART_COLORS } from './chartDefaults'
 import { AVAILABLE_INDICATORS, computeIndicator } from './indicators'
 
@@ -209,34 +209,132 @@ export default function CandlestickChart({
       }))
       .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close))
 
+    const lineData = parsedData.map(d => ({ time: d.time, value: d.close }))
+    const bgColor = '#1a1a2e'
+
     let mainSeries
-    if (chartType === 'line') {
-      mainSeries = chart.addSeries(LineSeries, {
-        color: upColor,
-        lineWidth: 2,
-      })
-      mainSeries.setData(parsedData.map(d => ({ time: d.time, value: d.close })))
-    } else if (chartType === 'hollow') {
-      const bgColor = '#1a1a2e'
-      mainSeries = chart.addSeries(CandlestickSeries, {
-        upColor: bgColor,
-        downColor: bgColor,
-        borderUpColor: upColor,
-        borderDownColor: downColor,
-        wickUpColor: upColor,
-        wickDownColor: downColor,
-      })
-      mainSeries.setData(parsedData)
-    } else {
-      mainSeries = chart.addSeries(CandlestickSeries, {
-        upColor,
-        downColor,
-        borderUpColor: upColor,
-        borderDownColor: downColor,
-        wickUpColor: upColor,
-        wickDownColor: downColor,
-      })
-      mainSeries.setData(parsedData)
+    switch (chartType) {
+      // --- Bar types ---
+      case 'ohlc':
+        mainSeries = chart.addSeries(BarSeries, {
+          upColor, downColor, openVisible: true, thinBars: false,
+        })
+        mainSeries.setData(parsedData)
+        break
+      case 'hlc':
+        mainSeries = chart.addSeries(BarSeries, {
+          upColor, downColor, openVisible: false, thinBars: false,
+        })
+        mainSeries.setData(parsedData)
+        break
+      case 'highlow':
+        mainSeries = chart.addSeries(BarSeries, {
+          upColor, downColor, openVisible: false, thinBars: true,
+        })
+        mainSeries.setData(parsedData)
+        break
+
+      // --- Candlestick types ---
+      case 'candlestick':
+        mainSeries = chart.addSeries(CandlestickSeries, {
+          upColor, downColor,
+          borderUpColor: upColor, borderDownColor: downColor,
+          wickUpColor: upColor, wickDownColor: downColor,
+        })
+        mainSeries.setData(parsedData)
+        break
+      case 'candlestick-trend': {
+        mainSeries = chart.addSeries(CandlestickSeries, {
+          upColor, downColor,
+          borderUpColor: upColor, borderDownColor: downColor,
+          wickUpColor: upColor, wickDownColor: downColor,
+        })
+        const trendData = parsedData.map((d, i) => {
+          const prev = i > 0 ? parsedData[i - 1].close : d.open
+          const isUp = d.close >= prev
+          return {
+            ...d,
+            color: isUp ? upColor : downColor,
+            borderColor: isUp ? upColor : downColor,
+            wickColor: isUp ? upColor : downColor,
+          }
+        })
+        mainSeries.setData(trendData)
+        break
+      }
+      case '3d-candlestick': {
+        mainSeries = chart.addSeries(CandlestickSeries, {
+          upColor, downColor,
+          borderUpColor: '#ffffff40', borderDownColor: '#ffffff40',
+          wickUpColor: upColor, wickDownColor: downColor,
+        })
+        mainSeries.setData(parsedData)
+        break
+      }
+      case 'hollow':
+        mainSeries = chart.addSeries(CandlestickSeries, {
+          upColor: bgColor, downColor: bgColor,
+          borderUpColor: upColor, borderDownColor: downColor,
+          wickUpColor: upColor, wickDownColor: downColor,
+        })
+        mainSeries.setData(parsedData)
+        break
+      case 'candlestick-flat':
+        mainSeries = chart.addSeries(CandlestickSeries, {
+          upColor, downColor,
+          borderUpColor: upColor, borderDownColor: downColor,
+          wickUpColor: '#888', wickDownColor: '#888',
+        })
+        mainSeries.setData(parsedData)
+        break
+
+      // --- Line types ---
+      case 'line':
+        mainSeries = chart.addSeries(LineSeries, { color: upColor, lineWidth: 2 })
+        mainSeries.setData(lineData)
+        break
+      case 'line-shaded':
+        mainSeries = chart.addSeries(AreaSeries, {
+          topColor: upColor + '60', bottomColor: upColor + '05',
+          lineColor: upColor, lineWidth: 2,
+        })
+        mainSeries.setData(lineData)
+        break
+      case 'line-gradient':
+        mainSeries = chart.addSeries(AreaSeries, {
+          topColor: upColor + '80', bottomColor: 'transparent',
+          lineColor: upColor, lineWidth: 2,
+        })
+        mainSeries.setData(lineData)
+        break
+      case 'square-line':
+        mainSeries = chart.addSeries(LineSeries, {
+          color: upColor, lineWidth: 2, lineType: 1,
+        })
+        mainSeries.setData(lineData)
+        break
+      case 'square-line-shaded':
+        mainSeries = chart.addSeries(AreaSeries, {
+          topColor: upColor + '60', bottomColor: upColor + '05',
+          lineColor: upColor, lineWidth: 2, lineType: 1,
+        })
+        mainSeries.setData(lineData)
+        break
+      case 'square-line-gradient':
+        mainSeries = chart.addSeries(AreaSeries, {
+          topColor: upColor + '80', bottomColor: 'transparent',
+          lineColor: upColor, lineWidth: 2, lineType: 1,
+        })
+        mainSeries.setData(lineData)
+        break
+
+      default:
+        mainSeries = chart.addSeries(CandlestickSeries, {
+          upColor, downColor,
+          borderUpColor: upColor, borderDownColor: downColor,
+          wickUpColor: upColor, wickDownColor: downColor,
+        })
+        mainSeries.setData(parsedData)
     }
     chart.timeScale().fitContent()
     chartRef.current = chart
@@ -340,25 +438,43 @@ export default function CandlestickChart({
 
   useEffect(() => {
     if (!seriesRef.current) return
-    if (chartType === 'line') {
-      seriesRef.current.applyOptions({ color: upColor })
-    } else if (chartType === 'hollow') {
-      seriesRef.current.applyOptions({
-        upColor: '#1a1a2e',
-        downColor: '#1a1a2e',
-        borderUpColor: upColor,
-        borderDownColor: downColor,
-        wickUpColor: upColor,
-        wickDownColor: downColor,
+    const s = seriesRef.current
+    const isLine = ['line', 'square-line'].includes(chartType)
+    const isArea = ['line-shaded', 'line-gradient', 'square-line-shaded', 'square-line-gradient'].includes(chartType)
+    const isBar = ['ohlc', 'hlc', 'highlow'].includes(chartType)
+    const isHollow = chartType === 'hollow'
+
+    if (isLine) {
+      s.applyOptions({ color: upColor })
+    } else if (isArea) {
+      const alpha = chartType.includes('gradient') ? '80' : '60'
+      const bottom = chartType.includes('gradient') ? 'transparent' : upColor + '05'
+      s.applyOptions({ lineColor: upColor, topColor: upColor + alpha, bottomColor: bottom })
+    } else if (isBar) {
+      s.applyOptions({ upColor, downColor })
+    } else if (isHollow) {
+      s.applyOptions({
+        upColor: '#1a1a2e', downColor: '#1a1a2e',
+        borderUpColor: upColor, borderDownColor: downColor,
+        wickUpColor: upColor, wickDownColor: downColor,
       })
-    } else {
-      seriesRef.current.applyOptions({
-        upColor,
-        downColor,
-        borderUpColor: upColor,
-        borderDownColor: downColor,
-        wickUpColor: upColor,
-        wickDownColor: downColor,
+    } else if (chartType === '3d-candlestick') {
+      s.applyOptions({
+        upColor, downColor,
+        borderUpColor: '#ffffff40', borderDownColor: '#ffffff40',
+        wickUpColor: upColor, wickDownColor: downColor,
+      })
+    } else if (chartType === 'candlestick-flat') {
+      s.applyOptions({
+        upColor, downColor,
+        borderUpColor: upColor, borderDownColor: downColor,
+        wickUpColor: '#888', wickDownColor: '#888',
+      })
+    } else if (['candlestick', 'candlestick-trend'].includes(chartType)) {
+      s.applyOptions({
+        upColor, downColor,
+        borderUpColor: upColor, borderDownColor: downColor,
+        wickUpColor: upColor, wickDownColor: downColor,
       })
     }
   }, [upColor, downColor, chartType])

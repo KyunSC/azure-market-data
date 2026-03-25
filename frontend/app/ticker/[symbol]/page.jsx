@@ -7,6 +7,7 @@ import TimeframeSelector from '../../../components/TimeframeSelector'
 import SettingsPopup from '../../../components/SettingsPopup'
 import IndicatorSelector from '../../../components/IndicatorSelector'
 import DrawingSelector from '../../../components/DrawingSelector'
+import ChartTypeSelector from '../../../components/ChartTypeSelector'
 import { DEFAULT_CHART_COLORS, CHART_COLORS_STORAGE_KEY } from '../../../components/chartDefaults'
 import { INDICATORS_STORAGE_KEY } from '../../../components/indicators'
 
@@ -139,26 +140,7 @@ export default function TickerDetail({ params }) {
             onClearAll={() => setDrawings([])}
             drawingCount={drawings.length}
           />
-          <div className="chart-type-toggle">
-            <button
-              className={chartType === 'candlestick' ? 'active' : ''}
-              onClick={() => setChartType('candlestick')}
-            >
-              Candles
-            </button>
-            <button
-              className={chartType === 'hollow' ? 'active' : ''}
-              onClick={() => setChartType('hollow')}
-            >
-              Hollow
-            </button>
-            <button
-              className={chartType === 'line' ? 'active' : ''}
-              onClick={() => setChartType('line')}
-            >
-              Line
-            </button>
-          </div>
+          <ChartTypeSelector chartType={chartType} onSelect={setChartType} />
           <button className="settings-button" onClick={() => setSettingsOpen(prev => !prev)}>
             ⚙
           </button>
