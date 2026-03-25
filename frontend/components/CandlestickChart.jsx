@@ -184,7 +184,7 @@ export default function CandlestickChart({
         horzLines: { color: '#2a2a4e' },
       },
       crosshair: {
-        mode: 1,
+        mode: 0,
       },
       rightPriceScale: {
         borderColor: '#2a2a4e',
