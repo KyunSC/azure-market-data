@@ -583,26 +583,45 @@ export default function CandlestickChart({
     }
   }, [drawings, previewPoint, drawingTool])
 
-  const handleDrawingClick = (e) => {
-    if (!drawingTool) return
+  const getPointFromEvent = (e) => {
     const chart = chartRef.current
     const series = seriesRef.current
-    if (!chart || !series) return
+    if (!chart || !series) return null
 
     const rect = chartContainerRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
 
-    const time = chart.timeScale().coordinateToTime(x)
+    let time = chart.timeScale().coordinateToTime(x)
     const price = series.coordinateToPrice(y)
-    if (time === null || price === null) return
+    if (price === null) return null
 
-    const point = { time, price }
+    // When clicking past the chart area (e.g. over volume profile),
+    // fall back to the last visible bar's time
+    if (time === null) {
+      const range = chart.timeScale().getVisibleLogicalRange()
+      if (range) {
+        time = chart.timeScale().coordinateToTime(
+          chart.timeScale().logicalToCoordinate(Math.floor(range.to))
+        )
+      }
+    }
+
+    return { time, price, pixelX: x }
+  }
+
+  const handleDrawingClick = (e) => {
+    if (!drawingTool) return
+    const point = getPointFromEvent(e)
+    if (!point) return
 
     if (drawingTool === 'horizontal') {
       onDrawingComplete({ type: 'horizontal', start: point, end: point })
       return
     }
+
+    // For non-horizontal tools, we need a valid time
+    if (point.time === null) return
 
     const state = drawingStateRef.current
     if (!state.startPoint) {
@@ -620,19 +639,11 @@ export default function CandlestickChart({
 
   const handleDrawingMouseMove = (e) => {
     if (!drawingTool || !drawingStateRef.current.startPoint) return
-    const chart = chartRef.current
-    const series = seriesRef.current
-    if (!chart || !series) return
+    const point = getPointFromEvent(e)
+    if (!point) return
+    if (point.time === null) return
 
-    const rect = chartContainerRef.current.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-
-    const time = chart.timeScale().coordinateToTime(x)
-    const price = series.coordinateToPrice(y)
-    if (time === null || price === null) return
-
-    setPreviewPoint({ time, price })
+    setPreviewPoint({ time: point.time, price: point.price })
   }
 
   // Reset drawing state when tool changes
