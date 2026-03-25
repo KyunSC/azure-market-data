@@ -50,6 +50,11 @@ function computeVolumeProfile(intradayData, numBuckets = 40) {
   return { buckets, maxVol }
 }
 
+const DRAWING_PRESET_COLORS = [
+  '#4fc3f7', '#ff6b6b', '#51cf66', '#ffd43b', '#cc5de8',
+  '#ff922b', '#20c997', '#748ffc', '#f06595', '#ffffff',
+]
+
 export default function CandlestickChart({
   data,
   symbol,
@@ -61,6 +66,7 @@ export default function CandlestickChart({
   drawingTool = null,
   drawings = [],
   onDrawingComplete = () => {},
+  onDrawingUpdate = () => {},
 }) {
   const chartContainerRef = useRef()
   const chartRef = useRef()
@@ -71,6 +77,7 @@ export default function CandlestickChart({
   const [vpData, setVpData] = useState(null)
   const drawingStateRef = useRef({ startPoint: null })
   const [previewPoint, setPreviewPoint] = useState(null)
+  const [editingDrawing, setEditingDrawing] = useState(null) // { index, x, y }
 
   // Fetch 1m intraday data for volume profile
   useEffect(() => {
@@ -517,7 +524,8 @@ export default function CandlestickChart({
       }
 
       for (const d of allDrawings) {
-        ctx.strokeStyle = d.preview ? 'rgba(79, 195, 247, 0.6)' : '#4fc3f7'
+        const drawColor = d.color || '#4fc3f7'
+        ctx.strokeStyle = d.preview ? 'rgba(79, 195, 247, 0.6)' : drawColor
         ctx.lineWidth = d.preview ? 1 : 1.5
         ctx.setLineDash(d.preview ? [4, 4] : [])
 
@@ -529,7 +537,7 @@ export default function CandlestickChart({
           ctx.lineTo(container.clientWidth, y)
           ctx.stroke()
           // Label
-          ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.6)' : '#4fc3f7'
+          ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.6)' : drawColor
           ctx.font = '11px sans-serif'
           ctx.fillText(d.start.price.toFixed(2), 4, y - 4)
         } else if (d.type === 'trendline' || d.type === 'ray') {
@@ -564,7 +572,7 @@ export default function CandlestickChart({
           const y = Math.min(p1.y, p2.y)
           const w = Math.abs(p2.x - p1.x)
           const h = Math.abs(p2.y - p1.y)
-          ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.08)' : 'rgba(79, 195, 247, 0.12)'
+          ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.08)' : (drawColor + '20')
           ctx.fillRect(x, y, w, h)
           ctx.strokeRect(x, y, w, h)
         } else if (d.type === 'rect-ray') {
@@ -576,7 +584,7 @@ export default function CandlestickChart({
           const y = Math.min(y1, y2)
           const h = Math.abs(y2 - y1)
           const w = container.clientWidth - x
-          ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.08)' : 'rgba(79, 195, 247, 0.12)'
+          ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.08)' : (drawColor + '20')
           ctx.fillRect(x, y, w, h)
           ctx.strokeRect(x, y, w, h)
         }
@@ -658,11 +666,85 @@ export default function CandlestickChart({
     setPreviewPoint({ time: point.time, price: point.price })
   }
 
+  const handleDrawingDoubleClick = (e) => {
+    if (drawingTool) return // don't open editor while drawing
+    const chart = chartRef.current
+    const series = seriesRef.current
+    if (!chart || !series) return
+
+    const rect = chartContainerRef.current.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+
+    const toPixel = (time, price) => ({
+      x: chart.timeScale().timeToCoordinate(time),
+      y: series.priceToCoordinate(price),
+    })
+
+    const THRESHOLD = 6
+
+    // Walk drawings in reverse so topmost gets priority
+    for (let i = drawings.length - 1; i >= 0; i--) {
+      const d = drawings[i]
+      let hit = false
+
+      if (d.type === 'horizontal') {
+        const y = series.priceToCoordinate(d.start.price)
+        if (y !== null && Math.abs(my - y) < THRESHOLD) hit = true
+      } else if (d.type === 'trendline' || d.type === 'ray') {
+        const p1 = toPixel(d.start.time, d.start.price)
+        const p2 = toPixel(d.end.time, d.end.price)
+        if (p1.x === null || p1.y === null || p2.x === null || p2.y === null) continue
+        // Point-to-line-segment distance
+        const dx = p2.x - p1.x, dy = p2.y - p1.y
+        const len2 = dx * dx + dy * dy
+        let t = len2 === 0 ? 0 : ((mx - p1.x) * dx + (my - p1.y) * dy) / len2
+        if (d.type === 'ray') t = Math.max(0, t) // ray extends forward
+        else t = Math.max(0, Math.min(1, t))
+        const px = p1.x + t * dx, py = p1.y + t * dy
+        const dist = Math.sqrt((mx - px) ** 2 + (my - py) ** 2)
+        if (dist < THRESHOLD) hit = true
+      } else if (d.type === 'rectangle') {
+        const p1 = toPixel(d.start.time, d.start.price)
+        const p2 = toPixel(d.end.time, d.end.price)
+        if (p1.x === null || p1.y === null || p2.x === null || p2.y === null) continue
+        const x0 = Math.min(p1.x, p2.x), x1 = Math.max(p1.x, p2.x)
+        const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y)
+        if (mx >= x0 - THRESHOLD && mx <= x1 + THRESHOLD && my >= y0 - THRESHOLD && my <= y1 + THRESHOLD) hit = true
+      } else if (d.type === 'rect-ray') {
+        const p1 = toPixel(d.start.time, d.start.price)
+        const y1 = series.priceToCoordinate(d.start.price)
+        const y2 = series.priceToCoordinate(d.end.price)
+        if (p1.x === null || y1 === null || y2 === null) continue
+        const yTop = Math.min(y1, y2), yBot = Math.max(y1, y2)
+        if (mx >= p1.x - THRESHOLD && my >= yTop - THRESHOLD && my <= yBot + THRESHOLD) hit = true
+      }
+
+      if (hit) {
+        setEditingDrawing({ index: i, x: e.clientX, y: e.clientY })
+        return
+      }
+    }
+  }
+
   // Reset drawing state when tool changes
   useEffect(() => {
     drawingStateRef.current.startPoint = null
     setPreviewPoint(null)
   }, [drawingTool])
+
+  // Close edit popup on outside click
+  const editPopupRef = useRef(null)
+  useEffect(() => {
+    if (editingDrawing === null) return
+    const handleOutside = (e) => {
+      if (editPopupRef.current && !editPopupRef.current.contains(e.target)) {
+        setEditingDrawing(null)
+      }
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [editingDrawing])
 
   return (
     <div ref={chartContainerRef} className="chart-container" style={{ position: 'relative' }}>
@@ -681,6 +763,7 @@ export default function CandlestickChart({
       <canvas
         ref={drawCanvasRef}
         onClick={handleDrawingClick}
+        onDoubleClick={handleDrawingDoubleClick}
         onMouseMove={handleDrawingMouseMove}
         style={{
           position: 'absolute',
@@ -688,11 +771,48 @@ export default function CandlestickChart({
           left: 0,
           width: '100%',
           height: '100%',
-          pointerEvents: drawingTool ? 'auto' : 'none',
+          pointerEvents: drawingTool || drawings.length > 0 ? 'auto' : 'none',
           cursor: drawingTool ? 'crosshair' : 'default',
           zIndex: 3,
         }}
       />
+      {editingDrawing !== null && (
+        <div
+          ref={editPopupRef}
+          className="drawing-edit-popup"
+          style={{
+            position: 'fixed',
+            left: editingDrawing.x + 8,
+            top: editingDrawing.y - 20,
+          }}
+        >
+          <div className="drawing-edit-header">
+            <span>Color</span>
+            <button
+              className="drawing-edit-delete"
+              onClick={() => {
+                onDrawingUpdate(editingDrawing.index, null)
+                setEditingDrawing(null)
+              }}
+            >
+              Delete
+            </button>
+          </div>
+          <div className="drawing-color-grid">
+            {DRAWING_PRESET_COLORS.map(c => (
+              <button
+                key={c}
+                className={`drawing-color-swatch${drawings[editingDrawing.index]?.color === c ? ' active' : ''}`}
+                style={{ background: c }}
+                onClick={() => {
+                  onDrawingUpdate(editingDrawing.index, { ...drawings[editingDrawing.index], color: c })
+                  setEditingDrawing(null)
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

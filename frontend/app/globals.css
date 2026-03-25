@@ -516,3 +516,61 @@ body {
   flex-shrink: 0;
   color: #4fc3f7;
 }
+
+/* Drawing Edit Popup */
+.drawing-edit-popup {
+  z-index: 200;
+  background: #16213e;
+  border: 1px solid #2a2a4e;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  min-width: 160px;
+}
+
+.drawing-edit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+  color: #aaa;
+  font-size: 0.8rem;
+}
+
+.drawing-edit-delete {
+  background: transparent;
+  border: none;
+  color: #ff6b6b;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.drawing-edit-delete:hover {
+  background: rgba(255, 107, 107, 0.15);
+}
+
+.drawing-color-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.drawing-color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.drawing-color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.drawing-color-swatch.active {
+  border-color: #fff;
+}
