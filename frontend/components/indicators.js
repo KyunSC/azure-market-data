@@ -5,6 +5,7 @@ export const AVAILABLE_INDICATORS = [
   { id: 'ema12', label: 'EMA 12', type: 'ema', period: 12, color: '#00bcd4' },
   { id: 'ema26', label: 'EMA 26', type: 'ema', period: 26, color: '#ffeb3b' },
   { id: 'bb20', label: 'Bollinger Bands', type: 'bb', period: 20, stdDev: 2, color: '#7c4dff' },
+  { id: 'vwap', label: 'VWAP', type: 'vwap', color: '#2196f3' },
   { id: 'volume', label: 'Volume', type: 'volume', color: '#5c6bc0' },
   { id: 'gex', label: 'GEX Levels (NQ)', type: 'gex', color: '#ffff00' },
 ]
@@ -68,6 +69,23 @@ function calcBollingerBands(data, period, stdDev) {
   return { upper, middle, lower }
 }
 
+function calcVWAP(data) {
+  const result = []
+  let cumVolume = 0
+  let cumTPV = 0
+
+  for (let i = 0; i < data.length; i++) {
+    const tp = (data[i].high + data[i].low + data[i].close) / 3
+    const vol = data[i].volume || 0
+    cumVolume += vol
+    cumTPV += tp * vol
+    if (cumVolume > 0) {
+      result.push({ time: data[i].time, value: cumTPV / cumVolume })
+    }
+  }
+  return result
+}
+
 export function computeIndicator(indicator, data) {
   if (!data || data.length === 0) return null
 
@@ -87,6 +105,8 @@ export function computeIndicator(indicator, data) {
     case 'ema':
       if (data.length < indicator.period) return null
       return { type: 'line', data: calcEMA(data, indicator.period), color: indicator.color }
+    case 'vwap':
+      return { type: 'line', data: calcVWAP(data), color: indicator.color }
     case 'bb':
       if (data.length < indicator.period) return null
       const bands = calcBollingerBands(data, indicator.period, indicator.stdDev)
