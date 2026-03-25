@@ -6,6 +6,7 @@ import CandlestickChart from '../../../components/CandlestickChart'
 import TimeframeSelector from '../../../components/TimeframeSelector'
 import SettingsPopup from '../../../components/SettingsPopup'
 import IndicatorSelector from '../../../components/IndicatorSelector'
+import DrawingSelector from '../../../components/DrawingSelector'
 import { DEFAULT_CHART_COLORS, CHART_COLORS_STORAGE_KEY } from '../../../components/chartDefaults'
 import { INDICATORS_STORAGE_KEY } from '../../../components/indicators'
 
@@ -30,6 +31,8 @@ export default function TickerDetail({ params }) {
   const [downColor, setDownColor] = useState(DEFAULT_CHART_COLORS.downColor)
   const [gexLevels, setGexLevels] = useState(null)
   const [chartType, setChartType] = useState('candlestick')
+  const [drawingTool, setDrawingTool] = useState(null)
+  const [drawings, setDrawings] = useState([])
 
   // Hydrate from localStorage after mount to avoid SSR/client mismatch
   useEffect(() => {
@@ -130,6 +133,12 @@ export default function TickerDetail({ params }) {
             activeIndicators={activeIndicators}
             onToggle={handleToggleIndicator}
           />
+          <DrawingSelector
+            activeTool={drawingTool}
+            onSelectTool={setDrawingTool}
+            onClearAll={() => setDrawings([])}
+            drawingCount={drawings.length}
+          />
           <div className="chart-type-toggle">
             <button
               className={chartType === 'candlestick' ? 'active' : ''}
@@ -180,7 +189,7 @@ export default function TickerDetail({ params }) {
         {loading && <p className="status">Loading chart...</p>}
         {error && <p className="status error">Error: {error}</p>}
         {!loading && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} />
+          <CandlestickChart data={ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); if (d.type === 'horizontal') return; setDrawingTool(null) }} />
         )}
         {!loading && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>

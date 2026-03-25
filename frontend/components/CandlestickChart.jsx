@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts'
 import { DEFAULT_CHART_COLORS } from './chartDefaults'
 import { AVAILABLE_INDICATORS, computeIndicator } from './indicators'
@@ -21,18 +21,153 @@ const GEX_LABELS = {
   significant_neg: 'GEX-',
 }
 
+function computeVolumeProfile(intradayData, numBuckets = 40) {
+  if (!intradayData || intradayData.length === 0) return null
+
+  let minPrice = Infinity, maxPrice = -Infinity
+  for (const d of intradayData) {
+    if (d.low < minPrice) minPrice = d.low
+    if (d.high > maxPrice) maxPrice = d.high
+  }
+
+  const range = maxPrice - minPrice
+  if (range <= 0) return null
+  const bucketSize = range / numBuckets
+
+  const buckets = Array.from({ length: numBuckets }, (_, i) => ({
+    priceBottom: minPrice + i * bucketSize,
+    priceTop: minPrice + (i + 1) * bucketSize,
+    volume: 0,
+  }))
+
+  for (const d of intradayData) {
+    const tp = (d.high + d.low + d.close) / 3
+    const idx = Math.min(Math.floor((tp - minPrice) / bucketSize), numBuckets - 1)
+    if (idx >= 0) buckets[idx].volume += d.volume
+  }
+
+  const maxVol = Math.max(...buckets.map(b => b.volume))
+  return { buckets, maxVol }
+}
+
 export default function CandlestickChart({
   data,
+  symbol,
   upColor = DEFAULT_CHART_COLORS.upColor,
   downColor = DEFAULT_CHART_COLORS.downColor,
   activeIndicators = [],
   gexLevels = null,
   chartType = 'candlestick',
+  drawingTool = null,
+  drawings = [],
+  onDrawingComplete = () => {},
 }) {
   const chartContainerRef = useRef()
   const chartRef = useRef()
   const seriesRef = useRef()
   const indicatorSeriesRef = useRef([])
+  const vpCanvasRef = useRef()
+  const drawCanvasRef = useRef()
+  const [vpData, setVpData] = useState(null)
+  const drawingStateRef = useRef({ startPoint: null })
+  const [previewPoint, setPreviewPoint] = useState(null)
+
+  // Fetch 1m intraday data for volume profile
+  useEffect(() => {
+    if (!activeIndicators.includes('vpro') || !symbol) {
+      setVpData(null)
+      return
+    }
+    const fetchVP = async () => {
+      try {
+        const res = await fetch(`/api/historical?symbol=${symbol}&period=1d&interval=1m`)
+        if (!res.ok) return
+        const result = await res.json()
+        const bars = (result.data || [])
+          .map(d => ({
+            time: Number(d.time),
+            open: Number(d.open),
+            high: Number(d.high),
+            low: Number(d.low),
+            close: Number(d.close),
+            volume: Number(d.volume),
+          }))
+          .filter(d => !isNaN(d.open) && !isNaN(d.volume))
+          .filter(d => {
+            // Filter to 9:30-16:00 ET (UTC-4 or UTC-5)
+            const date = new Date(d.time * 1000)
+            const et = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }))
+            const h = et.getHours(), m = et.getMinutes()
+            const mins = h * 60 + m
+            return mins >= 570 && mins <= 960 // 9:30=570, 16:00=960
+          })
+        setVpData(computeVolumeProfile(bars))
+      } catch {
+        setVpData(null)
+      }
+    }
+    fetchVP()
+  }, [activeIndicators, symbol])
+
+  // Draw volume profile on canvas overlay
+  useEffect(() => {
+    const canvas = vpCanvasRef.current
+    const chart = chartRef.current
+    const series = seriesRef.current
+    if (!canvas || !chart || !series || !vpData) {
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+      }
+      return
+    }
+
+    const drawProfile = () => {
+      const container = chartContainerRef.current
+      if (!container) return
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = container.clientWidth * dpr
+      canvas.height = container.clientHeight * dpr
+      canvas.style.width = container.clientWidth + 'px'
+      canvas.style.height = container.clientHeight + 'px'
+      const ctx = canvas.getContext('2d')
+      ctx.scale(dpr, dpr)
+      ctx.clearRect(0, 0, container.clientWidth, container.clientHeight)
+
+      const maxBarWidth = container.clientWidth * 0.15
+      const { buckets, maxVol } = vpData
+
+      for (const bucket of buckets) {
+        if (bucket.volume === 0) continue
+        const yTop = series.priceToCoordinate(bucket.priceTop)
+        const yBottom = series.priceToCoordinate(bucket.priceBottom)
+        if (yTop === null || yBottom === null) continue
+
+        const barHeight = Math.abs(yBottom - yTop)
+        const barWidth = (bucket.volume / maxVol) * maxBarWidth
+        const x = container.clientWidth - barWidth - 55 // offset from price scale
+
+        ctx.fillStyle = 'rgba(100, 149, 237, 0.35)'
+        ctx.fillRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
+        ctx.strokeStyle = 'rgba(100, 149, 237, 0.6)'
+        ctx.lineWidth = 0.5
+        ctx.strokeRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
+      }
+    }
+
+    drawProfile()
+
+    const sub = chart.timeScale().subscribeVisibleLogicalRangeChange(drawProfile)
+    chart.subscribeCrosshairMove(drawProfile)
+    const resizeObs = new ResizeObserver(drawProfile)
+    resizeObs.observe(chartContainerRef.current)
+
+    return () => {
+      sub && chart.timeScale().unsubscribeVisibleLogicalRangeChange(drawProfile)
+      chart.unsubscribeCrosshairMove(drawProfile)
+      resizeObs.disconnect()
+    }
+  }, [vpData, data])
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -204,5 +339,197 @@ export default function CandlestickChart({
     }
   }, [upColor, downColor, chartType])
 
-  return <div ref={chartContainerRef} className="chart-container" />
+  // Draw all completed drawings + preview on canvas
+  useEffect(() => {
+    const canvas = drawCanvasRef.current
+    const chart = chartRef.current
+    const series = seriesRef.current
+    if (!canvas || !chart || !series) return
+
+    const renderDrawings = () => {
+      const container = chartContainerRef.current
+      if (!container) return
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = container.clientWidth * dpr
+      canvas.height = container.clientHeight * dpr
+      canvas.style.width = container.clientWidth + 'px'
+      canvas.style.height = container.clientHeight + 'px'
+      const ctx = canvas.getContext('2d')
+      ctx.scale(dpr, dpr)
+      ctx.clearRect(0, 0, container.clientWidth, container.clientHeight)
+
+      const toPixel = (time, price) => {
+        const x = chart.timeScale().timeToCoordinate(time)
+        const y = series.priceToCoordinate(price)
+        return { x, y }
+      }
+
+      const allDrawings = [...drawings]
+      // Add preview drawing if in progress
+      const state = drawingStateRef.current
+      if (state.startPoint && previewPoint && drawingTool) {
+        allDrawings.push({
+          type: drawingTool,
+          start: state.startPoint,
+          end: previewPoint,
+          preview: true,
+        })
+      }
+
+      for (const d of allDrawings) {
+        ctx.strokeStyle = d.preview ? 'rgba(79, 195, 247, 0.6)' : '#4fc3f7'
+        ctx.lineWidth = d.preview ? 1 : 1.5
+        ctx.setLineDash(d.preview ? [4, 4] : [])
+
+        if (d.type === 'horizontal') {
+          const y = series.priceToCoordinate(d.start.price)
+          if (y === null) continue
+          ctx.beginPath()
+          ctx.moveTo(0, y)
+          ctx.lineTo(container.clientWidth, y)
+          ctx.stroke()
+          // Label
+          ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.6)' : '#4fc3f7'
+          ctx.font = '11px sans-serif'
+          ctx.fillText(d.start.price.toFixed(2), 4, y - 4)
+        } else if (d.type === 'trendline' || d.type === 'ray') {
+          const p1 = toPixel(d.start.time, d.start.price)
+          const p2 = toPixel(d.end.time, d.end.price)
+          if (p1.x === null || p1.y === null || p2.x === null || p2.y === null) continue
+          ctx.beginPath()
+          if (d.type === 'ray') {
+            // Extend line to the right edge
+            const dx = p2.x - p1.x
+            const dy = p2.y - p1.y
+            if (dx !== 0) {
+              const slope = dy / dx
+              const endX = container.clientWidth
+              const endY = p1.y + slope * (endX - p1.x)
+              ctx.moveTo(p1.x, p1.y)
+              ctx.lineTo(endX, endY)
+            } else {
+              ctx.moveTo(p1.x, 0)
+              ctx.lineTo(p1.x, container.clientHeight)
+            }
+          } else {
+            ctx.moveTo(p1.x, p1.y)
+            ctx.lineTo(p2.x, p2.y)
+          }
+          ctx.stroke()
+        } else if (d.type === 'rectangle') {
+          const p1 = toPixel(d.start.time, d.start.price)
+          const p2 = toPixel(d.end.time, d.end.price)
+          if (p1.x === null || p1.y === null || p2.x === null || p2.y === null) continue
+          const x = Math.min(p1.x, p2.x)
+          const y = Math.min(p1.y, p2.y)
+          const w = Math.abs(p2.x - p1.x)
+          const h = Math.abs(p2.y - p1.y)
+          ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.08)' : 'rgba(79, 195, 247, 0.12)'
+          ctx.fillRect(x, y, w, h)
+          ctx.strokeRect(x, y, w, h)
+        }
+      }
+    }
+
+    renderDrawings()
+
+    const sub = chart.timeScale().subscribeVisibleLogicalRangeChange(renderDrawings)
+    const resizeObs = new ResizeObserver(renderDrawings)
+    resizeObs.observe(chartContainerRef.current)
+
+    return () => {
+      sub && chart.timeScale().unsubscribeVisibleLogicalRangeChange(renderDrawings)
+      resizeObs.disconnect()
+    }
+  }, [drawings, previewPoint, drawingTool])
+
+  const handleDrawingClick = (e) => {
+    if (!drawingTool) return
+    const chart = chartRef.current
+    const series = seriesRef.current
+    if (!chart || !series) return
+
+    const rect = chartContainerRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    const time = chart.timeScale().coordinateToTime(x)
+    const price = series.coordinateToPrice(y)
+    if (time === null || price === null) return
+
+    const point = { time, price }
+
+    if (drawingTool === 'horizontal') {
+      onDrawingComplete({ type: 'horizontal', start: point, end: point })
+      return
+    }
+
+    const state = drawingStateRef.current
+    if (!state.startPoint) {
+      state.startPoint = point
+    } else {
+      onDrawingComplete({
+        type: drawingTool,
+        start: state.startPoint,
+        end: point,
+      })
+      state.startPoint = null
+      setPreviewPoint(null)
+    }
+  }
+
+  const handleDrawingMouseMove = (e) => {
+    if (!drawingTool || !drawingStateRef.current.startPoint) return
+    const chart = chartRef.current
+    const series = seriesRef.current
+    if (!chart || !series) return
+
+    const rect = chartContainerRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    const time = chart.timeScale().coordinateToTime(x)
+    const price = series.coordinateToPrice(y)
+    if (time === null || price === null) return
+
+    setPreviewPoint({ time, price })
+  }
+
+  // Reset drawing state when tool changes
+  useEffect(() => {
+    drawingStateRef.current.startPoint = null
+    setPreviewPoint(null)
+  }, [drawingTool])
+
+  return (
+    <div ref={chartContainerRef} className="chart-container" style={{ position: 'relative' }}>
+      {activeIndicators.includes('vpro') && (
+        <canvas
+          ref={vpCanvasRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none',
+            zIndex: 2,
+          }}
+        />
+      )}
+      <canvas
+        ref={drawCanvasRef}
+        onClick={handleDrawingClick}
+        onMouseMove={handleDrawingMouseMove}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: drawingTool ? 'auto' : 'none',
+          cursor: drawingTool ? 'crosshair' : 'default',
+          zIndex: 3,
+        }}
+      />
+    </div>
+  )
 }

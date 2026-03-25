@@ -464,3 +464,12 @@ body {
 .indicator-clear:hover {
   background: rgba(255, 107, 107, 0.1);
 }
+
+/* Drawing Tool Icons */
+.drawing-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  color: #4fc3f7;
+}

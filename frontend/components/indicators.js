@@ -6,6 +6,7 @@ export const AVAILABLE_INDICATORS = [
   { id: 'ema26', label: 'EMA 26', type: 'ema', period: 26, color: '#ffeb3b' },
   { id: 'bb20', label: 'Bollinger Bands', type: 'bb', period: 20, stdDev: 2, color: '#7c4dff' },
   { id: 'vwap', label: 'VWAP', type: 'vwap', color: '#2196f3' },
+  { id: 'vpro', label: 'Volume Profile', type: 'vpro', color: '#5c6bc0' },
   { id: 'volume', label: 'Volume', type: 'volume', color: '#5c6bc0' },
   { id: 'gex', label: 'GEX Levels (NQ)', type: 'gex', color: '#ffff00' },
 ]
