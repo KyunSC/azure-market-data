@@ -1,12 +1,13 @@
 export default function TimeframeSelector({ period, interval, onPeriodChange, onIntervalChange }) {
   const periods = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', 'max']
-  const intervals = ['1m', '5m', '15m', '1h', '4h', '1d', '1wk']
+  const intervals = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1wk']
 
   // Valid periods for each interval (based on available seeded data)
   const validPeriods = {
     '1m':  ['1d', '5d'],
     '5m':  ['1d', '5d', '1mo', '3mo'],
     '15m': ['1d', '5d', '1mo', '3mo'],
+    '30m': ['1d', '5d', '1mo', '3mo'],
     '1h':  ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y'],
     '4h':  ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y'],
     '1d':  ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', 'max'],

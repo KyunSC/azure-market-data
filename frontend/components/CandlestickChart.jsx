@@ -271,7 +271,7 @@ export default function CandlestickChart({
           lastValueVisible: false,
         })
         series.setData(result.data)
-        indicatorSeriesRef.current.push(series)
+        indicatorSeriesRef.current.push({ series, data: result.data })
       } else if (result.type === 'bb') {
         for (const band of [result.upper, result.middle, result.lower]) {
           const series = chart.addSeries(LineSeries, {
@@ -283,7 +283,7 @@ export default function CandlestickChart({
             lastValueVisible: false,
           })
           series.setData(band.data)
-          indicatorSeriesRef.current.push(series)
+          indicatorSeriesRef.current.push({ series, data: band.data })
         }
       }
     }
@@ -303,6 +303,31 @@ export default function CandlestickChart({
         })
       }
     }
+
+    // Show crosshair marker on indicator lines only when cursor is within 15px
+    chart.subscribeCrosshairMove((param) => {
+      for (const entry of indicatorSeriesRef.current) {
+        const { series: indSeries } = entry
+        const seriesData = param.seriesData?.get(indSeries)
+        if (!seriesData || seriesData.value === undefined) {
+          indSeries.applyOptions({ crosshairMarkerVisible: false })
+          continue
+        }
+        const indY = indSeries.priceToCoordinate(seriesData.value)
+        const mainData = param.seriesData?.get(mainSeries)
+        let cursorY = null
+        if (mainData) {
+          const price = mainData.close !== undefined ? mainData.close : mainData.value
+          if (price !== undefined) cursorY = mainSeries.priceToCoordinate(price)
+        }
+        if (indY !== null && param.point?.y !== undefined) {
+          const dist = Math.abs(param.point.y - indY)
+          indSeries.applyOptions({ crosshairMarkerVisible: dist < 2 })
+        } else {
+          indSeries.applyOptions({ crosshairMarkerVisible: false })
+        }
+      }
+    })
 
     const handleResize = () => {
       if (chartContainerRef.current) {
