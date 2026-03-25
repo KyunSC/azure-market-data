@@ -261,7 +261,7 @@ export default function CandlestickChart({
           scaleMargins: { top: 0.8, bottom: 0 },
         })
         series.setData(result.data)
-        indicatorSeriesRef.current.push(series)
+        indicatorSeriesRef.current.push({ series, data: result.data })
       } else if (result.type === 'line') {
         const series = chart.addSeries(LineSeries, {
           color: result.color,
@@ -304,27 +304,22 @@ export default function CandlestickChart({
       }
     }
 
-    // Show crosshair marker on indicator lines only when cursor is within 15px
+    // Show crosshair marker on indicator lines only when cursor is within 2px
+    const markerState = new Map()
     chart.subscribeCrosshairMove((param) => {
       for (const entry of indicatorSeriesRef.current) {
         const { series: indSeries } = entry
+        let shouldShow = false
         const seriesData = param.seriesData?.get(indSeries)
-        if (!seriesData || seriesData.value === undefined) {
-          indSeries.applyOptions({ crosshairMarkerVisible: false })
-          continue
+        if (seriesData && seriesData.value !== undefined && param.point?.y !== undefined) {
+          const indY = indSeries.priceToCoordinate(seriesData.value)
+          if (indY !== null) {
+            shouldShow = Math.abs(param.point.y - indY) < 2
+          }
         }
-        const indY = indSeries.priceToCoordinate(seriesData.value)
-        const mainData = param.seriesData?.get(mainSeries)
-        let cursorY = null
-        if (mainData) {
-          const price = mainData.close !== undefined ? mainData.close : mainData.value
-          if (price !== undefined) cursorY = mainSeries.priceToCoordinate(price)
-        }
-        if (indY !== null && param.point?.y !== undefined) {
-          const dist = Math.abs(param.point.y - indY)
-          indSeries.applyOptions({ crosshairMarkerVisible: dist < 2 })
-        } else {
-          indSeries.applyOptions({ crosshairMarkerVisible: false })
+        if (markerState.get(indSeries) !== shouldShow) {
+          markerState.set(indSeries, shouldShow)
+          indSeries.applyOptions({ crosshairMarkerVisible: shouldShow })
         }
       }
     })
