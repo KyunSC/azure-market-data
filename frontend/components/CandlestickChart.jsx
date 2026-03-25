@@ -55,6 +55,82 @@ const DRAWING_PRESET_COLORS = [
   '#ff922b', '#20c997', '#748ffc', '#f06595', '#ffffff',
 ]
 
+const HANDLE_RADIUS = 5
+const HANDLE_HIT_RADIUS = 10
+
+function getDrawingHandles(d, toPixel, series, containerWidth) {
+  const handles = []
+  if (d.type === 'horizontal') {
+    const y = series.priceToCoordinate(d.start.price)
+    if (y !== null) handles.push({ id: 'start', x: 40, y })
+  } else if (d.type === 'trendline' || d.type === 'ray') {
+    const p1 = toPixel(d.start.time, d.start.price)
+    const p2 = toPixel(d.end.time, d.end.price)
+    if (p1.x !== null && p1.y !== null) handles.push({ id: 'start', x: p1.x, y: p1.y })
+    if (p2.x !== null && p2.y !== null) handles.push({ id: 'end', x: p2.x, y: p2.y })
+  } else if (d.type === 'rectangle') {
+    const p1 = toPixel(d.start.time, d.start.price)
+    const p2 = toPixel(d.end.time, d.end.price)
+    if (p1.x !== null && p1.y !== null && p2.x !== null && p2.y !== null) {
+      handles.push({ id: 'start', x: p1.x, y: p1.y })
+      handles.push({ id: 'end', x: p2.x, y: p2.y })
+      handles.push({ id: 'corner1', x: p1.x, y: p2.y })
+      handles.push({ id: 'corner2', x: p2.x, y: p1.y })
+    }
+  } else if (d.type === 'rect-ray') {
+    const p1 = toPixel(d.start.time, d.start.price)
+    const y1 = series.priceToCoordinate(d.start.price)
+    const y2 = series.priceToCoordinate(d.end.price)
+    if (p1.x !== null && y1 !== null && y2 !== null) {
+      handles.push({ id: 'start', x: p1.x, y: y1 })
+      handles.push({ id: 'end', x: p1.x, y: y2 })
+    }
+  }
+  return handles
+}
+
+function hitTestHandle(handles, mx, my) {
+  for (const h of handles) {
+    if ((mx - h.x) ** 2 + (my - h.y) ** 2 <= HANDLE_HIT_RADIUS ** 2) return h
+  }
+  return null
+}
+
+function hitTestBody(d, mx, my, toPixel, series, containerWidth) {
+  const T = 6
+  if (d.type === 'horizontal') {
+    const y = series.priceToCoordinate(d.start.price)
+    return y !== null && Math.abs(my - y) < T
+  }
+  if (d.type === 'trendline' || d.type === 'ray') {
+    const p1 = toPixel(d.start.time, d.start.price)
+    const p2 = toPixel(d.end.time, d.end.price)
+    if (p1.x === null || p1.y === null || p2.x === null || p2.y === null) return false
+    const dx = p2.x - p1.x, dy = p2.y - p1.y
+    const len2 = dx * dx + dy * dy
+    let t = len2 === 0 ? 0 : ((mx - p1.x) * dx + (my - p1.y) * dy) / len2
+    if (d.type === 'ray') t = Math.max(0, t)
+    else t = Math.max(0, Math.min(1, t))
+    const px = p1.x + t * dx, py = p1.y + t * dy
+    return Math.sqrt((mx - px) ** 2 + (my - py) ** 2) < T
+  }
+  if (d.type === 'rectangle') {
+    const p1 = toPixel(d.start.time, d.start.price)
+    const p2 = toPixel(d.end.time, d.end.price)
+    if (p1.x === null || p1.y === null || p2.x === null || p2.y === null) return false
+    return mx >= Math.min(p1.x, p2.x) - T && mx <= Math.max(p1.x, p2.x) + T &&
+           my >= Math.min(p1.y, p2.y) - T && my <= Math.max(p1.y, p2.y) + T
+  }
+  if (d.type === 'rect-ray') {
+    const p1 = toPixel(d.start.time, d.start.price)
+    const y1 = series.priceToCoordinate(d.start.price)
+    const y2 = series.priceToCoordinate(d.end.price)
+    if (p1.x === null || y1 === null || y2 === null) return false
+    return mx >= p1.x - T && my >= Math.min(y1, y2) - T && my <= Math.max(y1, y2) + T
+  }
+  return false
+}
+
 export default function CandlestickChart({
   data,
   symbol,
@@ -78,6 +154,9 @@ export default function CandlestickChart({
   const drawingStateRef = useRef({ startPoint: null })
   const [previewPoint, setPreviewPoint] = useState(null)
   const [editingDrawing, setEditingDrawing] = useState(null) // { index, x, y }
+  const hoveredIdxRef = useRef(null)
+  const dragRef = useRef(null) // { index, handle, startTime, startPrice, original, current }
+  const renderFnRef = useRef(null)
 
   // Fetch 1m intraday data for volume profile
   useEffect(() => {
@@ -511,7 +590,10 @@ export default function CandlestickChart({
         return { x, y }
       }
 
-      const allDrawings = [...drawings]
+      // Use drag preview for the dragged drawing
+      const allDrawings = drawings.map((d, i) =>
+        dragRef.current && dragRef.current.index === i ? dragRef.current.current : d
+      )
       // Add preview drawing if in progress
       const state = drawingStateRef.current
       if (state.startPoint && previewPoint && drawingTool) {
@@ -589,8 +671,28 @@ export default function CandlestickChart({
           ctx.strokeRect(x, y, w, h)
         }
       }
+
+      // Draw handles for hovered or dragged drawing
+      const activeIdx = dragRef.current?.index ?? hoveredIdxRef.current
+      if (activeIdx !== null && activeIdx >= 0 && activeIdx < allDrawings.length) {
+        const activeDraw = allDrawings[activeIdx]
+        if (activeDraw && !activeDraw.preview) {
+          const handles = getDrawingHandles(activeDraw, toPixel, series, container.clientWidth)
+          ctx.setLineDash([])
+          for (const h of handles) {
+            ctx.beginPath()
+            ctx.arc(h.x, h.y, HANDLE_RADIUS, 0, Math.PI * 2)
+            ctx.fillStyle = '#ffffff'
+            ctx.fill()
+            ctx.strokeStyle = activeDraw.color || '#4fc3f7'
+            ctx.lineWidth = 2
+            ctx.stroke()
+          }
+        }
+      }
     }
 
+    renderFnRef.current = renderDrawings
     renderDrawings()
 
     const sub = chart.timeScale().subscribeVisibleLogicalRangeChange(renderDrawings)
@@ -666,72 +768,209 @@ export default function CandlestickChart({
     setPreviewPoint({ time: point.time, price: point.price })
   }
 
-  const handleDrawingDoubleClick = (e) => {
-    if (drawingTool) return // don't open editor while drawing
-    const chart = chartRef.current
-    const series = seriesRef.current
-    if (!chart || !series) return
-
-    const rect = chartContainerRef.current.getBoundingClientRect()
-    const mx = e.clientX - rect.left
-    const my = e.clientY - rect.top
-
-    const toPixel = (time, price) => ({
-      x: chart.timeScale().timeToCoordinate(time),
-      y: series.priceToCoordinate(price),
-    })
-
-    const THRESHOLD = 6
-
-    // Walk drawings in reverse so topmost gets priority
-    for (let i = drawings.length - 1; i >= 0; i--) {
-      const d = drawings[i]
-      let hit = false
-
-      if (d.type === 'horizontal') {
-        const y = series.priceToCoordinate(d.start.price)
-        if (y !== null && Math.abs(my - y) < THRESHOLD) hit = true
-      } else if (d.type === 'trendline' || d.type === 'ray') {
-        const p1 = toPixel(d.start.time, d.start.price)
-        const p2 = toPixel(d.end.time, d.end.price)
-        if (p1.x === null || p1.y === null || p2.x === null || p2.y === null) continue
-        // Point-to-line-segment distance
-        const dx = p2.x - p1.x, dy = p2.y - p1.y
-        const len2 = dx * dx + dy * dy
-        let t = len2 === 0 ? 0 : ((mx - p1.x) * dx + (my - p1.y) * dy) / len2
-        if (d.type === 'ray') t = Math.max(0, t) // ray extends forward
-        else t = Math.max(0, Math.min(1, t))
-        const px = p1.x + t * dx, py = p1.y + t * dy
-        const dist = Math.sqrt((mx - px) ** 2 + (my - py) ** 2)
-        if (dist < THRESHOLD) hit = true
-      } else if (d.type === 'rectangle') {
-        const p1 = toPixel(d.start.time, d.start.price)
-        const p2 = toPixel(d.end.time, d.end.price)
-        if (p1.x === null || p1.y === null || p2.x === null || p2.y === null) continue
-        const x0 = Math.min(p1.x, p2.x), x1 = Math.max(p1.x, p2.x)
-        const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y)
-        if (mx >= x0 - THRESHOLD && mx <= x1 + THRESHOLD && my >= y0 - THRESHOLD && my <= y1 + THRESHOLD) hit = true
-      } else if (d.type === 'rect-ray') {
-        const p1 = toPixel(d.start.time, d.start.price)
-        const y1 = series.priceToCoordinate(d.start.price)
-        const y2 = series.priceToCoordinate(d.end.price)
-        if (p1.x === null || y1 === null || y2 === null) continue
-        const yTop = Math.min(y1, y2), yBot = Math.max(y1, y2)
-        if (mx >= p1.x - THRESHOLD && my >= yTop - THRESHOLD && my <= yBot + THRESHOLD) hit = true
-      }
-
-      if (hit) {
-        setEditingDrawing({ index: i, x: e.clientX, y: e.clientY })
-        return
-      }
-    }
-  }
-
   // Reset drawing state when tool changes
   useEffect(() => {
     drawingStateRef.current.startPoint = null
     setPreviewPoint(null)
   }, [drawingTool])
+
+  // Hover detection, drag, and double-click on drawings
+  useEffect(() => {
+    const container = chartContainerRef.current
+    if (!container || drawingTool) {
+      // Clear hover when tool is active
+      if (hoveredIdxRef.current !== null) {
+        hoveredIdxRef.current = null
+        renderFnRef.current?.()
+      }
+      return
+    }
+    if (drawings.length === 0) return
+
+    const getChartCoords = (e) => {
+      const chart = chartRef.current
+      const series = seriesRef.current
+      if (!chart || !series) return null
+      const rect = container.getBoundingClientRect()
+      const mx = e.clientX - rect.left
+      const my = e.clientY - rect.top
+      let time = chart.timeScale().coordinateToTime(mx)
+      const price = series.coordinateToPrice(my)
+      return { mx, my, time, price }
+    }
+
+    const toPixel = (time, price) => {
+      const chart = chartRef.current
+      const series = seriesRef.current
+      if (!chart || !series) return { x: null, y: null }
+      return {
+        x: chart.timeScale().timeToCoordinate(time),
+        y: series.priceToCoordinate(price),
+      }
+    }
+
+    const getSeries = () => seriesRef.current
+
+    const findDrawingAt = (mx, my) => {
+      const series = getSeries()
+      if (!series) return { index: null, onHandle: null }
+      for (let i = drawings.length - 1; i >= 0; i--) {
+        const d = drawings[i]
+        const handles = getDrawingHandles(d, toPixel, series, container.clientWidth)
+        const h = hitTestHandle(handles, mx, my)
+        if (h) return { index: i, onHandle: h }
+        if (hitTestBody(d, mx, my, toPixel, series, container.clientWidth))
+          return { index: i, onHandle: null }
+      }
+      return { index: null, onHandle: null }
+    }
+
+    const onMouseMove = (e) => {
+      const coords = getChartCoords(e)
+      if (!coords) return
+
+      // --- Active drag ---
+      if (dragRef.current) {
+        const drag = dragRef.current
+        const { time, price } = coords
+        if (price === null) return
+        const orig = drag.original
+        const newD = { ...drag.current, start: { ...drag.current.start }, end: { ...drag.current.end } }
+
+        if (drag.handle === 'body') {
+          const dPrice = price - drag.startPrice
+          if (orig.type === 'horizontal') {
+            newD.start.price = orig.start.price + dPrice
+            newD.end.price = orig.end.price + dPrice
+          } else {
+            // Time delta: compute pixel delta and convert
+            const chart = chartRef.current
+            if (!chart || time === null || drag.startTime === null) {
+              newD.start.price = orig.start.price + dPrice
+              newD.end.price = orig.end.price + dPrice
+            } else {
+              const dTime = time - drag.startTime
+              newD.start.time = orig.start.time + dTime
+              newD.end.time = orig.end.time + dTime
+              newD.start.price = orig.start.price + dPrice
+              newD.end.price = orig.end.price + dPrice
+            }
+          }
+        } else if (drag.handle === 'start') {
+          if (orig.type === 'horizontal') {
+            newD.start.price = price
+            newD.end.price = price
+          } else {
+            newD.start = { time: time || orig.start.time, price }
+          }
+        } else if (drag.handle === 'end') {
+          if (orig.type === 'horizontal') {
+            newD.start.price = price
+            newD.end.price = price
+          } else {
+            newD.end = { time: time || orig.end.time, price }
+          }
+        } else if (drag.handle === 'corner1') {
+          // corner1 = (start.time, end.price)
+          newD.start = { ...newD.start, time: time || orig.start.time }
+          newD.end = { ...newD.end, price }
+        } else if (drag.handle === 'corner2') {
+          // corner2 = (end.time, start.price)
+          newD.end = { ...newD.end, time: time || orig.end.time }
+          newD.start = { ...newD.start, price }
+        }
+
+        drag.current = newD
+        renderFnRef.current?.()
+        return
+      }
+
+      // --- Hover detection ---
+      const { mx, my } = coords
+      const { index, onHandle } = findDrawingAt(mx, my)
+
+      if (index !== hoveredIdxRef.current) {
+        hoveredIdxRef.current = index
+        renderFnRef.current?.()
+      }
+
+      if (index !== null) {
+        container.style.cursor = onHandle ? 'grab' : 'move'
+      } else {
+        container.style.cursor = ''
+      }
+    }
+
+    const onMouseDown = (e) => {
+      if (hoveredIdxRef.current === null) return
+      const coords = getChartCoords(e)
+      if (!coords) return
+      const { mx, my, time, price } = coords
+      if (price === null) return
+
+      const series = getSeries()
+      if (!series) return
+      const d = drawings[hoveredIdxRef.current]
+      const handles = getDrawingHandles(d, toPixel, series, container.clientWidth)
+      const onHandle = hitTestHandle(handles, mx, my)
+      const handle = onHandle ? onHandle.id : 'body'
+
+      // For body, confirm we're actually on the drawing
+      if (handle === 'body' && !hitTestBody(d, mx, my, toPixel, series, container.clientWidth)) return
+
+      e.preventDefault()
+      e.stopPropagation()
+
+      // Disable chart pan/zoom
+      const chart = chartRef.current
+      if (chart) chart.applyOptions({ handleScroll: false, handleScale: false })
+
+      dragRef.current = {
+        index: hoveredIdxRef.current,
+        handle,
+        startTime: time,
+        startPrice: price,
+        original: { ...d, start: { ...d.start }, end: { ...d.end } },
+        current: { ...d, start: { ...d.start }, end: { ...d.end } },
+      }
+      container.style.cursor = 'grabbing'
+    }
+
+    const onMouseUp = () => {
+      if (!dragRef.current) return
+      const chart = chartRef.current
+      if (chart) chart.applyOptions({ handleScroll: true, handleScale: true })
+
+      onDrawingUpdate(dragRef.current.index, dragRef.current.current)
+      dragRef.current = null
+      hoveredIdxRef.current = null
+      container.style.cursor = ''
+      renderFnRef.current?.()
+    }
+
+    const onDblClick = (e) => {
+      if (drawingTool) return
+      const coords = getChartCoords(e)
+      if (!coords) return
+      const { index } = findDrawingAt(coords.mx, coords.my)
+      if (index !== null) {
+        setEditingDrawing({ index, x: e.clientX, y: e.clientY })
+      }
+    }
+
+    container.addEventListener('mousemove', onMouseMove)
+    container.addEventListener('mousedown', onMouseDown, true)
+    document.addEventListener('mouseup', onMouseUp)
+    container.addEventListener('dblclick', onDblClick)
+
+    return () => {
+      container.removeEventListener('mousemove', onMouseMove)
+      container.removeEventListener('mousedown', onMouseDown, true)
+      document.removeEventListener('mouseup', onMouseUp)
+      container.removeEventListener('dblclick', onDblClick)
+      container.style.cursor = ''
+    }
+  }, [drawings, drawingTool, onDrawingUpdate])
 
   // Close edit popup on outside click
   const editPopupRef = useRef(null)
@@ -763,7 +1002,6 @@ export default function CandlestickChart({
       <canvas
         ref={drawCanvasRef}
         onClick={handleDrawingClick}
-        onDoubleClick={handleDrawingDoubleClick}
         onMouseMove={handleDrawingMouseMove}
         style={{
           position: 'absolute',
@@ -771,7 +1009,7 @@ export default function CandlestickChart({
           left: 0,
           width: '100%',
           height: '100%',
-          pointerEvents: drawingTool || drawings.length > 0 ? 'auto' : 'none',
+          pointerEvents: drawingTool ? 'auto' : 'none',
           cursor: drawingTool ? 'crosshair' : 'default',
           zIndex: 3,
         }}
