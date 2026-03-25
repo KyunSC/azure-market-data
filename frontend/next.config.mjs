@@ -1,18 +1,20 @@
 /** @type {import('next').NextConfig} */
+const apiUrl = process.env.API_URL || 'http://localhost:8080'
+
 const nextConfig = {
   async rewrites() {
     return [
       {
         source: '/api/market',
-        destination: 'http://localhost:8080/api/market',
+        destination: `${apiUrl}/api/market`,
       },
       {
         source: '/api/historical',
-        destination: 'http://localhost:8080/api/historical',
+        destination: `${apiUrl}/api/historical`,
       },
       {
         source: '/api/gamma',
-        destination: 'http://localhost:8080/api/gamma',
+        destination: `${apiUrl}/api/gamma`,
       },
     ]
   },
