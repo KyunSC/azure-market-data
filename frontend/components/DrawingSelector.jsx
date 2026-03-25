@@ -6,6 +6,7 @@ const DRAWING_TOOLS = [
   { id: 'trendline', label: 'Trend Line', icon: '/' },
   { id: 'horizontal', label: 'Horizontal Line', icon: '―' },
   { id: 'rectangle', label: 'Rectangle', icon: '▭' },
+  { id: 'rect-ray', label: 'Rectangle Ray', icon: '▭⟶' },
   { id: 'ray', label: 'Ray', icon: '⟶' },
 ]
 

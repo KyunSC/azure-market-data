@@ -567,6 +567,18 @@ export default function CandlestickChart({
           ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.08)' : 'rgba(79, 195, 247, 0.12)'
           ctx.fillRect(x, y, w, h)
           ctx.strokeRect(x, y, w, h)
+        } else if (d.type === 'rect-ray') {
+          const p1 = toPixel(d.start.time, d.start.price)
+          const y1 = series.priceToCoordinate(d.start.price)
+          const y2 = series.priceToCoordinate(d.end.price)
+          if (p1.x === null || y1 === null || y2 === null) continue
+          const x = p1.x
+          const y = Math.min(y1, y2)
+          const h = Math.abs(y2 - y1)
+          const w = container.clientWidth - x
+          ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.08)' : 'rgba(79, 195, 247, 0.12)'
+          ctx.fillRect(x, y, w, h)
+          ctx.strokeRect(x, y, w, h)
         }
       }
     }
