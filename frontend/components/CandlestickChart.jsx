@@ -266,6 +266,7 @@ export default function CandlestickChart({
         const series = chart.addSeries(LineSeries, {
           color: result.color,
           lineWidth: 1.5,
+          crosshairMarkerVisible: false,
           priceLineVisible: false,
           lastValueVisible: false,
         })
@@ -277,6 +278,7 @@ export default function CandlestickChart({
             color: band.color,
             lineWidth: band === result.middle ? 1.5 : 1,
             lineStyle: band === result.middle ? 0 : 2,
+            crosshairMarkerVisible: false,
             priceLineVisible: false,
             lastValueVisible: false,
           })
