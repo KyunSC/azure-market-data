@@ -235,9 +235,9 @@ export default function CandlestickChart({
         const x = container.clientWidth - barWidth - 55 // offset from price scale
 
         const isPOC = bucket === pocBucket
-        ctx.fillStyle = isPOC ? 'rgba(255, 235, 59, 0.5)' : 'rgba(100, 149, 237, 0.35)'
+        ctx.fillStyle = isPOC ? 'rgba(255, 0, 0, 0.5)' : 'rgba(100, 149, 237, 0.35)'
         ctx.fillRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
-        ctx.strokeStyle = isPOC ? 'rgba(255, 235, 59, 0.8)' : 'rgba(100, 149, 237, 0.6)'
+        ctx.strokeStyle = isPOC ? 'rgba(255, 0, 0, 0.8)' : 'rgba(100, 149, 237, 0.6)'
         ctx.lineWidth = isPOC ? 1 : 0.5
         ctx.strokeRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
       }
