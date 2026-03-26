@@ -151,6 +151,25 @@ export default function CandlestickChart({
   const vpCanvasRef = useRef()
   const drawCanvasRef = useRef()
   const [vpData, setVpData] = useState(null)
+  const [vpColors, setVpColors] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('vpColors')
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          // Only use if hex format; discard old rgba-format data
+          if (parsed.bar?.startsWith('#') && parsed.poc?.startsWith('#')) return parsed
+          localStorage.removeItem('vpColors')
+        }
+      } catch { localStorage.removeItem('vpColors') }
+    }
+    return { bar: '#6495ed', poc: '#ff0000' }
+  })
+  const vpColorsRef = useRef(vpColors)
+  vpColorsRef.current = vpColors
+  const [vpColorPopup, setVpColorPopup] = useState(null) // { x, y }
+  const vpPopupRef = useRef(null)
+  const vpDrawRef = useRef(null)
   const drawingStateRef = useRef({ startPoint: null })
   const [previewPoint, setPreviewPoint] = useState(null)
   const [editingDrawing, setEditingDrawing] = useState(null) // { index, x, y }
@@ -158,42 +177,23 @@ export default function CandlestickChart({
   const dragRef = useRef(null) // { index, handle, startTime, startPrice, original, current }
   const renderFnRef = useRef(null)
 
-  // Fetch 1m intraday data for volume profile
+  // Compute volume profile from current chart data
   useEffect(() => {
-    if (!activeIndicators.includes('vpro') || !symbol) {
+    if (!activeIndicators.includes('vpro')) {
       setVpData(null)
       return
     }
-    const fetchVP = async () => {
-      try {
-        const res = await fetch(`/api/historical?symbol=${symbol}&period=1d&interval=1m`)
-        if (!res.ok) return
-        const result = await res.json()
-        const bars = (result.data || [])
-          .map(d => ({
-            time: Number(d.time),
-            open: Number(d.open),
-            high: Number(d.high),
-            low: Number(d.low),
-            close: Number(d.close),
-            volume: Number(d.volume),
-          }))
-          .filter(d => !isNaN(d.open) && !isNaN(d.volume))
-          .filter(d => {
-            // Filter to 9:30-16:00 ET (UTC-4 or UTC-5)
-            const date = new Date(d.time * 1000)
-            const et = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }))
-            const h = et.getHours(), m = et.getMinutes()
-            const mins = h * 60 + m
-            return mins >= 570 && mins <= 960 // 9:30=570, 16:00=960
-          })
-        setVpData(computeVolumeProfile(bars))
-      } catch {
-        setVpData(null)
-      }
-    }
-    fetchVP()
-  }, [activeIndicators, symbol])
+    const bars = (data || [])
+      .map(d => ({
+        open: Number(d.open),
+        high: Number(d.high),
+        low: Number(d.low),
+        close: Number(d.close),
+        volume: Number(d.volume),
+      }))
+      .filter(d => !isNaN(d.open) && !isNaN(d.volume) && d.volume > 0)
+    setVpData(computeVolumeProfile(bars))
+  }, [activeIndicators, data])
 
   // Draw volume profile on canvas overlay
   useEffect(() => {
@@ -235,14 +235,17 @@ export default function CandlestickChart({
         const x = container.clientWidth - barWidth - 55 // offset from price scale
 
         const isPOC = bucket === pocBucket
-        ctx.fillStyle = isPOC ? 'rgba(255, 0, 0, 0.5)' : 'rgba(100, 149, 237, 0.35)'
+        const hex = isPOC ? vpColorsRef.current.poc : vpColorsRef.current.bar
+        const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
+        ctx.fillStyle = isPOC ? `rgba(${r},${g},${b},0.5)` : `rgba(${r},${g},${b},0.35)`
         ctx.fillRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
-        ctx.strokeStyle = isPOC ? 'rgba(255, 0, 0, 0.8)' : 'rgba(100, 149, 237, 0.6)'
+        ctx.strokeStyle = isPOC ? `rgba(${r},${g},${b},0.8)` : `rgba(${r},${g},${b},0.6)`
         ctx.lineWidth = isPOC ? 1 : 0.5
         ctx.strokeRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
       }
     }
 
+    vpDrawRef.current = drawProfile
     drawProfile()
 
     const sub = chart.timeScale().subscribeVisibleLogicalRangeChange(drawProfile)
@@ -255,7 +258,7 @@ export default function CandlestickChart({
       chart.unsubscribeCrosshairMove(drawProfile)
       resizeObs.disconnect()
     }
-  }, [vpData, data])
+  }, [vpData, data, activeIndicators, gexLevels, chartType])
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -985,6 +988,59 @@ export default function CandlestickChart({
     return () => document.removeEventListener('mousedown', handleOutside)
   }, [editingDrawing])
 
+  // Double-click on volume profile to open color popup
+  useEffect(() => {
+    const container = chartContainerRef.current
+    if (!container || !vpData || !activeIndicators.includes('vpro')) return
+
+    const onDblClick = (e) => {
+      const series = seriesRef.current
+      if (!series) return
+      const rect = container.getBoundingClientRect()
+      const mx = e.clientX - rect.left
+      const my = e.clientY - rect.top
+      const maxBarWidth = container.clientWidth * 0.15
+      const { buckets, maxVol } = vpData
+      for (const bucket of buckets) {
+        if (bucket.volume === 0) continue
+        const yTop = series.priceToCoordinate(bucket.priceTop)
+        const yBottom = series.priceToCoordinate(bucket.priceBottom)
+        if (yTop === null || yBottom === null) continue
+        const barWidth = (bucket.volume / maxVol) * maxBarWidth
+        const x = container.clientWidth - barWidth - 55
+        const yMin = Math.min(yTop, yBottom)
+        const yMax = yMin + Math.abs(yBottom - yTop)
+        if (mx >= x && mx <= x + barWidth && my >= yMin && my <= yMax) {
+          setVpColorPopup({ x: e.clientX, y: e.clientY })
+          return
+        }
+      }
+    }
+
+    container.addEventListener('dblclick', onDblClick)
+    return () => container.removeEventListener('dblclick', onDblClick)
+  }, [vpData, activeIndicators])
+
+  // Close VP color popup on outside click
+  useEffect(() => {
+    if (vpColorPopup === null) return
+    const handleOutside = (e) => {
+      if (vpPopupRef.current && !vpPopupRef.current.contains(e.target)) {
+        setVpColorPopup(null)
+      }
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [vpColorPopup])
+
+  const updateVpColor = (key, color) => {
+    const next = { ...vpColors, [key]: color }
+    setVpColors(next)
+    localStorage.setItem('vpColors', JSON.stringify(next))
+    // Trigger redraw after ref updates on next tick
+    setTimeout(() => vpDrawRef.current?.(), 0)
+  }
+
   return (
     <div ref={chartContainerRef} className="chart-container" style={{ position: 'relative' }}>
       {activeIndicators.includes('vpro') && (
@@ -1046,6 +1102,44 @@ export default function CandlestickChart({
                   onDrawingUpdate(editingDrawing.index, { ...drawings[editingDrawing.index], color: c })
                   setEditingDrawing(null)
                 }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {vpColorPopup !== null && (
+        <div
+          ref={vpPopupRef}
+          className="drawing-edit-popup"
+          style={{
+            position: 'fixed',
+            left: vpColorPopup.x + 8,
+            top: vpColorPopup.y - 20,
+          }}
+        >
+          <div className="drawing-edit-header">
+            <span>Bar Color</span>
+          </div>
+          <div className="drawing-color-grid">
+            {DRAWING_PRESET_COLORS.map(c => (
+              <button
+                key={`bar-${c}`}
+                className={`drawing-color-swatch${vpColors.bar === c ? ' active' : ''}`}
+                style={{ background: c }}
+                onClick={() => updateVpColor('bar', c)}
+              />
+            ))}
+          </div>
+          <div className="drawing-edit-header" style={{ marginTop: 8 }}>
+            <span>POC Color</span>
+          </div>
+          <div className="drawing-color-grid">
+            {DRAWING_PRESET_COLORS.map(c => (
+              <button
+                key={`poc-${c}`}
+                className={`drawing-color-swatch${vpColors.poc === c ? ' active' : ''}`}
+                style={{ background: c }}
+                onClick={() => updateVpColor('poc', c)}
               />
             ))}
           </div>
