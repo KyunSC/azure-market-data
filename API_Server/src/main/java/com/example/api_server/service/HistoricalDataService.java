@@ -76,6 +76,8 @@ public class HistoricalDataService {
         return switch (period) {
             case "1d" -> now.minusDays(1);
             case "5d" -> now.minusDays(5);
+            case "10d" -> now.minusDays(10);
+            case "14d" -> now.minusDays(14);
             case "1mo" -> now.minusMonths(1);
             case "3mo" -> now.minusMonths(3);
             case "6mo" -> now.minusMonths(6);

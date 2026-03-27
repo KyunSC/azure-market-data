@@ -50,9 +50,27 @@ function computeVolumeProfile(intradayData, numBuckets = 40) {
   return { buckets, maxVol }
 }
 
+function computeValueArea(buckets, pct = 0.7) {
+  const totalVol = buckets.reduce((s, b) => s + b.volume, 0)
+  if (totalVol === 0) return null
+  const target = totalVol * pct
+  const pocIdx = buckets.reduce((mi, b, i, arr) => b.volume > arr[mi].volume ? i : mi, 0)
+  let accumulated = buckets[pocIdx].volume
+  let lo = pocIdx, hi = pocIdx
+  while (accumulated < target && (lo > 0 || hi < buckets.length - 1)) {
+    const loVol = lo > 0 ? buckets[lo - 1].volume : -1
+    const hiVol = hi < buckets.length - 1 ? buckets[hi + 1].volume : -1
+    if (loVol >= hiVol && lo > 0) { lo--; accumulated += buckets[lo].volume }
+    else if (hi < buckets.length - 1) { hi++; accumulated += buckets[hi].volume }
+    else break
+  }
+  return { lo, hi }
+}
+
 const DRAWING_PRESET_COLORS = [
   '#4fc3f7', '#ff6b6b', '#51cf66', '#ffd43b', '#cc5de8',
   '#ff922b', '#20c997', '#748ffc', '#f06595', '#ffffff',
+  '#888888', '#aaaaaa', '#555555',
 ]
 
 const HANDLE_RADIUS = 5
@@ -151,6 +169,8 @@ export default function CandlestickChart({
   const vpCanvasRef = useRef()
   const drawCanvasRef = useRef()
   const [vpData, setVpData] = useState(null)
+  const [vaEnabled, setVaEnabled] = useState(true)
+  const [vaPct, setVaPct] = useState(0.7)
   const [vpColors, setVpColors] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -163,7 +183,7 @@ export default function CandlestickChart({
         }
       } catch { localStorage.removeItem('vpColors') }
     }
-    return { bar: '#6495ed', poc: '#ff0000' }
+    return { bar: '#888888', poc: '#ff0000' }
   })
   const vpColorsRef = useRef(vpColors)
   vpColorsRef.current = vpColors
@@ -223,8 +243,10 @@ export default function CandlestickChart({
       const maxBarWidth = container.clientWidth * 0.15
       const { buckets, maxVol } = vpData
       const pocBucket = buckets.reduce((max, b) => b.volume > max.volume ? b : max, buckets[0])
+      const va = vaEnabled ? computeValueArea(buckets, vaPct) : null
 
-      for (const bucket of buckets) {
+      for (let i = 0; i < buckets.length; i++) {
+        const bucket = buckets[i]
         if (bucket.volume === 0) continue
         const yTop = series.priceToCoordinate(bucket.priceTop)
         const yBottom = series.priceToCoordinate(bucket.priceBottom)
@@ -232,15 +254,27 @@ export default function CandlestickChart({
 
         const barHeight = Math.abs(yBottom - yTop)
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
-        const x = container.clientWidth - barWidth - 55 // offset from price scale
+        const x = container.clientWidth - barWidth - 100 // offset from price scale
 
         const isPOC = bucket === pocBucket
+        const inVA = va && i >= va.lo && i <= va.hi
         const hex = isPOC ? vpColorsRef.current.poc : vpColorsRef.current.bar
         const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
-        ctx.fillStyle = isPOC ? `rgba(${r},${g},${b},0.5)` : `rgba(${r},${g},${b},0.35)`
+
+        if (isPOC) {
+          ctx.fillStyle = `rgba(${r},${g},${b},0.5)`
+          ctx.strokeStyle = `rgba(${r},${g},${b},0.8)`
+          ctx.lineWidth = 1
+        } else if (inVA) {
+          ctx.fillStyle = `rgba(${r},${g},${b},0.5)`
+          ctx.strokeStyle = `rgba(${r},${g},${b},0.7)`
+          ctx.lineWidth = 0.5
+        } else {
+          ctx.fillStyle = `rgba(${r},${g},${b},0.2)`
+          ctx.strokeStyle = `rgba(${r},${g},${b},0.4)`
+          ctx.lineWidth = 0.5
+        }
         ctx.fillRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
-        ctx.strokeStyle = isPOC ? `rgba(${r},${g},${b},0.8)` : `rgba(${r},${g},${b},0.6)`
-        ctx.lineWidth = isPOC ? 1 : 0.5
         ctx.strokeRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
       }
     }
@@ -258,7 +292,7 @@ export default function CandlestickChart({
       chart.unsubscribeCrosshairMove(drawProfile)
       resizeObs.disconnect()
     }
-  }, [vpData, data, activeIndicators, gexLevels, chartType])
+  }, [vpData, data, activeIndicators, gexLevels, chartType, vaEnabled, vaPct])
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -480,13 +514,15 @@ export default function CandlestickChart({
       for (const level of gexLevels.levels) {
         const color = GEX_COLORS[level.label] || '#ffffff'
         const isKey = level.label === 'call_wall' || level.label === 'put_wall'
+        const labelName = GEX_LABELS[level.label] || level.label
+        const gexVal = level.gex != null ? ` ${(level.gex / 1e6).toFixed(1)}M` : ''
         mainSeries.createPriceLine({
           price: level.strikeNq,
           color,
           lineWidth: isKey ? 2 : 1,
           lineStyle: level.label === 'zero_gamma' ? 2 : 0,
           axisLabelVisible: true,
-          title: GEX_LABELS[level.label] || level.label,
+          title: `${labelName}${gexVal}`,
         })
       }
     }
@@ -1007,7 +1043,7 @@ export default function CandlestickChart({
         const yBottom = series.priceToCoordinate(bucket.priceBottom)
         if (yTop === null || yBottom === null) continue
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
-        const x = container.clientWidth - barWidth - 55
+        const x = container.clientWidth - barWidth - 100
         const yMin = Math.min(yTop, yBottom)
         const yMax = yMin + Math.abs(yBottom - yTop)
         if (mx >= x && mx <= x + barWidth && my >= yMin && my <= yMax) {
@@ -1142,6 +1178,28 @@ export default function CandlestickChart({
                 onClick={() => updateVpColor('poc', c)}
               />
             ))}
+          </div>
+          <div className="drawing-edit-header" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: '0.85rem', color: '#ccc' }}>
+              <input
+                type="checkbox"
+                checked={vaEnabled}
+                onChange={(e) => setVaEnabled(e.target.checked)}
+                style={{ accentColor: '#4fc3f7' }}
+              />
+              Value Area
+            </label>
+            <input
+              type="range"
+              min="0.5"
+              max="0.95"
+              step="0.05"
+              value={vaPct}
+              disabled={!vaEnabled}
+              onChange={(e) => setVaPct(Number(e.target.value))}
+              style={{ width: 60, opacity: vaEnabled ? 1 : 0.4 }}
+            />
+            <span style={{ fontSize: '0.8rem', color: '#aaa', minWidth: 30 }}>{Math.round(vaPct * 100)}%</span>
           </div>
         </div>
       )}
