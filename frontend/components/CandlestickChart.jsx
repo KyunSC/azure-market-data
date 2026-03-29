@@ -171,6 +171,7 @@ export default function CandlestickChart({
   const [vpData, setVpData] = useState(null)
   const [vaEnabled, setVaEnabled] = useState(true)
   const [vaPct, setVaPct] = useState(0.7)
+  const [vpBuckets, setVpBuckets] = useState(40)
   const [vpColors, setVpColors] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -212,8 +213,8 @@ export default function CandlestickChart({
         volume: Number(d.volume),
       }))
       .filter(d => !isNaN(d.open) && !isNaN(d.volume) && d.volume > 0)
-    setVpData(computeVolumeProfile(bars))
-  }, [activeIndicators, data])
+    setVpData(computeVolumeProfile(bars, vpBuckets))
+  }, [activeIndicators, data, vpBuckets])
 
   // Draw volume profile on canvas overlay
   useEffect(() => {
@@ -1200,6 +1201,19 @@ export default function CandlestickChart({
               style={{ width: 60, opacity: vaEnabled ? 1 : 0.4 }}
             />
             <span style={{ fontSize: '0.8rem', color: '#aaa', minWidth: 30 }}>{Math.round(vaPct * 100)}%</span>
+          </div>
+          <div className="drawing-edit-header" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: '0.85rem', color: '#ccc' }}>Ticks/Bar</span>
+            <input
+              type="range"
+              min="1"
+              max="100"
+              step="1"
+              value={vpBuckets}
+              onChange={(e) => setVpBuckets(Number(e.target.value))}
+              style={{ width: 60 }}
+            />
+            <span style={{ fontSize: '0.8rem', color: '#aaa', minWidth: 20 }}>{vpBuckets}</span>
           </div>
         </div>
       )}
