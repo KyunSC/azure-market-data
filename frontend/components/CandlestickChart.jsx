@@ -21,8 +21,12 @@ const GEX_LABELS = {
   significant_neg: 'GEX-',
 }
 
-function computeVolumeProfile(intradayData, numBuckets = 40) {
+const TICK_SIZE = 0.25 // ES/NQ futures tick size
+
+function computeVolumeProfile(intradayData, ticksPerRow = 4) {
   if (!intradayData || intradayData.length === 0) return null
+
+  const bucketSize = ticksPerRow * TICK_SIZE
 
   let minPrice = Infinity, maxPrice = -Infinity
   for (const d of intradayData) {
@@ -32,17 +36,21 @@ function computeVolumeProfile(intradayData, numBuckets = 40) {
 
   const range = maxPrice - minPrice
   if (range <= 0) return null
-  const bucketSize = range / numBuckets
+
+  // Align to tick grid
+  const alignedMin = Math.floor(minPrice / bucketSize) * bucketSize
+  const alignedMax = Math.ceil(maxPrice / bucketSize) * bucketSize
+  const numBuckets = Math.round((alignedMax - alignedMin) / bucketSize)
 
   const buckets = Array.from({ length: numBuckets }, (_, i) => ({
-    priceBottom: minPrice + i * bucketSize,
-    priceTop: minPrice + (i + 1) * bucketSize,
+    priceBottom: alignedMin + i * bucketSize,
+    priceTop: alignedMin + (i + 1) * bucketSize,
     volume: 0,
   }))
 
   for (const d of intradayData) {
     const tp = (d.high + d.low + d.close) / 3
-    const idx = Math.min(Math.floor((tp - minPrice) / bucketSize), numBuckets - 1)
+    const idx = Math.min(Math.floor((tp - alignedMin) / bucketSize), numBuckets - 1)
     if (idx >= 0) buckets[idx].volume += d.volume
   }
 
@@ -171,7 +179,7 @@ export default function CandlestickChart({
   const [vpData, setVpData] = useState(null)
   const [vaEnabled, setVaEnabled] = useState(true)
   const [vaPct, setVaPct] = useState(0.7)
-  const [vpBuckets, setVpBuckets] = useState(40)
+  const [vpTicksPerRow, setVpTicksPerRow] = useState(4)
   const [vpColors, setVpColors] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -213,8 +221,8 @@ export default function CandlestickChart({
         volume: Number(d.volume),
       }))
       .filter(d => !isNaN(d.open) && !isNaN(d.volume) && d.volume > 0)
-    setVpData(computeVolumeProfile(bars, vpBuckets))
-  }, [activeIndicators, data, vpBuckets])
+    setVpData(computeVolumeProfile(bars, vpTicksPerRow))
+  }, [activeIndicators, data, vpTicksPerRow])
 
   // Draw volume profile on canvas overlay
   useEffect(() => {
@@ -1203,17 +1211,17 @@ export default function CandlestickChart({
             <span style={{ fontSize: '0.8rem', color: '#aaa', minWidth: 30 }}>{Math.round(vaPct * 100)}%</span>
           </div>
           <div className="drawing-edit-header" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: '0.85rem', color: '#ccc' }}>Ticks/Bar</span>
+            <span style={{ fontSize: '0.85rem', color: '#ccc' }}>Ticks/Row</span>
             <input
               type="range"
               min="1"
-              max="200"
+              max="1000"
               step="1"
-              value={vpBuckets}
-              onChange={(e) => setVpBuckets(Number(e.target.value))}
+              value={vpTicksPerRow}
+              onChange={(e) => setVpTicksPerRow(Number(e.target.value))}
               style={{ width: 60 }}
             />
-            <span style={{ fontSize: '0.8rem', color: '#aaa', minWidth: 20 }}>{vpBuckets}</span>
+            <span style={{ fontSize: '0.8rem', color: '#aaa', minWidth: 20 }}>{vpTicksPerRow}</span>
           </div>
         </div>
       )}

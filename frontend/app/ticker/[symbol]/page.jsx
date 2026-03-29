@@ -22,8 +22,8 @@ export default function TickerDetail({ params }) {
   }
   const displayName = DISPLAY_NAMES[symbol] || symbol
   const [ohlcData, setOhlcData] = useState([])
-  const [period, setPeriod] = useState('1mo')
-  const [interval, setInterval] = useState('1d')
+  const [period, setPeriod] = useState('5d')
+  const [interval, setInterval] = useState('5m')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
