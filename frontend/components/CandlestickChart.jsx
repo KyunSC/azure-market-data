@@ -1207,7 +1207,7 @@ export default function CandlestickChart({
             <input
               type="range"
               min="1"
-              max="100"
+              max="200"
               step="1"
               value={vpBuckets}
               onChange={(e) => setVpBuckets(Number(e.target.value))}
