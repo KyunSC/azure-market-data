@@ -49,11 +49,15 @@ def fetch_ticker_data(symbol):
 
 def fetch_historical_data(symbol, period='5d', interval='1d'):
     """Fetch OHLC historical data for a ticker."""
+    logging.info(f'fetch_historical_data called: symbol={symbol}, period={period}, interval={interval}')
     ticker = yf.Ticker(symbol)
     history = ticker.history(period=period, interval=interval)
 
     if history.empty:
+        logging.warning(f'yfinance returned empty history for {symbol} {interval}/{period}')
         return None
+
+    logging.info(f'yfinance returned {len(history)} rows for {symbol} {interval}/{period}')
 
     is_intraday = interval in ('1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h')
 
@@ -247,9 +251,17 @@ def main(mytimer: func.TimerRequest) -> None:
             conn.commit()
             logging.info('Historical data fetch complete')
 
-        # Fetch intraday data (1m, 5m, 15m, 1h) during market hours
-        if should_fetch_intraday():
-            logging.info('Fetching intraday data (1m, 5m, 15m, 1h)')
+        # Fetch intraday data — futures always, equities only during market hours
+        et_tz = pytz.timezone('US/Eastern')
+        now_et = datetime.now(et_tz)
+        is_market_hours = should_fetch_intraday()
+        futures_symbols = [s for s in tickers if s.endswith('=F')]
+        equity_symbols = [s for s in tickers if not s.endswith('=F')]
+        intraday_symbols = futures_symbols + (equity_symbols if is_market_hours else [])
+        logging.info(f'Intraday check: ET={now_et.strftime("%Y-%m-%d %H:%M")} weekday={now_et.weekday()} market_hours={is_market_hours} symbols={intraday_symbols}')
+
+        if intraday_symbols and now_et.weekday() < 5:
+            logging.info(f'Fetching intraday data for {intraday_symbols}')
             intraday_intervals = [
                 ('1m', '1d'),
                 ('5m', '5d'),
@@ -257,24 +269,24 @@ def main(mytimer: func.TimerRequest) -> None:
                 ('1h', '1mo'),
             ]
             for interval, period in intraday_intervals:
-                for symbol in tickers:
+                for symbol in intraday_symbols:
                     try:
                         with ThreadPoolExecutor(max_workers=1) as executor:
                             future = executor.submit(fetch_historical_data, symbol, period, interval)
-                            historical = future.result(timeout=TICKER_TIMEOUT_SECONDS)
+                            historical = future.result(timeout=30)
 
                         if historical:
                             upsert_historical_data(cursor, symbol, historical)
-                            logging.info(f'Saved {interval} data for {symbol}')
+                            conn.commit()
+                            logging.info(f'Saved {len(historical)} rows of {interval} data for {symbol}')
                         else:
                             logging.warning(f'No {interval} data for {symbol}')
 
                     except FuturesTimeoutError:
                         logging.error(f'Timeout fetching {interval} for {symbol}')
                     except Exception as e:
-                        logging.error(f'Error fetching {interval} for {symbol}: {e}')
+                        logging.exception(f'Error fetching {interval} for {symbol}: {e}')
 
-            conn.commit()
             logging.info('Intraday data fetch complete')
 
         # Fetch GEX data every 15 minutes during market hours

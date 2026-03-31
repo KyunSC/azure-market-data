@@ -3,7 +3,7 @@ package com.example.api_server.service;
 import com.example.api_server.dto.HistoricalDataResponse;
 import com.example.api_server.dto.OhlcData;
 import com.example.api_server.entity.HistoricalDataEntity;
-import com.example.api_server.repository.local.LocalHistoricalDataRepository;
+import com.example.api_server.repository.supabase.SupabaseHistoricalDataRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,9 +23,9 @@ public class HistoricalDataService {
 
     private static final Logger logger = LoggerFactory.getLogger(HistoricalDataService.class);
 
-    private final LocalHistoricalDataRepository localRepository;
+    private final SupabaseHistoricalDataRepository localRepository;
 
-    public HistoricalDataService(LocalHistoricalDataRepository localRepository) {
+    public HistoricalDataService(SupabaseHistoricalDataRepository localRepository) {
         this.localRepository = localRepository;
     }
 

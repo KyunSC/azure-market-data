@@ -17,12 +17,13 @@ import javax.sql.DataSource;
 import java.util.HashMap;
 import java.util.Map;
 
-// @Configuration  // Disabled - using local database only
-// @EnableJpaRepositories(
-//         basePackages = "com.example.api_server.repository.supabase",
-//         entityManagerFactoryRef = "supabaseEntityManagerFactory",
-//         transactionManagerRef = "supabaseTransactionManager"
-// )
+@Configuration
+@EnableTransactionManagement
+@EnableJpaRepositories(
+        basePackages = "com.example.api_server.repository.supabase",
+        entityManagerFactoryRef = "supabaseEntityManagerFactory",
+        transactionManagerRef = "supabaseTransactionManager"
+)
 public class SupabaseDatabaseConfig {
 
     @Bean
