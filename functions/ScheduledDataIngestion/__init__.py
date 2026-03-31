@@ -11,7 +11,7 @@ import pytz
 
 # Add parent directory to path so we can import shared module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shared.gex_calculator import fetch_prices_and_compute_gex
+from shared.gex_calculator import fetch_prices_and_compute_gex, GEX_PAIRS
 
 TICKER_TIMEOUT_SECONDS = 10
 
@@ -121,18 +121,18 @@ def insert_market_data(cursor, symbol, price, volume, timestamp):
         VALUES (%s, %s, %s, %s)
     """, (symbol, price, volume, timestamp))
 
-def insert_gex_data(cursor, gex_result):
+def insert_gex_data(cursor, etf_symbol, gex_result):
     """Insert gamma exposure computation and its levels into the database."""
     cursor.execute("""
         INSERT INTO gamma_exposure
-            (symbol, computed_at, qqq_price, nq_price, conversion_ratio, expirations_used, market_open)
+            (symbol, computed_at, etf_price, futures_price, conversion_ratio, expirations_used, market_open)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     """, (
-        'QQQ',
+        etf_symbol,
         datetime.now(pytz.utc),
-        gex_result['qqq_price'],
-        gex_result['nq_price'],
+        gex_result['etf_price'],
+        gex_result['futures_price'],
         gex_result['conversion_ratio'],
         ','.join(gex_result['expirations_used']),
         gex_result['market_open'],
@@ -142,12 +142,12 @@ def insert_gex_data(cursor, gex_result):
     for level in gex_result['levels']:
         cursor.execute("""
             INSERT INTO gamma_levels
-                (gamma_exposure_id, strike_qqq, strike_nq, gex, gex_call, gex_put, label)
+                (gamma_exposure_id, strike_etf, strike_futures, gex, gex_call, gex_put, label)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (
             exposure_id,
-            level['strike_qqq'],
-            level['strike_nq'],
+            level['strike_etf'],
+            level['strike_futures'],
             level['gex'],
             level.get('gex_call'),
             level.get('gex_put'),
@@ -289,25 +289,27 @@ def main(mytimer: func.TimerRequest) -> None:
 
             logging.info('Intraday data fetch complete')
 
-        # Fetch GEX data every 15 minutes during market hours
+        # Fetch GEX data every 15 minutes during market hours (for all ETF/futures pairs)
         if should_fetch_gex():
-            logging.info('Fetching gamma exposure data (15-min run)')
-            try:
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(fetch_prices_and_compute_gex)
-                    gex_result = future.result(timeout=60)
+            for etf_symbol in GEX_PAIRS:
+                pair = GEX_PAIRS[etf_symbol]
+                logging.info(f'Fetching gamma exposure for {etf_symbol}→{pair["futures"]}')
+                try:
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(fetch_prices_and_compute_gex, etf_symbol)
+                        gex_result = future.result(timeout=60)
 
-                exposure_id = insert_gex_data(cursor, gex_result)
-                conn.commit()
-                logging.info(f'Saved GEX data (id={exposure_id}), '
-                             f'QQQ={gex_result["qqq_price"]}, '
-                             f'NQ={gex_result["nq_price"]}, '
-                             f'{len(gex_result["levels"])} levels')
+                    exposure_id = insert_gex_data(cursor, etf_symbol, gex_result)
+                    conn.commit()
+                    logging.info(f'Saved GEX data (id={exposure_id}), '
+                                 f'{etf_symbol}={gex_result["etf_price"]}, '
+                                 f'{pair["futures"]}={gex_result["futures_price"]}, '
+                                 f'{len(gex_result["levels"])} levels')
 
-            except FuturesTimeoutError:
-                logging.error('Timeout computing gamma exposure')
-            except Exception as e:
-                logging.error(f'Error computing gamma exposure: {e}')
+                except FuturesTimeoutError:
+                    logging.error(f'Timeout computing gamma exposure for {etf_symbol}')
+                except Exception as e:
+                    logging.error(f'Error computing gamma exposure for {etf_symbol}: {e}')
 
     except Exception as e:
         logging.error(f'Database error: {e}')

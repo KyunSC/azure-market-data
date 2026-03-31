@@ -8,7 +8,7 @@ export const AVAILABLE_INDICATORS = [
   { id: 'vwap', label: 'VWAP', type: 'vwap', color: '#2196f3' },
   { id: 'vpro', label: 'Volume Profile', type: 'vpro', color: '#5c6bc0' },
   { id: 'volume', label: 'Volume', type: 'volume', color: '#5c6bc0' },
-  { id: 'gex', label: 'GEX Levels (NQ)', type: 'gex', color: '#ffff00' },
+  { id: 'gex', label: 'GEX Levels', type: 'gex', color: '#ffff00' },
 ]
 
 export const INDICATORS_STORAGE_KEY = 'chart-active-indicators'

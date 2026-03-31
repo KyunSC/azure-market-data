@@ -2,27 +2,27 @@ package com.example.api_server.dto;
 
 public class GammaLevelData {
 
-    private Double strikeQqq;
-    private Double strikeNq;
+    private Double strikeEtf;
+    private Double strikeFutures;
     private Double gex;
     private Double gexCall;
     private Double gexPut;
     private String label;
 
-    public Double getStrikeQqq() {
-        return strikeQqq;
+    public Double getStrikeEtf() {
+        return strikeEtf;
     }
 
-    public void setStrikeQqq(Double strikeQqq) {
-        this.strikeQqq = strikeQqq;
+    public void setStrikeEtf(Double strikeEtf) {
+        this.strikeEtf = strikeEtf;
     }
 
-    public Double getStrikeNq() {
-        return strikeNq;
+    public Double getStrikeFutures() {
+        return strikeFutures;
     }
 
-    public void setStrikeNq(Double strikeNq) {
-        this.strikeNq = strikeNq;
+    public void setStrikeFutures(Double strikeFutures) {
+        this.strikeFutures = strikeFutures;
     }
 
     public Double getGex() {

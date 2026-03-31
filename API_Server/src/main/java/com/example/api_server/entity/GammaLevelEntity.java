@@ -14,11 +14,11 @@ public class GammaLevelEntity {
     @JoinColumn(name = "gamma_exposure_id", nullable = false)
     private GammaExposureEntity gammaExposure;
 
-    @Column(name = "strike_qqq")
-    private Double strikeQqq;
+    @Column(name = "strike_etf")
+    private Double strikeEtf;
 
-    @Column(name = "strike_nq")
-    private Double strikeNq;
+    @Column(name = "strike_futures")
+    private Double strikeFutures;
 
     private Double gex;
 
@@ -49,20 +49,20 @@ public class GammaLevelEntity {
         this.gammaExposure = gammaExposure;
     }
 
-    public Double getStrikeQqq() {
-        return strikeQqq;
+    public Double getStrikeEtf() {
+        return strikeEtf;
     }
 
-    public void setStrikeQqq(Double strikeQqq) {
-        this.strikeQqq = strikeQqq;
+    public void setStrikeEtf(Double strikeEtf) {
+        this.strikeEtf = strikeEtf;
     }
 
-    public Double getStrikeNq() {
-        return strikeNq;
+    public Double getStrikeFutures() {
+        return strikeFutures;
     }
 
-    public void setStrikeNq(Double strikeNq) {
-        this.strikeNq = strikeNq;
+    public void setStrikeFutures(Double strikeFutures) {
+        this.strikeFutures = strikeFutures;
     }
 
     public Double getGex() {

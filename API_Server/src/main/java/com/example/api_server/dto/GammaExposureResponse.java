@@ -6,8 +6,8 @@ public class GammaExposureResponse {
 
     private String timestamp;
     private Boolean marketOpen;
-    private Double qqqPrice;
-    private Double nqPrice;
+    private Double etfPrice;
+    private Double futuresPrice;
     private Double conversionRatio;
     private List<String> expirationsUsed;
     private List<GammaLevelData> levels;
@@ -28,20 +28,20 @@ public class GammaExposureResponse {
         this.marketOpen = marketOpen;
     }
 
-    public Double getQqqPrice() {
-        return qqqPrice;
+    public Double getEtfPrice() {
+        return etfPrice;
     }
 
-    public void setQqqPrice(Double qqqPrice) {
-        this.qqqPrice = qqqPrice;
+    public void setEtfPrice(Double etfPrice) {
+        this.etfPrice = etfPrice;
     }
 
-    public Double getNqPrice() {
-        return nqPrice;
+    public Double getFuturesPrice() {
+        return futuresPrice;
     }
 
-    public void setNqPrice(Double nqPrice) {
-        this.nqPrice = nqPrice;
+    public void setFuturesPrice(Double futuresPrice) {
+        this.futuresPrice = futuresPrice;
     }
 
     public Double getConversionRatio() {

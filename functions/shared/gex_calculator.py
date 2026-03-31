@@ -45,17 +45,18 @@ def fetch_option_chain(ticker_symbol, expiration):
     return chain
 
 
-def compute_gex(qqq_price, nq_price, max_expirations=MAX_EXPIRATIONS):
+def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_EXPIRATIONS):
     """
-    Compute gamma exposure levels for QQQ options and convert to NQ levels.
+    Compute gamma exposure levels for ETF options and convert to futures levels.
 
+    Supports QQQ→NQ and SPY→ES (or any ETF/futures pair).
     Returns dict with levels, prices, and metadata.
     """
-    ticker = yf.Ticker("QQQ")
+    ticker = yf.Ticker(etf_symbol)
     expirations = ticker.options
 
     if not expirations:
-        raise ValueError("No option expirations available for QQQ")
+        raise ValueError(f"No option expirations available for {etf_symbol}")
 
     # Filter expirations within MAX_DAYS_OUT
     today = datetime.now().date()
@@ -69,9 +70,9 @@ def compute_gex(qqq_price, nq_price, max_expirations=MAX_EXPIRATIONS):
             break
 
     if not valid_expirations:
-        raise ValueError("No option expirations within 30 days for QQQ")
+        raise ValueError(f"No option expirations within 30 days for {etf_symbol}")
 
-    conversion_ratio = nq_price / qqq_price
+    conversion_ratio = futures_price / etf_price
 
     # Aggregate GEX across expirations
     gex_by_strike = {}
@@ -81,7 +82,7 @@ def compute_gex(qqq_price, nq_price, max_expirations=MAX_EXPIRATIONS):
         T = max((exp_date - today).days / 365.0, MIN_T_YEARS)
 
         try:
-            chain = fetch_option_chain("QQQ", exp_str)
+            chain = fetch_option_chain(etf_symbol, exp_str)
         except Exception as e:
             logging.warning(f"Failed to fetch chain for {exp_str}: {e}")
             continue
@@ -98,8 +99,8 @@ def compute_gex(qqq_price, nq_price, max_expirations=MAX_EXPIRATIONS):
             if oi <= 0 or iv < MIN_IV:
                 continue
 
-            gamma = black_scholes_gamma(qqq_price, strike, T, RISK_FREE_RATE, iv)
-            gex_call = gamma * oi * 100 * qqq_price
+            gamma = black_scholes_gamma(etf_price, strike, T, RISK_FREE_RATE, iv)
+            gex_call = gamma * oi * 100 * etf_price
 
             if strike not in gex_by_strike:
                 gex_by_strike[strike] = {'gex_call': 0, 'gex_put': 0}
@@ -114,8 +115,8 @@ def compute_gex(qqq_price, nq_price, max_expirations=MAX_EXPIRATIONS):
             if oi <= 0 or iv < MIN_IV:
                 continue
 
-            gamma = black_scholes_gamma(qqq_price, strike, T, RISK_FREE_RATE, iv)
-            gex_put = gamma * oi * 100 * qqq_price * (-1)
+            gamma = black_scholes_gamma(etf_price, strike, T, RISK_FREE_RATE, iv)
+            gex_put = gamma * oi * 100 * etf_price * (-1)
 
             if strike not in gex_by_strike:
                 gex_by_strike[strike] = {'gex_call': 0, 'gex_put': 0}
@@ -129,8 +130,8 @@ def compute_gex(qqq_price, nq_price, max_expirations=MAX_EXPIRATIONS):
     for strike, gex_vals in sorted(gex_by_strike.items()):
         total_gex = gex_vals['gex_call'] + gex_vals['gex_put']
         strikes_data.append({
-            'strike_qqq': round(strike, 2),
-            'strike_nq': round(strike * conversion_ratio, 2),
+            'strike_etf': round(strike, 2),
+            'strike_futures': round(strike * conversion_ratio, 2),
             'gex': round(total_gex, 2),
             'gex_call': round(gex_vals['gex_call'], 2),
             'gex_put': round(gex_vals['gex_put'], 2),
@@ -142,8 +143,8 @@ def compute_gex(qqq_price, nq_price, max_expirations=MAX_EXPIRATIONS):
     return {
         'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
         'market_open': is_market_open(),
-        'qqq_price': round(qqq_price, 2),
-        'nq_price': round(nq_price, 2),
+        'etf_price': round(etf_price, 2),
+        'futures_price': round(futures_price, 2),
         'conversion_ratio': round(conversion_ratio, 4),
         'expirations_used': valid_expirations,
         'levels': levels,
@@ -179,11 +180,11 @@ def _identify_key_levels(strikes_data):
             # Interpolate
             prev_strike = strikes_data[strikes_data.index(s) - 1]
             weight = abs(prev_cumulative) / (abs(prev_cumulative) + abs(cumulative))
-            flip_qqq = prev_strike['strike_qqq'] + weight * (s['strike_qqq'] - prev_strike['strike_qqq'])
-            flip_nq = prev_strike['strike_nq'] + weight * (s['strike_nq'] - prev_strike['strike_nq'])
+            flip_etf = prev_strike['strike_etf'] + weight * (s['strike_etf'] - prev_strike['strike_etf'])
+            flip_futures = prev_strike['strike_futures'] + weight * (s['strike_futures'] - prev_strike['strike_futures'])
             levels.append({
-                'strike_qqq': round(flip_qqq, 2),
-                'strike_nq': round(flip_nq, 2),
+                'strike_etf': round(flip_etf, 2),
+                'strike_futures': round(flip_futures, 2),
                 'gex': 0,
                 'gex_call': 0,
                 'gex_put': 0,
@@ -193,9 +194,9 @@ def _identify_key_levels(strikes_data):
         prev_cumulative = cumulative
 
     # Top 3 additional significant positive strikes (excluding call wall)
-    call_wall_strike = levels[0]['strike_qqq'] if levels and levels[0]['label'] == 'call_wall' else None
+    call_wall_strike = levels[0]['strike_etf'] if levels and levels[0]['label'] == 'call_wall' else None
     sig_positive = sorted(
-        [s for s in positive_strikes if s['strike_qqq'] != call_wall_strike],
+        [s for s in positive_strikes if s['strike_etf'] != call_wall_strike],
         key=lambda s: s['gex'],
         reverse=True
     )[:3]
@@ -206,10 +207,10 @@ def _identify_key_levels(strikes_data):
     put_wall_strike = None
     for l in levels:
         if l['label'] == 'put_wall':
-            put_wall_strike = l['strike_qqq']
+            put_wall_strike = l['strike_etf']
             break
     sig_negative = sorted(
-        [s for s in negative_strikes if s['strike_qqq'] != put_wall_strike],
+        [s for s in negative_strikes if s['strike_etf'] != put_wall_strike],
         key=lambda s: s['gex']
     )[:3]
     for s in sig_negative:
@@ -218,15 +219,30 @@ def _identify_key_levels(strikes_data):
     return levels
 
 
-def fetch_prices_and_compute_gex():
-    """Fetch QQQ and NQ prices, then compute GEX. Main entry point."""
-    qqq_ticker = yf.Ticker("QQQ")
-    nq_ticker = yf.Ticker("NQ=F")
+# Supported ETF→Futures pairs
+GEX_PAIRS = {
+    'QQQ': {'etf': 'QQQ', 'futures': 'NQ=F'},
+    'SPY': {'etf': 'SPY', 'futures': 'ES=F'},
+}
 
-    qqq_price = float(qqq_ticker.fast_info['lastPrice'])
-    nq_price = float(nq_ticker.fast_info['lastPrice'])
 
-    if qqq_price <= 0 or nq_price <= 0:
-        raise ValueError(f"Invalid prices: QQQ={qqq_price}, NQ={nq_price}")
+def fetch_prices_and_compute_gex(etf_symbol='QQQ'):
+    """Fetch ETF and futures prices, then compute GEX. Main entry point.
 
-    return compute_gex(qqq_price, nq_price)
+    Args:
+        etf_symbol: 'QQQ' for NQ levels, 'SPY' for ES levels.
+    """
+    pair = GEX_PAIRS.get(etf_symbol)
+    if not pair:
+        raise ValueError(f"Unsupported ETF symbol: {etf_symbol}. Supported: {list(GEX_PAIRS.keys())}")
+
+    etf_ticker = yf.Ticker(pair['etf'])
+    futures_ticker = yf.Ticker(pair['futures'])
+
+    etf_price = float(etf_ticker.fast_info['lastPrice'])
+    futures_price = float(futures_ticker.fast_info['lastPrice'])
+
+    if etf_price <= 0 or futures_price <= 0:
+        raise ValueError(f"Invalid prices: {pair['etf']}={etf_price}, {pair['futures']}={futures_price}")
+
+    return compute_gex(etf_price, futures_price, etf_symbol=etf_symbol)

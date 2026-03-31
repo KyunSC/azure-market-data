@@ -526,7 +526,7 @@ export default function CandlestickChart({
         const labelName = GEX_LABELS[level.label] || level.label
         const gexVal = level.gex != null ? ` ${(level.gex / 1e6).toFixed(1)}M` : ''
         mainSeries.createPriceLine({
-          price: level.strikeNq,
+          price: level.strikeFutures,
           color,
           lineWidth: isKey ? 2 : 1,
           lineStyle: level.label === 'zero_gamma' ? 2 : 0,

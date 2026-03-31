@@ -48,13 +48,15 @@ export default function TickerDetail({ params }) {
     } catch { /* ignore */ }
   }, [])
 
-  // Fetch GEX data for NQ chart
+  // Fetch GEX data for futures charts (NQ=F uses QQQ, ES=F uses SPY)
+  const GEX_ETF_MAP = { 'NQ=F': 'QQQ', 'ES=F': 'SPY' }
   useEffect(() => {
-    if (symbol !== 'NQ=F') return
+    const etfSymbol = GEX_ETF_MAP[symbol]
+    if (!etfSymbol) return
 
     const fetchGex = async () => {
       try {
-        const res = await fetch('/api/gamma?symbol=QQQ')
+        const res = await fetch(`/api/gamma?symbol=${etfSymbol}`)
         if (res.ok) {
           const data = await res.json()
           console.log('GEX Levels:', data)

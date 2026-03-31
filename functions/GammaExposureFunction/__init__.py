@@ -15,9 +15,11 @@ TIMEOUT_SECONDS = 60
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("GammaExposure request received")
 
+    etf_symbol = req.params.get('symbol', 'QQQ').upper()
+
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(fetch_prices_and_compute_gex)
+            future = executor.submit(fetch_prices_and_compute_gex, etf_symbol)
             result = future.result(timeout=TIMEOUT_SECONDS)
 
         return func.HttpResponse(

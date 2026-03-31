@@ -43,8 +43,8 @@ public class GammaExposureService {
         GammaExposureResponse response = new GammaExposureResponse();
         response.setTimestamp(entity.getComputedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         response.setMarketOpen(entity.getMarketOpen());
-        response.setQqqPrice(entity.getQqqPrice());
-        response.setNqPrice(entity.getNqPrice());
+        response.setEtfPrice(entity.getEtfPrice());
+        response.setFuturesPrice(entity.getFuturesPrice());
         response.setConversionRatio(entity.getConversionRatio());
 
         if (entity.getExpirationsUsed() != null) {
@@ -65,8 +65,8 @@ public class GammaExposureService {
 
     private GammaLevelData toGammaLevelData(GammaLevelEntity entity) {
         GammaLevelData data = new GammaLevelData();
-        data.setStrikeQqq(entity.getStrikeQqq());
-        data.setStrikeNq(entity.getStrikeNq());
+        data.setStrikeEtf(entity.getStrikeEtf());
+        data.setStrikeFutures(entity.getStrikeFutures());
         data.setGex(entity.getGex());
         data.setGexCall(entity.getGexCall());
         data.setGexPut(entity.getGexPut());

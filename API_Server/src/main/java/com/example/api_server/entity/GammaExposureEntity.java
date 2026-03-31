@@ -18,11 +18,11 @@ public class GammaExposureEntity {
     @Column(name = "computed_at", nullable = false)
     private LocalDateTime computedAt;
 
-    @Column(name = "qqq_price")
-    private Double qqqPrice;
+    @Column(name = "etf_price")
+    private Double etfPrice;
 
-    @Column(name = "nq_price")
-    private Double nqPrice;
+    @Column(name = "futures_price")
+    private Double futuresPrice;
 
     @Column(name = "conversion_ratio")
     private Double conversionRatio;
@@ -63,20 +63,20 @@ public class GammaExposureEntity {
         this.computedAt = computedAt;
     }
 
-    public Double getQqqPrice() {
-        return qqqPrice;
+    public Double getEtfPrice() {
+        return etfPrice;
     }
 
-    public void setQqqPrice(Double qqqPrice) {
-        this.qqqPrice = qqqPrice;
+    public void setEtfPrice(Double etfPrice) {
+        this.etfPrice = etfPrice;
     }
 
-    public Double getNqPrice() {
-        return nqPrice;
+    public Double getFuturesPrice() {
+        return futuresPrice;
     }
 
-    public void setNqPrice(Double nqPrice) {
-        this.nqPrice = nqPrice;
+    public void setFuturesPrice(Double futuresPrice) {
+        this.futuresPrice = futuresPrice;
     }
 
     public Double getConversionRatio() {
