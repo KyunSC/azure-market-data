@@ -6,7 +6,7 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #1a1a2e;
+  background: #1e1e1e;
   color: #eee;
   min-height: 100vh;
 }
@@ -50,7 +50,7 @@ body {
 }
 
 .ticker-card {
-  background: #16213e;
+  background: #252526;
   border-radius: 12px;
   padding: 1.5rem;
   text-align: center;
@@ -120,12 +120,12 @@ body {
 
 .back-button:hover {
   background: #4fc3f7;
-  color: #1a1a2e;
+  color: #1e1e1e;
 }
 
 /* Chart Container */
 .chart-container {
-  background: #16213e;
+  background: #252526;
   border-radius: 12px;
   padding: 1rem;
   margin: 1rem 0;
@@ -157,7 +157,7 @@ body {
 }
 
 .selector-group button {
-  background: #16213e;
+  background: #252526;
   border: none;
   color: #eee;
   padding: 0.5rem 0.75rem;
@@ -168,23 +168,23 @@ body {
 }
 
 .selector-group button:hover {
-  background: #2a3f5f;
+  background: #37373d;
 }
 
 .selector-group button.active {
   background: #4fc3f7;
-  color: #1a1a2e;
+  color: #1e1e1e;
 }
 
 .selector-group button.disabled {
-  background: #0d1520;
+  background: #1a1a1a;
   color: #444;
   cursor: not-allowed;
   opacity: 0.4;
 }
 
 .selector-group button.disabled:hover {
-  background: #0d1520;
+  background: #1a1a1a;
 }
 
 /* Ticker Header */
@@ -218,15 +218,15 @@ body {
 
 .chart-type-button:hover {
   background: #4fc3f7;
-  color: #1a1a2e;
+  color: #1e1e1e;
 }
 
 .chart-type-dropdown {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  background: #16213e;
-  border: 1px solid #2a2a4e;
+  background: #252526;
+  border: 1px solid #3c3c3c;
   border-radius: 8px;
   padding: 0.4rem 0;
   min-width: 200px;
@@ -249,7 +249,7 @@ body {
 }
 
 .chart-type-option:hover {
-  background: #2a3f5f;
+  background: #37373d;
 }
 
 .chart-type-option.active {
@@ -267,7 +267,7 @@ body {
 
 .chart-type-divider {
   height: 1px;
-  background: #2a2a4e;
+  background: #3c3c3c;
   margin: 0.25rem 0;
 }
 
@@ -289,7 +289,7 @@ body {
 
 .settings-button:hover {
   background: #4fc3f7;
-  color: #1a1a2e;
+  color: #1e1e1e;
 }
 
 /* Settings Popup */
@@ -306,8 +306,8 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 101;
-  background: #16213e;
-  border: 1px solid #2a2a4e;
+  background: #252526;
+  border: 1px solid #3c3c3c;
   border-radius: 12px;
   padding: 1.5rem;
   min-width: 300px;
@@ -363,7 +363,7 @@ body {
   appearance: none;
   width: 48px;
   height: 32px;
-  border: 1px solid #2a2a4e;
+  border: 1px solid #3c3c3c;
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
@@ -385,7 +385,7 @@ body {
   gap: 1.5rem;
   margin: 1rem 0;
   padding: 0.75rem;
-  background: #1a1a2e;
+  background: #1e1e1e;
   border-radius: 8px;
 }
 
@@ -421,7 +421,7 @@ body {
 
 .settings-reset-button:hover {
   background: #4fc3f7;
-  color: #1a1a2e;
+  color: #1e1e1e;
 }
 
 /* Indicator Selector */
@@ -443,7 +443,7 @@ body {
 
 .indicator-button:hover {
   background: #4fc3f7;
-  color: #1a1a2e;
+  color: #1e1e1e;
 }
 
 .indicator-button.has-active {
@@ -454,8 +454,8 @@ body {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  background: #16213e;
-  border: 1px solid #2a2a4e;
+  background: #252526;
+  border: 1px solid #3c3c3c;
   border-radius: 8px;
   padding: 0.4rem 0;
   min-width: 180px;
@@ -479,7 +479,7 @@ body {
 }
 
 .indicator-option:hover {
-  background: #2a3f5f;
+  background: #37373d;
 }
 
 .indicator-option.active {
@@ -496,7 +496,7 @@ body {
 
 .indicator-divider {
   height: 1px;
-  background: #2a2a4e;
+  background: #3c3c3c;
   margin: 0.25rem 0;
 }
 
@@ -520,8 +520,8 @@ body {
 /* Drawing Edit Popup */
 .drawing-edit-popup {
   z-index: 200;
-  background: #16213e;
-  border: 1px solid #2a2a4e;
+  background: #252526;
+  border: 1px solid #3c3c3c;
   border-radius: 8px;
   padding: 0.5rem 0.6rem;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
