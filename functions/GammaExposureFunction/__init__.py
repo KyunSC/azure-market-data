@@ -5,9 +5,9 @@ import sys
 import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
-# Add parent directory to path so we can import shared module
+# Add parent directory to path so we can import GEXCalculator module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shared.gex_calculator import fetch_prices_and_compute_gex
+from GEXCalculator.gex_calculator import fetch_prices_and_compute_gex
 
 TIMEOUT_SECONDS = 60
 

@@ -14,6 +14,8 @@ import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
+import com.zaxxer.hikari.HikariDataSource;
+
 import javax.sql.DataSource;
 import java.util.HashMap;
 import java.util.Map;
@@ -37,9 +39,17 @@ public class LocalDatabaseConfig {
     @Primary
     @Bean
     public DataSource localDataSource() {
-        return localDataSourceProperties()
+        HikariDataSource ds = localDataSourceProperties()
                 .initializeDataSourceBuilder()
+                .type(HikariDataSource.class)
                 .build();
+        ds.setConnectionTestQuery("SELECT 1");
+        ds.setValidationTimeout(3000);
+        ds.setMaxLifetime(600000);
+        ds.setKeepaliveTime(300000);
+        ds.setMinimumIdle(2);
+        ds.setMaximumPoolSize(5);
+        return ds;
     }
 
     @Primary

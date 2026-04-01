@@ -13,6 +13,8 @@ import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
+import com.zaxxer.hikari.HikariDataSource;
+
 import javax.sql.DataSource;
 import java.util.HashMap;
 import java.util.Map;
@@ -34,16 +36,26 @@ public class SupabaseDatabaseConfig {
 
     @Bean
     public DataSource supabaseDataSource() {
-        return supabaseDataSourceProperties()
+        HikariDataSource ds = supabaseDataSourceProperties()
                 .initializeDataSourceBuilder()
+                .type(HikariDataSource.class)
                 .build();
+        ds.setConnectionTestQuery("SELECT 1");
+        ds.setValidationTimeout(3000);
+        ds.setMaxLifetime(300000);
+        ds.setKeepaliveTime(120000);
+        ds.setMinimumIdle(0);
+        ds.setMaximumPoolSize(3);
+        ds.setIdleTimeout(180000);
+        ds.setInitializationFailTimeout(-1);
+        return ds;
     }
 
     @Bean
     public LocalContainerEntityManagerFactoryBean supabaseEntityManagerFactory(
             EntityManagerFactoryBuilder builder) {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("hibernate.hbm2ddl.auto", "update");
+        properties.put("hibernate.hbm2ddl.auto", "none");
         properties.put("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect");
         properties.put("hibernate.show_sql", "true");
 
