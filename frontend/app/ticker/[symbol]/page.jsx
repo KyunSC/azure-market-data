@@ -24,6 +24,7 @@ export default function TickerDetail({ params }) {
   const [ohlcData, setOhlcData] = useState([])
   const [period, setPeriod] = useState('5d')
   const [interval, setInterval] = useState('5m')
+  const [tickBars, setTickBars] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -72,14 +73,44 @@ export default function TickerDetail({ params }) {
     return () => window.clearInterval(gexInterval)
   }, [symbol])
 
+  // Aggregate N consecutive bars into one tick bar
+  function aggregateToTickBars(data, n) {
+    const result = []
+    for (let i = 0; i < data.length; i += n) {
+      const group = data.slice(i, i + n)
+      if (!group.length) continue
+      result.push({
+        time: group[0].time,
+        open: group[0].open,
+        high: group.reduce((m, d) => Math.max(m, Number(d.high)), -Infinity),
+        low: group.reduce((m, d) => Math.min(m, Number(d.low)), Infinity),
+        close: group[group.length - 1].close,
+        volume: group.reduce((s, d) => s + Number(d.volume), 0),
+      })
+    }
+    return result
+  }
+
+  // When tick bars mode is toggled on, switch to 1m interval
+  const handleTickBarsChange = (n) => {
+    setTickBars(n)
+    if (n !== null) {
+      setInterval('1m')
+      if (!['1d', '5d'].includes(period)) setPeriod('5d')
+    }
+  }
+
   useEffect(() => {
     const fetchOHLCData = async () => {
       setLoading(true)
       setError(null)
 
+      // Tick bars always uses 1m base data
+      const fetchInterval = tickBars ? '1m' : interval
+
       try {
         const response = await fetch(
-          `/api/historical?symbol=${symbol}&period=${period}&interval=${interval}`
+          `/api/historical?symbol=${symbol}&period=${period}&interval=${fetchInterval}`
         )
 
         if (!response.ok) {
@@ -104,7 +135,7 @@ export default function TickerDetail({ params }) {
     }
 
     fetchOHLCData()
-  }, [symbol, period, interval])
+  }, [symbol, period, interval, tickBars])
 
   useEffect(() => {
     localStorage.setItem(CHART_COLORS_STORAGE_KEY, JSON.stringify({ upColor, downColor }))
@@ -164,6 +195,8 @@ export default function TickerDetail({ params }) {
           interval={interval}
           onPeriodChange={setPeriod}
           onIntervalChange={setInterval}
+          tickBars={tickBars}
+          onTickBarsChange={handleTickBarsChange}
         />
 
         {gexLevels && !gexLevels.marketOpen && (
@@ -173,7 +206,7 @@ export default function TickerDetail({ params }) {
         {loading && <p className="status">Loading chart...</p>}
         {error && <p className="status error">Error: {error}</p>}
         {!loading && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} />
+          <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} />
         )}
         {!loading && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>
