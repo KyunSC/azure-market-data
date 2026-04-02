@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.python_packages/
+__pycache__/
+.venv/
+venv/
+
+# Build output
+API_Server/target/
+frontend/.next/
+
+# Lock files
+frontend/package-lock.json
+
+# Maven wrapper
+API_Server/mvnw
+API_Server/mvnw.cmd
+API_Server/.mvn/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Git metadata
+API_Server/.gitignore
+API_Server/.gitattributes
+frontend/.gitignore
+
+# Azure Functions config (not code)
+**/function.json
+**/host.json
+
+# SQL scripts
+*.sql
+
+# Env / secrets
+.env
+*.env
+local.settings.json
+
+# Spring Boot default test (empty)
+API_Server/src/test/
+
+# Spring Boot properties (contains DB creds)
+API_Server/src/main/resources/application.properties
+
+# Duplicate requirements.txt inside function subdirs
+functions/MarketDataFunction/requirements.txt
+functions/MarketDataFunction/host.json
+
+# README
+README.md
+
+# pom.xml — large Maven config, rarely needs editing
+API_Server/pom.xml
