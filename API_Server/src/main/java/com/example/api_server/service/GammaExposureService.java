@@ -6,6 +6,7 @@ import com.example.api_server.entity.GammaExposureEntity;
 import com.example.api_server.entity.GammaLevelEntity;
 import com.example.api_server.repository.local.LocalGammaExposureRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
@@ -27,6 +28,7 @@ public class GammaExposureService {
     }
 
     @Cacheable(value = "gammaExposure", key = "#symbol")
+    @Retry(name = "gammaExposure")
     @CircuitBreaker(name = "gammaExposure", fallbackMethod = "getGammaExposureFallback")
     public GammaExposureResponse getGammaExposure(String symbol) {
         logger.info("Fetching gamma exposure for symbol: {}", symbol);

@@ -5,6 +5,7 @@ import com.example.api_server.dto.OhlcData;
 import com.example.api_server.entity.HistoricalDataEntity;
 import com.example.api_server.repository.supabase.SupabaseHistoricalDataRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
@@ -30,6 +31,7 @@ public class HistoricalDataService {
     }
 
     @Cacheable(value = "historicalData", key = "#symbol + '-' + #period + '-' + #interval")
+    @Retry(name = "historicalData")
     @CircuitBreaker(name = "historicalData", fallbackMethod = "getHistoricalDataFallback")
     public HistoricalDataResponse getHistoricalData(String symbol, String period, String interval) {
         logger.info("Fetching historical data for {} with period={}, interval={} from Supabase", symbol, period, interval);

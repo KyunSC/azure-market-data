@@ -44,7 +44,7 @@ public class SupabaseDatabaseConfig {
         ds.setValidationTimeout(3000);
         ds.setMaxLifetime(300000);
         ds.setKeepaliveTime(120000);
-        ds.setMinimumIdle(0);
+        ds.setMinimumIdle(1);
         ds.setMaximumPoolSize(3);
         ds.setIdleTimeout(180000);
         ds.setInitializationFailTimeout(-1);

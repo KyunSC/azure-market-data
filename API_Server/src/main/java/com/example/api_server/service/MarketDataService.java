@@ -5,6 +5,7 @@ import com.example.api_server.dto.TickerData;
 import com.example.api_server.entity.MarketDataEntity;
 import com.example.api_server.repository.local.LocalMarketDataRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
@@ -27,6 +28,7 @@ public class MarketDataService {
     }
 
     @Cacheable(value = "marketData", key = "#tickers.toString()")
+    @Retry(name = "marketData")
     @CircuitBreaker(name = "marketData", fallbackMethod = "getMarketDataFallback")
     public MarketDataResponse getMarketData(List<String> tickers) {
         logger.info("Fetching market data for tickers: {} from Supabase", tickers);
