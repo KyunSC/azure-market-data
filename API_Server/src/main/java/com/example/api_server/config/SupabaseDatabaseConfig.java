@@ -42,11 +42,12 @@ public class SupabaseDatabaseConfig {
                 .build();
         ds.setConnectionTestQuery("SELECT 1");
         ds.setValidationTimeout(3000);
-        ds.setMaxLifetime(300000);
-        ds.setKeepaliveTime(120000);
+        ds.setConnectionTimeout(10000);       // 10s to acquire a connection
+        ds.setMaxLifetime(120000);             // 2 min — must be < PgBouncer server_idle_timeout
+        ds.setKeepaliveTime(30000);            // 30s keepalive probes to detect dead connections
         ds.setMinimumIdle(1);
         ds.setMaximumPoolSize(3);
-        ds.setIdleTimeout(180000);
+        ds.setIdleTimeout(60000);              // 1 min idle before eviction
         ds.setInitializationFailTimeout(-1);
         return ds;
     }
@@ -58,6 +59,9 @@ public class SupabaseDatabaseConfig {
         properties.put("hibernate.hbm2ddl.auto", "none");
         properties.put("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect");
         properties.put("hibernate.show_sql", "true");
+        // Disable query plan cache — incompatible with PgBouncer transaction mode
+        properties.put("hibernate.query.plan_cache_max_size", "1");
+        properties.put("hibernate.query.plan_parameter_metadata_max_size", "1");
 
         return builder
                 .dataSource(supabaseDataSource())
