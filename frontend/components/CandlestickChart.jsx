@@ -271,7 +271,7 @@ export default function CandlestickChart({
 
         const barHeight = Math.abs(yBottom - yTop)
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
-        const x = vpSideRef.current === 'left' ? 0 : container.clientWidth - barWidth - 100
+        const x = vpSideRef.current === 'left' ? 0 : container.clientWidth - barWidth - 50
 
         const isPOC = bucket === pocBucket
         const inVA = va && i >= va.lo && i <= va.hi
@@ -1060,7 +1060,7 @@ export default function CandlestickChart({
         const yBottom = series.priceToCoordinate(bucket.priceBottom)
         if (yTop === null || yBottom === null) continue
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
-        const x = vpSideRef.current === 'left' ? 0 : container.clientWidth - barWidth - 100
+        const x = vpSideRef.current === 'left' ? 0 : container.clientWidth - barWidth - 50
         const yMin = Math.min(yTop, yBottom)
         const yMax = yMin + Math.abs(yBottom - yTop)
         if (mx >= x && mx <= x + barWidth && my >= yMin && my <= yMax) {
