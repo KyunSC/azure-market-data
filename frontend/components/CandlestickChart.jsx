@@ -196,6 +196,14 @@ export default function CandlestickChart({
   })
   const vpColorsRef = useRef(vpColors)
   vpColorsRef.current = vpColors
+  const [vpSide, setVpSide] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try { return localStorage.getItem('vpSide') || 'right' } catch { /* noop */ }
+    }
+    return 'right'
+  })
+  const vpSideRef = useRef(vpSide)
+  vpSideRef.current = vpSide
   const [vpColorPopup, setVpColorPopup] = useState(null) // { x, y }
   const vpPopupRef = useRef(null)
   const vpDrawRef = useRef(null)
@@ -263,7 +271,7 @@ export default function CandlestickChart({
 
         const barHeight = Math.abs(yBottom - yTop)
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
-        const x = container.clientWidth - barWidth - 100 // offset from price scale
+        const x = vpSideRef.current === 'left' ? 0 : container.clientWidth - barWidth - 100
 
         const isPOC = bucket === pocBucket
         const inVA = va && i >= va.lo && i <= va.hi
@@ -301,7 +309,7 @@ export default function CandlestickChart({
       chart.unsubscribeCrosshairMove(drawProfile)
       resizeObs.disconnect()
     }
-  }, [vpData, data, activeIndicators, gexLevels, chartType, vaEnabled, vaPct])
+  }, [vpData, data, activeIndicators, gexLevels, chartType, vaEnabled, vaPct, vpSide])
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -1052,7 +1060,7 @@ export default function CandlestickChart({
         const yBottom = series.priceToCoordinate(bucket.priceBottom)
         if (yTop === null || yBottom === null) continue
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
-        const x = container.clientWidth - barWidth - 100
+        const x = vpSideRef.current === 'left' ? 0 : container.clientWidth - barWidth - 100
         const yMin = Math.min(yTop, yBottom)
         const yMax = yMin + Math.abs(yBottom - yTop)
         if (mx >= x && mx <= x + barWidth && my >= yMin && my <= yMax) {
@@ -1222,6 +1230,27 @@ export default function CandlestickChart({
               style={{ width: 60 }}
             />
             <span style={{ fontSize: '0.8rem', color: '#aaa', minWidth: 20 }}>{vpTicksPerRow}</span>
+          </div>
+          <div className="drawing-edit-header" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: '0.85rem', color: '#ccc' }}>Side</span>
+            <button
+              onClick={() => {
+                const next = vpSide === 'right' ? 'left' : 'right'
+                setVpSide(next)
+                localStorage.setItem('vpSide', next)
+              }}
+              style={{
+                background: '#2a2a4e',
+                border: '1px solid #4a4a6e',
+                borderRadius: 4,
+                color: '#ccc',
+                padding: '2px 10px',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+              }}
+            >
+              {vpSide === 'right' ? 'Right' : 'Left'}
+            </button>
           </div>
         </div>
       )}
