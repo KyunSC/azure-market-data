@@ -262,6 +262,12 @@ export default function CandlestickChart({
       const pocBucket = buckets.reduce((max, b) => b.volume > max.volume ? b : max, buckets[0])
       const va = vaEnabled ? computeValueArea(buckets, vaPct) : null
 
+      // Find left edge of chart plotting area by locating the inner chart canvas
+      const chartPane = container.querySelector('table td canvas')
+      const leftEdge = chartPane
+        ? chartPane.getBoundingClientRect().left - container.getBoundingClientRect().left
+        : 0
+
       for (let i = 0; i < buckets.length; i++) {
         const bucket = buckets[i]
         if (bucket.volume === 0) continue
@@ -271,7 +277,7 @@ export default function CandlestickChart({
 
         const barHeight = Math.abs(yBottom - yTop)
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
-        const x = vpSideRef.current === 'left' ? 0 : container.clientWidth - barWidth - 50
+        const x = vpSideRef.current === 'left' ? leftEdge : container.clientWidth - barWidth - 50
 
         const isPOC = bucket === pocBucket
         const inVA = va && i >= va.lo && i <= va.hi
@@ -1053,6 +1059,10 @@ export default function CandlestickChart({
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
       const maxBarWidth = container.clientWidth * 0.15
+      const chartPane = container.querySelector('table td canvas')
+      const leftEdge = chartPane
+        ? chartPane.getBoundingClientRect().left - rect.left
+        : 0
       const { buckets, maxVol } = vpData
       for (const bucket of buckets) {
         if (bucket.volume === 0) continue
@@ -1060,7 +1070,7 @@ export default function CandlestickChart({
         const yBottom = series.priceToCoordinate(bucket.priceBottom)
         if (yTop === null || yBottom === null) continue
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
-        const x = vpSideRef.current === 'left' ? 0 : container.clientWidth - barWidth - 50
+        const x = vpSideRef.current === 'left' ? leftEdge : container.clientWidth - barWidth - 50
         const yMin = Math.min(yTop, yBottom)
         const yMax = yMin + Math.abs(yBottom - yTop)
         if (mx >= x && mx <= x + barWidth && my >= yMin && my <= yMax) {
