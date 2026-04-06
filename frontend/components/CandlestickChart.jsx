@@ -601,7 +601,7 @@ export default function CandlestickChart({
       s.applyOptions({ upColor, downColor })
     } else if (isHollow) {
       s.applyOptions({
-        upColor: '#1a1a2e', downColor: '#1a1a2e',
+        upColor: bgColor, downColor: bgColor,
         borderUpColor: upColor, borderDownColor: downColor,
         wickUpColor: upColor, wickDownColor: downColor,
       })
@@ -624,7 +624,7 @@ export default function CandlestickChart({
         wickUpColor: upColor, wickDownColor: downColor,
       })
     }
-  }, [upColor, downColor, chartType])
+  }, [upColor, downColor, bgColor, chartType])
 
   // Draw all completed drawings + preview on canvas
   useEffect(() => {
