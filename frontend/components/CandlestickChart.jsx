@@ -581,7 +581,7 @@ export default function CandlestickChart({
       window.removeEventListener('resize', handleResize)
       chart.remove()
     }
-  }, [data, activeIndicators, gexLevels, chartType])
+  }, [data, activeIndicators, gexLevels, chartType, bgColor])
 
   useEffect(() => {
     if (!seriesRef.current) return
