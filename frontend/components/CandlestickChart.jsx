@@ -785,7 +785,7 @@ export default function CandlestickChart({
 
                 const barH = Math.abs(yBottom - yTop)
                 const barW = (bucket.volume / vpMaxVol) * maxBarWidth
-                const bx = rightX - barW
+                const bx = leftX
 
                 const isPOC = bucket === pocBucket
                 const inVA = va && bi >= va.lo && bi <= va.hi
@@ -794,8 +794,8 @@ export default function CandlestickChart({
                   ctx.fillStyle = isPOC ? 'rgba(79, 195, 247, 0.35)' : 'rgba(79, 195, 247, 0.15)'
                   ctx.strokeStyle = 'rgba(79, 195, 247, 0.5)'
                 } else if (isPOC) {
-                  ctx.fillStyle = drawColor + '80'
-                  ctx.strokeStyle = drawColor + 'cc'
+                  ctx.fillStyle = '#ff1744' + '80'
+                  ctx.strokeStyle = '#ff1744' + 'cc'
                 } else if (inVA) {
                   ctx.fillStyle = drawColor + '50'
                   ctx.strokeStyle = drawColor + '70'
