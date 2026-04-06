@@ -162,6 +162,7 @@ export default function CandlestickChart({
   symbol,
   upColor = DEFAULT_CHART_COLORS.upColor,
   downColor = DEFAULT_CHART_COLORS.downColor,
+  bgColor = DEFAULT_CHART_COLORS.bgColor,
   activeIndicators = [],
   gexLevels = null,
   chartType = 'candlestick',
@@ -322,7 +323,7 @@ export default function CandlestickChart({
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { color: '#1a1a2e' },
+        background: { color: bgColor },
         textColor: '#eee',
       },
       grid: {
@@ -356,8 +357,6 @@ export default function CandlestickChart({
       .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close))
 
     const lineData = parsedData.map(d => ({ time: d.time, value: d.close }))
-    const bgColor = '#1a1a2e'
-
     let mainSeries
     switch (chartType) {
       // --- Bar types ---
