@@ -8,6 +8,7 @@ const DRAWING_TOOLS = [
   { id: 'rectangle', label: 'Rectangle', icon: '▭' },
   { id: 'rect-ray', label: 'Rectangle Ray', icon: '▭⟶' },
   { id: 'ray', label: 'Ray', icon: '⟶' },
+  { id: 'volume-profile', label: 'Volume Profile', icon: '▥' },
 ]
 
 export default function DrawingSelector({ activeTool, onSelectTool, onClearAll, drawingCount }) {

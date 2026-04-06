@@ -111,6 +111,13 @@ function getDrawingHandles(d, toPixel, series, containerWidth) {
       handles.push({ id: 'start', x: p1.x, y: y1 })
       handles.push({ id: 'end', x: p1.x, y: y2 })
     }
+  } else if (d.type === 'volume-profile') {
+    const p1 = toPixel(d.start.time, d.start.price)
+    const p2 = toPixel(d.end.time, d.end.price)
+    if (p1.x !== null && p1.y !== null && p2.x !== null && p2.y !== null) {
+      handles.push({ id: 'start', x: p1.x, y: p1.y })
+      handles.push({ id: 'end', x: p2.x, y: p2.y })
+    }
   }
   return handles
 }
@@ -153,6 +160,13 @@ function hitTestBody(d, mx, my, toPixel, series, containerWidth) {
     const y2 = series.priceToCoordinate(d.end.price)
     if (p1.x === null || y1 === null || y2 === null) return false
     return mx >= p1.x - T && my >= Math.min(y1, y2) - T && my <= Math.max(y1, y2) + T
+  }
+  if (d.type === 'volume-profile') {
+    const x1 = toPixel(d.start.time, d.start.price).x
+    const x2 = toPixel(d.end.time, d.end.price).x
+    if (x1 === null || x2 === null) return false
+    // Hit test on the time-range area (full chart height)
+    return mx >= Math.min(x1, x2) - T && mx <= Math.max(x1, x2) + T
   }
   return false
 }
@@ -208,6 +222,7 @@ export default function CandlestickChart({
   const [vpColorPopup, setVpColorPopup] = useState(null) // { x, y }
   const vpPopupRef = useRef(null)
   const vpDrawRef = useRef(null)
+  const dataRef = useRef([])
   const drawingStateRef = useRef({ startPoint: null })
   const [previewPoint, setPreviewPoint] = useState(null)
   const [editingDrawing, setEditingDrawing] = useState(null) // { index, x, y }
@@ -356,6 +371,7 @@ export default function CandlestickChart({
       }))
       .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close))
 
+    dataRef.current = parsedData
     const lineData = parsedData.map(d => ({ time: d.time, value: d.close }))
     let mainSeries
     switch (chartType) {
@@ -730,6 +746,69 @@ export default function CandlestickChart({
           ctx.fillStyle = d.preview ? 'rgba(79, 195, 247, 0.08)' : (drawColor + '20')
           ctx.fillRect(x, y, w, h)
           ctx.strokeRect(x, y, w, h)
+        } else if (d.type === 'volume-profile') {
+          const x1 = chart.timeScale().timeToCoordinate(d.start.time)
+          const x2 = chart.timeScale().timeToCoordinate(d.end.time)
+          if (x1 === null || x2 === null) continue
+          const leftX = Math.min(x1, x2)
+          const rightX = Math.max(x1, x2)
+          const rangeWidth = rightX - leftX
+
+          // Draw time-range boundary lines
+          ctx.beginPath()
+          ctx.setLineDash([4, 4])
+          ctx.strokeStyle = d.preview ? 'rgba(79, 195, 247, 0.4)' : (drawColor + '60')
+          ctx.moveTo(leftX, 0); ctx.lineTo(leftX, container.clientHeight)
+          ctx.moveTo(rightX, 0); ctx.lineTo(rightX, container.clientHeight)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          // Filter chart data to the selected time range
+          const tMin = Math.min(d.start.time, d.end.time)
+          const tMax = Math.max(d.start.time, d.end.time)
+          const rangeBars = dataRef.current.filter(b => b.time >= tMin && b.time <= tMax && b.volume > 0)
+
+          if (rangeBars.length > 0) {
+            const vpResult = computeVolumeProfile(rangeBars, 4)
+            if (vpResult) {
+              const { buckets: vpBuckets, maxVol: vpMaxVol } = vpResult
+              const pocBucket = vpBuckets.reduce((max, b) => b.volume > max.volume ? b : max, vpBuckets[0])
+              const va = computeValueArea(vpBuckets, 0.7)
+              const maxBarWidth = rangeWidth
+
+              for (let bi = 0; bi < vpBuckets.length; bi++) {
+                const bucket = vpBuckets[bi]
+                if (bucket.volume === 0) continue
+                const yTop = series.priceToCoordinate(bucket.priceTop)
+                const yBottom = series.priceToCoordinate(bucket.priceBottom)
+                if (yTop === null || yBottom === null) continue
+
+                const barH = Math.abs(yBottom - yTop)
+                const barW = (bucket.volume / vpMaxVol) * maxBarWidth
+                const bx = rightX - barW
+
+                const isPOC = bucket === pocBucket
+                const inVA = va && bi >= va.lo && bi <= va.hi
+
+                if (d.preview) {
+                  ctx.fillStyle = isPOC ? 'rgba(79, 195, 247, 0.35)' : 'rgba(79, 195, 247, 0.15)'
+                  ctx.strokeStyle = 'rgba(79, 195, 247, 0.5)'
+                } else if (isPOC) {
+                  ctx.fillStyle = drawColor + '80'
+                  ctx.strokeStyle = drawColor + 'cc'
+                } else if (inVA) {
+                  ctx.fillStyle = drawColor + '50'
+                  ctx.strokeStyle = drawColor + '70'
+                } else {
+                  ctx.fillStyle = drawColor + '25'
+                  ctx.strokeStyle = drawColor + '40'
+                }
+                ctx.lineWidth = isPOC ? 1 : 0.5
+                ctx.fillRect(bx, Math.min(yTop, yBottom), barW, Math.max(barH, 1))
+                ctx.strokeRect(bx, Math.min(yTop, yBottom), barW, Math.max(barH, 1))
+              }
+            }
+          }
         }
       }
 
