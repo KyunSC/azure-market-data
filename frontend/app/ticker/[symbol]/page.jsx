@@ -31,6 +31,7 @@ export default function TickerDetail({ params }) {
   const [activeIndicators, setActiveIndicators] = useState([])
   const [upColor, setUpColor] = useState(DEFAULT_CHART_COLORS.upColor)
   const [downColor, setDownColor] = useState(DEFAULT_CHART_COLORS.downColor)
+  const [bgColor, setBgColor] = useState(DEFAULT_CHART_COLORS.bgColor)
   const [gexLevels, setGexLevels] = useState(null)
   const [chartType, setChartType] = useState('candlestick')
   const [drawingTool, setDrawingTool] = useState(null)
@@ -46,6 +47,7 @@ export default function TickerDetail({ params }) {
       const savedColors = JSON.parse(localStorage.getItem(CHART_COLORS_STORAGE_KEY))
       if (savedColors?.upColor) setUpColor(savedColors.upColor)
       if (savedColors?.downColor) setDownColor(savedColors.downColor)
+      if (savedColors?.bgColor) setBgColor(savedColors.bgColor)
     } catch { /* ignore */ }
   }, [])
 
@@ -138,12 +140,13 @@ export default function TickerDetail({ params }) {
   }, [symbol, period, interval, tickBars])
 
   useEffect(() => {
-    localStorage.setItem(CHART_COLORS_STORAGE_KEY, JSON.stringify({ upColor, downColor }))
-  }, [upColor, downColor])
+    localStorage.setItem(CHART_COLORS_STORAGE_KEY, JSON.stringify({ upColor, downColor, bgColor }))
+  }, [upColor, downColor, bgColor])
 
   const handleResetColors = () => {
     setUpColor(DEFAULT_CHART_COLORS.upColor)
     setDownColor(DEFAULT_CHART_COLORS.downColor)
+    setBgColor(DEFAULT_CHART_COLORS.bgColor)
   }
 
   const handleToggleIndicator = (id) => {
@@ -183,8 +186,10 @@ export default function TickerDetail({ params }) {
           <SettingsPopup
             upColor={upColor}
             downColor={downColor}
+            bgColor={bgColor}
             onUpColorChange={setUpColor}
             onDownColorChange={setDownColor}
+            onBgColorChange={setBgColor}
             onClose={() => setSettingsOpen(false)}
             onReset={handleResetColors}
           />
@@ -206,7 +211,7 @@ export default function TickerDetail({ params }) {
         {loading && <p className="status">Loading chart...</p>}
         {error && <p className="status error">Error: {error}</p>}
         {!loading && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} />
+          <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} />
         )}
         {!loading && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>

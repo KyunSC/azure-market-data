@@ -1,6 +1,6 @@
 'use client'
 
-export default function SettingsPopup({ upColor, downColor, onUpColorChange, onDownColorChange, onClose, onReset }) {
+export default function SettingsPopup({ upColor, downColor, bgColor, onUpColorChange, onDownColorChange, onBgColorChange, onClose, onReset }) {
   return (
     <div className="settings-backdrop" onClick={onClose}>
       <div className="settings-popup" onClick={(e) => e.stopPropagation()}>
@@ -40,6 +40,17 @@ export default function SettingsPopup({ upColor, downColor, onUpColorChange, onD
             <div className="settings-preview-body" style={{ background: downColor }} />
             <div className="settings-preview-wick" style={{ background: downColor }} />
           </div>
+        </div>
+
+        <div className="settings-section-label">Chart Background</div>
+
+        <div className="settings-color-row">
+          <label>Background</label>
+          <input
+            type="color"
+            value={bgColor}
+            onChange={(e) => onBgColorChange(e.target.value)}
+          />
         </div>
 
         <button className="settings-reset-button" onClick={onReset}>
