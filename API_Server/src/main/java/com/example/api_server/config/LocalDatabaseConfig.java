@@ -20,13 +20,14 @@ import javax.sql.DataSource;
 import java.util.HashMap;
 import java.util.Map;
 
-@Configuration
-@EnableTransactionManagement
-@EnableJpaRepositories(
-        basePackages = "com.example.api_server.repository.local",
-        entityManagerFactoryRef = "localEntityManagerFactory",
-        transactionManagerRef = "localTransactionManager"
-)
+// Disabled — using Supabase as the sole datasource
+// @Configuration
+// @EnableTransactionManagement
+// @EnableJpaRepositories(
+//         basePackages = "com.example.api_server.repository.local",
+//         entityManagerFactoryRef = "localEntityManagerFactory",
+//         transactionManagerRef = "localTransactionManager"
+// )
 public class LocalDatabaseConfig {
 
     @Primary

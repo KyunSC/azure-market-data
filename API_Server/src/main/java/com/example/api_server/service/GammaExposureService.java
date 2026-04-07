@@ -4,7 +4,7 @@ import com.example.api_server.dto.GammaExposureResponse;
 import com.example.api_server.dto.GammaLevelData;
 import com.example.api_server.entity.GammaExposureEntity;
 import com.example.api_server.entity.GammaLevelEntity;
-import com.example.api_server.repository.local.LocalGammaExposureRepository;
+import com.example.api_server.repository.supabase.SupabaseGammaExposureRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
@@ -21,9 +21,9 @@ import java.util.List;
 public class GammaExposureService {
 
     private static final Logger logger = LoggerFactory.getLogger(GammaExposureService.class);
-    private final LocalGammaExposureRepository repository;
+    private final SupabaseGammaExposureRepository repository;
 
-    public GammaExposureService(LocalGammaExposureRepository repository) {
+    public GammaExposureService(SupabaseGammaExposureRepository repository) {
         this.repository = repository;
     }
 

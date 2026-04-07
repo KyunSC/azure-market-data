@@ -3,7 +3,7 @@ package com.example.api_server.service;
 import com.example.api_server.dto.HistoricalDataResponse;
 import com.example.api_server.dto.OhlcData;
 import com.example.api_server.entity.HistoricalDataEntity;
-import com.example.api_server.repository.local.LocalHistoricalDataRepository;
+import com.example.api_server.repository.supabase.SupabaseHistoricalDataRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
@@ -12,6 +12,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -24,9 +25,9 @@ public class HistoricalDataService {
 
     private static final Logger logger = LoggerFactory.getLogger(HistoricalDataService.class);
 
-    private final LocalHistoricalDataRepository localRepository;
+    private final SupabaseHistoricalDataRepository localRepository;
 
-    public HistoricalDataService(LocalHistoricalDataRepository localRepository) {
+    public HistoricalDataService(SupabaseHistoricalDataRepository localRepository) {
         this.localRepository = localRepository;
     }
 
@@ -74,7 +75,7 @@ public class HistoricalDataService {
     }
 
     private LocalDateTime periodToCutoff(String period) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("America/New_York"));
         return switch (period) {
             case "1d" -> now.minusDays(1);
             case "5d" -> now.minusDays(5);

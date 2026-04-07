@@ -7,6 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.jpa.EntityManagerFactoryBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
@@ -28,12 +29,14 @@ import java.util.Map;
 )
 public class SupabaseDatabaseConfig {
 
+    @Primary
     @Bean
     @ConfigurationProperties("spring.datasource.supabase")
     public DataSourceProperties supabaseDataSourceProperties() {
         return new DataSourceProperties();
     }
 
+    @Primary
     @Bean
     public DataSource supabaseDataSource() {
         HikariDataSource ds = supabaseDataSourceProperties()
@@ -43,15 +46,16 @@ public class SupabaseDatabaseConfig {
         ds.setConnectionTestQuery("SELECT 1");
         ds.setValidationTimeout(3000);
         ds.setConnectionTimeout(10000);       // 10s to acquire a connection
-        ds.setMaxLifetime(120000);             // 2 min — must be < PgBouncer server_idle_timeout
-        ds.setKeepaliveTime(30000);            // 30s keepalive probes to detect dead connections
-        ds.setMinimumIdle(1);
-        ds.setMaximumPoolSize(3);
+        ds.setMaxLifetime(600000);             // 10 min
+        ds.setKeepaliveTime(300000);           // 5 min keepalive probes
+        ds.setMinimumIdle(2);
+        ds.setMaximumPoolSize(5);
         ds.setIdleTimeout(60000);              // 1 min idle before eviction
         ds.setInitializationFailTimeout(-1);
         return ds;
     }
 
+    @Primary
     @Bean
     public LocalContainerEntityManagerFactoryBean supabaseEntityManagerFactory(
             EntityManagerFactoryBuilder builder) {
@@ -71,6 +75,7 @@ public class SupabaseDatabaseConfig {
                 .build();
     }
 
+    @Primary
     @Bean
     public PlatformTransactionManager supabaseTransactionManager(
             @Qualifier("supabaseEntityManagerFactory") EntityManagerFactory entityManagerFactory) {

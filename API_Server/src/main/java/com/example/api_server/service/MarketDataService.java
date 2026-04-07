@@ -3,7 +3,7 @@ package com.example.api_server.service;
 import com.example.api_server.dto.MarketDataResponse;
 import com.example.api_server.dto.TickerData;
 import com.example.api_server.entity.MarketDataEntity;
-import com.example.api_server.repository.local.LocalMarketDataRepository;
+import com.example.api_server.repository.supabase.SupabaseMarketDataRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
@@ -21,9 +21,9 @@ import java.util.List;
 public class MarketDataService {
 
     private static final Logger logger = LoggerFactory.getLogger(MarketDataService.class);
-    private final LocalMarketDataRepository localRepository;
+    private final SupabaseMarketDataRepository localRepository;
 
-    public MarketDataService(LocalMarketDataRepository localRepository) {
+    public MarketDataService(SupabaseMarketDataRepository localRepository) {
         this.localRepository = localRepository;
     }
 
