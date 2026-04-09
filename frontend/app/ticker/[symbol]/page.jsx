@@ -8,7 +8,7 @@ import SettingsPopup from '../../../components/SettingsPopup'
 import IndicatorSelector from '../../../components/IndicatorSelector'
 import DrawingSelector from '../../../components/DrawingSelector'
 import ChartTypeSelector from '../../../components/ChartTypeSelector'
-import { DEFAULT_CHART_COLORS, CHART_COLORS_STORAGE_KEY } from '../../../components/chartDefaults'
+import { DEFAULT_CHART_COLORS, CHART_COLORS_STORAGE_KEY, DEFAULT_TIMEZONE, TIMEZONE_STORAGE_KEY } from '../../../components/chartDefaults'
 import { INDICATORS_STORAGE_KEY } from '../../../components/indicators'
 
 export default function TickerDetail({ params }) {
@@ -38,6 +38,7 @@ export default function TickerDetail({ params }) {
   const [chartType, setChartType] = useState('candlestick')
   const [drawingTool, setDrawingTool] = useState(null)
   const [drawings, setDrawings] = useState([])
+  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE)
 
   // Hydrate from localStorage after mount to avoid SSR/client mismatch
   useEffect(() => {

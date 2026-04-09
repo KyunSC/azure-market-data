@@ -1,8 +1,8 @@
 'use client'
 
-import { COLOR_PRESETS } from './chartDefaults'
+import { COLOR_PRESETS, TIMEZONE_OPTIONS } from './chartDefaults'
 
-export default function SettingsPopup({ upColor, downColor, bgColor, borderUpColor, borderDownColor, onUpColorChange, onDownColorChange, onBgColorChange, onBorderUpColorChange, onBorderDownColorChange, onClose, onReset }) {
+export default function SettingsPopup({ upColor, downColor, bgColor, borderUpColor, borderDownColor, onUpColorChange, onDownColorChange, onBgColorChange, onBorderUpColorChange, onBorderDownColorChange, onClose, onReset, timezone, onTimezoneChange }) {
   const applyPreset = (preset) => {
     onUpColorChange(preset.upColor)
     onDownColorChange(preset.downColor)
@@ -107,6 +107,21 @@ export default function SettingsPopup({ upColor, downColor, bgColor, borderUpCol
             value={bgColor}
             onChange={(e) => onBgColorChange(e.target.value)}
           />
+        </div>
+
+        <div className="settings-section-label">Timezone</div>
+
+        <div className="settings-color-row">
+          <label>Chart Timezone</label>
+          <select
+            className="settings-select"
+            value={timezone}
+            onChange={(e) => onTimezoneChange(e.target.value)}
+          >
+            {TIMEZONE_OPTIONS.map((tz) => (
+              <option key={tz.value} value={tz.value}>{tz.label}</option>
+            ))}
+          </select>
         </div>
 
         <button className="settings-reset-button" onClick={onReset}>

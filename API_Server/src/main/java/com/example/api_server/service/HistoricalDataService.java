@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -120,7 +119,7 @@ public class HistoricalDataService {
                 .filter(e -> e.getOpen() != null && e.getHigh() != null && e.getLow() != null && e.getClose() != null)
                 .map(e -> new OhlcData(
                         intraday
-                                ? String.valueOf(e.getDate().toEpochSecond(ZoneOffset.UTC))
+                                ? String.valueOf(e.getDate().atZone(ZoneId.systemDefault()).toEpochSecond())
                                 : e.getDate().toLocalDate().toString(),
                         e.getOpen(),
                         e.getHigh(),

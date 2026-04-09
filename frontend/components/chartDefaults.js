@@ -13,3 +13,14 @@ export const COLOR_PRESETS = [
 ]
 
 export const CHART_COLORS_STORAGE_KEY = 'candlestick-chart-colors'
+
+export const TIMEZONE_OPTIONS = [
+  { label: 'Eastern (ET)', value: 'America/New_York' },
+  { label: 'Central (CT)', value: 'America/Chicago' },
+  { label: 'Mountain (MT)', value: 'America/Denver' },
+  { label: 'Pacific (PT)', value: 'America/Los_Angeles' },
+  { label: 'UTC', value: 'UTC' },
+]
+
+export const DEFAULT_TIMEZONE = 'America/New_York'
+export const TIMEZONE_STORAGE_KEY = 'chart-timezone'
