@@ -47,6 +47,10 @@ export default function TickerDetail({ params }) {
       if (savedIndicators) setActiveIndicators(savedIndicators)
     } catch { /* ignore */ }
     try {
+      const savedTz = localStorage.getItem(TIMEZONE_STORAGE_KEY)
+      if (savedTz) setTimezone(savedTz)
+    } catch { /* ignore */ }
+    try {
       const savedColors = JSON.parse(localStorage.getItem(CHART_COLORS_STORAGE_KEY))
       if (savedColors?.upColor) setUpColor(savedColors.upColor)
       if (savedColors?.downColor) setDownColor(savedColors.downColor)
