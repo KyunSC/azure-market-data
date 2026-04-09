@@ -177,6 +177,8 @@ export default function CandlestickChart({
   upColor = DEFAULT_CHART_COLORS.upColor,
   downColor = DEFAULT_CHART_COLORS.downColor,
   bgColor = DEFAULT_CHART_COLORS.bgColor,
+  borderUpColor = DEFAULT_CHART_COLORS.borderUpColor,
+  borderDownColor = DEFAULT_CHART_COLORS.borderDownColor,
   activeIndicators = [],
   gexLevels = null,
   chartType = 'candlestick',
@@ -399,7 +401,7 @@ export default function CandlestickChart({
       case 'candlestick':
         mainSeries = chart.addSeries(CandlestickSeries, {
           upColor, downColor,
-          borderUpColor: upColor, borderDownColor: downColor,
+          borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
           wickUpColor: upColor, wickDownColor: downColor,
         })
         mainSeries.setData(parsedData)
@@ -407,7 +409,7 @@ export default function CandlestickChart({
       case 'candlestick-trend': {
         mainSeries = chart.addSeries(CandlestickSeries, {
           upColor, downColor,
-          borderUpColor: upColor, borderDownColor: downColor,
+          borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
           wickUpColor: upColor, wickDownColor: downColor,
         })
         const trendData = parsedData.map((d, i) => {
@@ -416,7 +418,7 @@ export default function CandlestickChart({
           return {
             ...d,
             color: isUp ? upColor : downColor,
-            borderColor: isUp ? upColor : downColor,
+            borderColor: isUp ? (borderUpColor || upColor) : (borderDownColor || downColor),
             wickColor: isUp ? upColor : downColor,
           }
         })
@@ -435,7 +437,7 @@ export default function CandlestickChart({
       case 'hollow':
         mainSeries = chart.addSeries(CandlestickSeries, {
           upColor: bgColor, downColor: bgColor,
-          borderUpColor: upColor, borderDownColor: downColor,
+          borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
           wickUpColor: upColor, wickDownColor: downColor,
         })
         mainSeries.setData(parsedData)
@@ -443,7 +445,7 @@ export default function CandlestickChart({
       case 'candlestick-flat':
         mainSeries = chart.addSeries(CandlestickSeries, {
           upColor, downColor,
-          borderUpColor: upColor, borderDownColor: downColor,
+          borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
           wickUpColor: '#888', wickDownColor: '#888',
         })
         mainSeries.setData(parsedData)
@@ -618,7 +620,7 @@ export default function CandlestickChart({
     } else if (isHollow) {
       s.applyOptions({
         upColor: bgColor, downColor: bgColor,
-        borderUpColor: upColor, borderDownColor: downColor,
+        borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
         wickUpColor: upColor, wickDownColor: downColor,
       })
     } else if (chartType === '3d-candlestick') {
@@ -630,17 +632,17 @@ export default function CandlestickChart({
     } else if (chartType === 'candlestick-flat') {
       s.applyOptions({
         upColor, downColor,
-        borderUpColor: upColor, borderDownColor: downColor,
+        borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
         wickUpColor: '#888', wickDownColor: '#888',
       })
     } else if (['candlestick', 'candlestick-trend'].includes(chartType)) {
       s.applyOptions({
         upColor, downColor,
-        borderUpColor: upColor, borderDownColor: downColor,
+        borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
         wickUpColor: upColor, wickDownColor: downColor,
       })
     }
-  }, [upColor, downColor, bgColor, chartType])
+  }, [upColor, downColor, bgColor, borderUpColor, borderDownColor, chartType])
 
   // Draw all completed drawings + preview on canvas
   useEffect(() => {

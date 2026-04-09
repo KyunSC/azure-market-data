@@ -32,6 +32,8 @@ export default function TickerDetail({ params }) {
   const [upColor, setUpColor] = useState(DEFAULT_CHART_COLORS.upColor)
   const [downColor, setDownColor] = useState(DEFAULT_CHART_COLORS.downColor)
   const [bgColor, setBgColor] = useState(DEFAULT_CHART_COLORS.bgColor)
+  const [borderUpColor, setBorderUpColor] = useState(DEFAULT_CHART_COLORS.borderUpColor)
+  const [borderDownColor, setBorderDownColor] = useState(DEFAULT_CHART_COLORS.borderDownColor)
   const [gexLevels, setGexLevels] = useState(null)
   const [chartType, setChartType] = useState('candlestick')
   const [drawingTool, setDrawingTool] = useState(null)
@@ -48,6 +50,8 @@ export default function TickerDetail({ params }) {
       if (savedColors?.upColor) setUpColor(savedColors.upColor)
       if (savedColors?.downColor) setDownColor(savedColors.downColor)
       if (savedColors?.bgColor) setBgColor(savedColors.bgColor)
+      if (savedColors?.borderUpColor !== undefined) setBorderUpColor(savedColors.borderUpColor)
+      if (savedColors?.borderDownColor !== undefined) setBorderDownColor(savedColors.borderDownColor)
     } catch { /* ignore */ }
   }, [])
 
@@ -140,13 +144,15 @@ export default function TickerDetail({ params }) {
   }, [symbol, period, interval, tickBars])
 
   useEffect(() => {
-    localStorage.setItem(CHART_COLORS_STORAGE_KEY, JSON.stringify({ upColor, downColor, bgColor }))
-  }, [upColor, downColor, bgColor])
+    localStorage.setItem(CHART_COLORS_STORAGE_KEY, JSON.stringify({ upColor, downColor, bgColor, borderUpColor, borderDownColor }))
+  }, [upColor, downColor, bgColor, borderUpColor, borderDownColor])
 
   const handleResetColors = () => {
     setUpColor(DEFAULT_CHART_COLORS.upColor)
     setDownColor(DEFAULT_CHART_COLORS.downColor)
     setBgColor(DEFAULT_CHART_COLORS.bgColor)
+    setBorderUpColor(DEFAULT_CHART_COLORS.borderUpColor)
+    setBorderDownColor(DEFAULT_CHART_COLORS.borderDownColor)
   }
 
   const handleToggleIndicator = (id) => {
@@ -187,9 +193,13 @@ export default function TickerDetail({ params }) {
             upColor={upColor}
             downColor={downColor}
             bgColor={bgColor}
+            borderUpColor={borderUpColor}
+            borderDownColor={borderDownColor}
             onUpColorChange={setUpColor}
             onDownColorChange={setDownColor}
             onBgColorChange={setBgColor}
+            onBorderUpColorChange={setBorderUpColor}
+            onBorderDownColorChange={setBorderDownColor}
             onClose={() => setSettingsOpen(false)}
             onReset={handleResetColors}
           />
@@ -211,7 +221,7 @@ export default function TickerDetail({ params }) {
         {loading && <p className="status">Loading chart...</p>}
         {error && <p className="status error">Error: {error}</p>}
         {!loading && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} />
+          <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} borderUpColor={borderUpColor} borderDownColor={borderDownColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} />
         )}
         {!loading && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>
