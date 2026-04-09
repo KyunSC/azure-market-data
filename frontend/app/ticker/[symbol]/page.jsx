@@ -120,7 +120,8 @@ export default function TickerDetail({ params }) {
         )
 
         if (!response.ok) {
-          let errorMessage = `HTTP ${response.status}`
+          const suffix = response.status >= 500 ? ' (API)' : ''
+          let errorMessage = `HTTP ${response.status}${suffix}`
           try {
             const errorData = await response.json()
             errorMessage = errorData.error || errorMessage

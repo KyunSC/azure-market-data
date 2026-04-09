@@ -93,8 +93,10 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
         # Process calls
         for _, row in calls.iterrows():
             strike = float(row['strike'])
-            oi = int(row.get('openInterest', 0) or 0)
-            iv = float(row.get('impliedVolatility', 0) or 0)
+            raw_oi = row.get('openInterest', 0)
+            raw_iv = row.get('impliedVolatility', 0)
+            oi = 0 if (raw_oi is None or (isinstance(raw_oi, float) and math.isnan(raw_oi))) else int(raw_oi)
+            iv = 0.0 if (raw_iv is None or (isinstance(raw_iv, float) and math.isnan(raw_iv))) else float(raw_iv)
 
             if oi <= 0 or iv < MIN_IV:
                 continue
@@ -109,8 +111,10 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
         # Process puts (negative gamma effect on dealers)
         for _, row in puts.iterrows():
             strike = float(row['strike'])
-            oi = int(row.get('openInterest', 0) or 0)
-            iv = float(row.get('impliedVolatility', 0) or 0)
+            raw_oi = row.get('openInterest', 0)
+            raw_iv = row.get('impliedVolatility', 0)
+            oi = 0 if (raw_oi is None or (isinstance(raw_oi, float) and math.isnan(raw_oi))) else int(raw_oi)
+            iv = 0.0 if (raw_iv is None or (isinstance(raw_iv, float) and math.isnan(raw_iv))) else float(raw_iv)
 
             if oi <= 0 or iv < MIN_IV:
                 continue

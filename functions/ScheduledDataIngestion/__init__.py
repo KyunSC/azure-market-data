@@ -150,6 +150,55 @@ def insert_gex_data(cursor, etf_symbol, gex_result):
 
     return exposure_id
 
+def fallback_gex_from_previous(cursor, etf_symbol):
+    """Re-insert the most recent market-hours GEX data as a new entry."""
+    cursor.execute("""
+        SELECT id, etf_price, futures_price, conversion_ratio, expirations_used
+        FROM gamma_exposure
+        WHERE symbol = %s AND market_open = true
+        ORDER BY computed_at DESC
+        LIMIT 1
+    """, (etf_symbol,))
+    row = cursor.fetchone()
+    if not row:
+        return None
+
+    prev_id, etf_price, futures_price, conversion_ratio, expirations_used = row
+
+    cursor.execute("""
+        SELECT strike_etf, strike_futures, gex, gex_call, gex_put, label
+        FROM gamma_levels
+        WHERE gamma_exposure_id = %s
+    """, (prev_id,))
+    levels = cursor.fetchall()
+    if not levels:
+        return None
+
+    cursor.execute("""
+        INSERT INTO gamma_exposure
+            (symbol, computed_at, etf_price, futures_price, conversion_ratio, expirations_used, market_open)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        etf_symbol,
+        datetime.now(pytz.utc),
+        etf_price,
+        futures_price,
+        conversion_ratio,
+        expirations_used,
+        False,
+    ))
+    new_id = cursor.fetchone()[0]
+
+    for strike_etf, strike_futures, gex, gex_call, gex_put, label in levels:
+        cursor.execute("""
+            INSERT INTO gamma_levels
+                (gamma_exposure_id, strike_etf, strike_futures, gex, gex_call, gex_put, label)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (new_id, strike_etf, strike_futures, gex, gex_call, gex_put, label))
+
+    return new_id
+
 def upsert_historical_data(cursor, symbol, data):
     """Upsert historical OHLC data."""
     for row in data:
@@ -283,7 +332,7 @@ def main(mytimer: func.TimerRequest) -> None:
 
             logging.info('Intraday data fetch complete')
 
-        # Fetch GEX data every 15 minutes during market hours (for all ETF/futures pairs)
+        # Fetch GEX data every 15 minutes (for all ETF/futures pairs)
         if should_fetch_gex():
             for etf_symbol in GEX_PAIRS:
                 pair = GEX_PAIRS[etf_symbol]
@@ -300,10 +349,18 @@ def main(mytimer: func.TimerRequest) -> None:
                                  f'{pair["futures"]}={gex_result["futures_price"]}, '
                                  f'{len(gex_result["levels"])} levels')
 
-                except FuturesTimeoutError:
-                    logging.error(f'Timeout computing gamma exposure for {etf_symbol}')
-                except Exception as e:
+                except (FuturesTimeoutError, Exception) as e:
                     logging.error(f'Error computing gamma exposure for {etf_symbol}: {e}')
+                    logging.info(f'Falling back to previous market-hours GEX for {etf_symbol}')
+                    try:
+                        fallback_id = fallback_gex_from_previous(cursor, etf_symbol)
+                        if fallback_id:
+                            conn.commit()
+                            logging.info(f'Fallback GEX saved for {etf_symbol} (id={fallback_id})')
+                        else:
+                            logging.warning(f'No previous market-hours GEX found for {etf_symbol}')
+                    except Exception as fb_err:
+                        logging.error(f'Fallback GEX failed for {etf_symbol}: {fb_err}')
 
     except Exception as e:
         logging.error(f'Database error: {e}')

@@ -18,7 +18,8 @@ export default function Home() {
       const response = await fetch(`/api/market?tickers=${tickerParam}`)
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        const suffix = response.status >= 500 ? ' (API)' : ''
+        throw new Error(`HTTP ${response.status}${suffix}`)
       }
 
       const result = await response.json()
