@@ -99,15 +99,9 @@ def should_fetch_intraday():
     return True
 
 def should_fetch_gex():
-    """Fetch GEX every 15 minutes during market hours (weekday 9:30-16:15 ET)."""
+    """Fetch GEX every 15 minutes (all hours, all days)."""
     et_tz = pytz.timezone('US/Eastern')
     now_et = datetime.now(et_tz)
-    if now_et.weekday() >= 5:
-        return False
-    if now_et.hour < 9 or (now_et.hour == 9 and now_et.minute < 30):
-        return False
-    if now_et.hour > 16 or (now_et.hour == 16 and now_et.minute > 15):
-        return False
     return now_et.minute % 15 < 2
 
 def get_db_connection():
