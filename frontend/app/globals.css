@@ -379,6 +379,20 @@ body {
   border-radius: 2px;
 }
 
+.settings-select {
+  background: #1a1a2e;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.settings-select:focus {
+  outline: 1px solid #4fc3f7;
+}
+
 .settings-presets {
   display: flex;
   gap: 0.5rem;

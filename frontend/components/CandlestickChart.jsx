@@ -23,6 +23,14 @@ const GEX_LABELS = {
 
 const TICK_SIZE = 0.25 // ES/NQ futures tick size
 
+function shiftToTimezone(utcEpoch, tz) {
+  if (tz === 'UTC') return utcEpoch
+  const d = new Date(utcEpoch * 1000)
+  const utcStr = d.toLocaleString('en-US', { timeZone: 'UTC' })
+  const tzStr = d.toLocaleString('en-US', { timeZone: tz })
+  return utcEpoch + (new Date(tzStr) - new Date(utcStr)) / 1000
+}
+
 function computeVolumeProfile(intradayData, ticksPerRow = 4) {
   if (!intradayData || intradayData.length === 0) return null
 
@@ -186,6 +194,7 @@ export default function CandlestickChart({
   drawings = [],
   onDrawingComplete = () => {},
   onDrawingUpdate = () => {},
+  timezone = 'America/New_York',
 }) {
   const chartContainerRef = useRef()
   const chartRef = useRef()
@@ -371,14 +380,17 @@ export default function CandlestickChart({
 
     const parsedData = data
       .filter(d => d.open != null && d.high != null && d.low != null && d.close != null)
-      .map(d => ({
-        time: /^\d+$/.test(d.time) ? Number(d.time) : d.time,
-        open: Number(d.open),
-        high: Number(d.high),
-        low: Number(d.low),
-        close: Number(d.close),
-        volume: Number(d.volume),
-      }))
+      .map(d => {
+        const raw = /^\d+$/.test(d.time) ? Number(d.time) : d.time
+        return {
+          time: typeof raw === 'number' ? shiftToTimezone(raw, timezone) : raw,
+          open: Number(d.open),
+          high: Number(d.high),
+          low: Number(d.low),
+          close: Number(d.close),
+          volume: Number(d.volume),
+        }
+      })
       .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close))
 
     dataRef.current = parsedData
@@ -607,7 +619,7 @@ export default function CandlestickChart({
       window.removeEventListener('resize', handleResize)
       chart.remove()
     }
-  }, [data, activeIndicators, gexLevels, chartType, bgColor])
+  }, [data, activeIndicators, gexLevels, chartType, bgColor, timezone])
 
   useEffect(() => {
     if (!seriesRef.current) return
