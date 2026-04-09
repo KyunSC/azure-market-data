@@ -153,6 +153,11 @@ export default function TickerDetail({ params }) {
     localStorage.setItem(CHART_COLORS_STORAGE_KEY, JSON.stringify({ upColor, downColor, bgColor, borderUpColor, borderDownColor }))
   }, [upColor, downColor, bgColor, borderUpColor, borderDownColor])
 
+  const handleTimezoneChange = (tz) => {
+    setTimezone(tz)
+    localStorage.setItem(TIMEZONE_STORAGE_KEY, tz)
+  }
+
   const handleResetColors = () => {
     setUpColor(DEFAULT_CHART_COLORS.upColor)
     setDownColor(DEFAULT_CHART_COLORS.downColor)
@@ -208,6 +213,8 @@ export default function TickerDetail({ params }) {
             onBorderDownColorChange={setBorderDownColor}
             onClose={() => setSettingsOpen(false)}
             onReset={handleResetColors}
+            timezone={timezone}
+            onTimezoneChange={handleTimezoneChange}
           />
         )}
 
