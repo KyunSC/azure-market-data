@@ -204,12 +204,20 @@ export default function CandlestickChart({
         if (saved) {
           const parsed = JSON.parse(saved)
           // Only use if hex format; discard old rgba-format data
-          if (parsed.bar?.startsWith('#') && parsed.poc?.startsWith('#')) return parsed
+          // Migrate old format missing nonVa key
+          if (parsed.bar?.startsWith('#') && parsed.poc?.startsWith('#')) {
+            if (!parsed.nonVa) {
+              parsed.nonVa = parsed.bar
+              parsed.bar = '#4fc3f7'
+              localStorage.setItem('vpColors', JSON.stringify(parsed))
+            }
+            return parsed
+          }
           localStorage.removeItem('vpColors')
         }
       } catch { localStorage.removeItem('vpColors') }
     }
-    return { bar: '#888888', poc: '#ff0000' }
+    return { bar: '#4fc3f7', nonVa: '#888888', poc: '#ff0000' }
   })
   const vpColorsRef = useRef(vpColors)
   vpColorsRef.current = vpColors
@@ -299,7 +307,7 @@ export default function CandlestickChart({
 
         const isPOC = bucket === pocBucket
         const inVA = va && i >= va.lo && i <= va.hi
-        const hex = isPOC ? vpColorsRef.current.poc : vpColorsRef.current.bar
+        const hex = isPOC ? vpColorsRef.current.poc : (inVA ? vpColorsRef.current.bar : vpColorsRef.current.nonVa)
         const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
 
         if (isPOC) {
@@ -1261,7 +1269,7 @@ export default function CandlestickChart({
           }}
         >
           <div className="drawing-edit-header">
-            <span>Bar Color</span>
+            <span>Value Area</span>
           </div>
           <div className="drawing-color-grid">
             {DRAWING_PRESET_COLORS.map(c => (
@@ -1270,6 +1278,19 @@ export default function CandlestickChart({
                 className={`drawing-color-swatch${vpColors.bar === c ? ' active' : ''}`}
                 style={{ background: c }}
                 onClick={() => updateVpColor('bar', c)}
+              />
+            ))}
+          </div>
+          <div className="drawing-edit-header" style={{ marginTop: 8 }}>
+            <span>Non-Value Area</span>
+          </div>
+          <div className="drawing-color-grid">
+            {DRAWING_PRESET_COLORS.map(c => (
+              <button
+                key={`nonVa-${c}`}
+                className={`drawing-color-swatch${vpColors.nonVa === c ? ' active' : ''}`}
+                style={{ background: c }}
+                onClick={() => updateVpColor('nonVa', c)}
               />
             ))}
           </div>
