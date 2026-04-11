@@ -355,6 +355,13 @@ export default function CandlestickChart({
   useEffect(() => {
     if (!chartContainerRef.current) return
 
+    const getInnerWidth = () => {
+      const el = chartContainerRef.current
+      if (!el) return 0
+      const cs = window.getComputedStyle(el)
+      return el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+    }
+
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { color: bgColor },
@@ -374,8 +381,8 @@ export default function CandlestickChart({
         borderColor: '#2a2a4e',
         timeVisible: true,
       },
-      width: chartContainerRef.current.clientWidth,
-      height: 400,
+      width: getInnerWidth(),
+      height: Math.max(450, window.innerHeight - 360),
     })
 
     const rawParsed = data
@@ -622,7 +629,10 @@ export default function CandlestickChart({
 
     const handleResize = () => {
       if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth })
+        chart.applyOptions({
+          width: getInnerWidth(),
+          height: Math.max(450, window.innerHeight - 360),
+        })
       }
     }
 
