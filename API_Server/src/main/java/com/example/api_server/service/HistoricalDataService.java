@@ -63,7 +63,11 @@ public class HistoricalDataService {
             return data;
         }
 
-        LocalDateTime cutoff = periodToCutoff(period);
+        // Anchor the cutoff off the most recent bar rather than wall-clock now().
+        // Intraday data is only ingested during market hours, so using now() would
+        // filter out everything over weekends/overnight for short periods like 1d.
+        LocalDateTime anchor = data.get(data.size() - 1).getDate();
+        LocalDateTime cutoff = periodToCutoff(period, anchor);
         if (cutoff == null) {
             return data;
         }
@@ -73,20 +77,19 @@ public class HistoricalDataService {
                 .collect(Collectors.toList());
     }
 
-    private LocalDateTime periodToCutoff(String period) {
-        LocalDateTime now = LocalDateTime.now(ZoneId.of("America/New_York"));
+    private LocalDateTime periodToCutoff(String period, LocalDateTime anchor) {
         return switch (period) {
-            case "1d" -> now.minusDays(1);
-            case "5d" -> now.minusDays(5);
-            case "10d" -> now.minusDays(10);
-            case "14d" -> now.minusDays(14);
-            case "1mo" -> now.minusMonths(1);
-            case "3mo" -> now.minusMonths(3);
-            case "6mo" -> now.minusMonths(6);
-            case "1y" -> now.minusYears(1);
-            case "2y" -> now.minusYears(2);
-            case "5y" -> now.minusYears(5);
-            case "10y" -> now.minusYears(10);
+            case "1d" -> anchor.minusDays(1);
+            case "5d" -> anchor.minusDays(5);
+            case "10d" -> anchor.minusDays(10);
+            case "14d" -> anchor.minusDays(14);
+            case "1mo" -> anchor.minusMonths(1);
+            case "3mo" -> anchor.minusMonths(3);
+            case "6mo" -> anchor.minusMonths(6);
+            case "1y" -> anchor.minusYears(1);
+            case "2y" -> anchor.minusYears(2);
+            case "5y" -> anchor.minusYears(5);
+            case "10y" -> anchor.minusYears(10);
             default -> null;
         };
     }

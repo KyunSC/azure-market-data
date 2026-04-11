@@ -378,7 +378,7 @@ export default function CandlestickChart({
       height: 400,
     })
 
-    const parsedData = data
+    const rawParsed = data
       .filter(d => d.open != null && d.high != null && d.low != null && d.close != null)
       .map(d => {
         const raw = /^\d+$/.test(d.time) ? Number(d.time) : d.time
@@ -392,6 +392,19 @@ export default function CandlestickChart({
         }
       })
       .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close))
+
+    // lightweight-charts requires strictly ascending unique times. Upstream
+    // data can contain duplicate timestamps (yfinance DST boundaries, ingest
+    // overlaps), so sort then collapse duplicates keeping the last row.
+    rawParsed.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
+    const parsedData = []
+    for (const row of rawParsed) {
+      if (parsedData.length && parsedData[parsedData.length - 1].time === row.time) {
+        parsedData[parsedData.length - 1] = row
+      } else {
+        parsedData.push(row)
+      }
+    }
 
     dataRef.current = parsedData
     const lineData = parsedData.map(d => ({ time: d.time, value: d.close }))
