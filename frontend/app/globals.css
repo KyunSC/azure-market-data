@@ -75,7 +75,7 @@ body {
 
 .symbol {
   font-size: 1.4rem;
-  color: #4fc3f7;
+  color: #4A90A4;
   margin-bottom: 0.5rem;
 }
 
@@ -113,8 +113,8 @@ body {
 
 .back-button {
   background: transparent;
-  border: 1px solid #4fc3f7;
-  color: #4fc3f7;
+  border: 1px solid #4A90A4;
+  color: #4A90A4;
   padding: 0.5rem 1rem;
   border-radius: 6px;
   cursor: pointer;
@@ -124,7 +124,7 @@ body {
 }
 
 .back-button:hover {
-  background: #4fc3f7;
+  background: #4A90A4;
   color: #1e1e1e;
 }
 
@@ -178,7 +178,7 @@ body {
 }
 
 .selector-group button.active {
-  background: #4fc3f7;
+  background: #4A90A4;
   color: #1e1e1e;
 }
 
@@ -212,8 +212,8 @@ body {
 
 .chart-type-button {
   background: transparent;
-  border: 1px solid #4fc3f7;
-  color: #4fc3f7;
+  border: 1px solid #4A90A4;
+  color: #4A90A4;
   padding: 0.4rem 0.75rem;
   border-radius: 6px;
   cursor: pointer;
@@ -223,7 +223,7 @@ body {
 }
 
 .chart-type-button:hover {
-  background: #4fc3f7;
+  background: #4A90A4;
   color: #1e1e1e;
 }
 
@@ -259,8 +259,8 @@ body {
 }
 
 .chart-type-option.active {
-  color: #4fc3f7;
-  background: rgba(79, 195, 247, 0.1);
+  color: #4A90A4;
+  background: rgba(74, 144, 164, 0.1);
 }
 
 .chart-type-group-label {
@@ -280,8 +280,8 @@ body {
 /* Settings Button */
 .settings-button {
   background: transparent;
-  border: 1px solid #4fc3f7;
-  color: #4fc3f7;
+  border: 1px solid #4A90A4;
+  color: #4A90A4;
   width: 36px;
   height: 36px;
   border-radius: 6px;
@@ -294,7 +294,7 @@ body {
 }
 
 .settings-button:hover {
-  background: #4fc3f7;
+  background: #4A90A4;
   color: #1e1e1e;
 }
 
@@ -327,7 +327,7 @@ body {
 }
 
 .settings-title {
-  color: #4fc3f7;
+  color: #4A90A4;
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -396,7 +396,7 @@ body {
 }
 
 .settings-select:focus {
-  outline: 1px solid #4fc3f7;
+  outline: 1px solid #4A90A4;
 }
 
 .settings-presets {
@@ -422,11 +422,11 @@ body {
 }
 
 .settings-preset-button:hover {
-  border-color: #4fc3f7;
+  border-color: #4A90A4;
 }
 
 .settings-preset-button.active {
-  border-color: #4fc3f7;
+  border-color: #4A90A4;
   background: #1a2a3a;
 }
 
@@ -496,8 +496,8 @@ body {
 .settings-reset-button {
   width: 100%;
   background: transparent;
-  border: 1px solid #4fc3f7;
-  color: #4fc3f7;
+  border: 1px solid #4A90A4;
+  color: #4A90A4;
   padding: 0.5rem 1rem;
   border-radius: 6px;
   cursor: pointer;
@@ -506,7 +506,7 @@ body {
 }
 
 .settings-reset-button:hover {
-  background: #4fc3f7;
+  background: #4A90A4;
   color: #1e1e1e;
 }
 
@@ -517,8 +517,8 @@ body {
 
 .indicator-button {
   background: transparent;
-  border: 1px solid #4fc3f7;
-  color: #4fc3f7;
+  border: 1px solid #4A90A4;
+  color: #4A90A4;
   padding: 0.4rem 0.75rem;
   border-radius: 6px;
   cursor: pointer;
@@ -528,12 +528,12 @@ body {
 }
 
 .indicator-button:hover {
-  background: #4fc3f7;
+  background: #4A90A4;
   color: #1e1e1e;
 }
 
 .indicator-button.has-active {
-  background: rgba(79, 195, 247, 0.15);
+  background: rgba(74, 144, 164, 0.15);
 }
 
 .indicator-dropdown {
@@ -570,7 +570,7 @@ body {
 
 .indicator-option.active {
   color: #eee;
-  background: rgba(79, 195, 247, 0.1);
+  background: rgba(74, 144, 164, 0.1);
 }
 
 .indicator-color-dot {
@@ -600,7 +600,7 @@ body {
   text-align: center;
   font-size: 0.9rem;
   flex-shrink: 0;
-  color: #4fc3f7;
+  color: #4A90A4;
 }
 
 /* Drawing Edit Popup */

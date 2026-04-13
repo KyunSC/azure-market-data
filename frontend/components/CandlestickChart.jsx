@@ -84,7 +84,7 @@ function computeValueArea(buckets, pct = 0.7) {
 }
 
 const DRAWING_PRESET_COLORS = [
-  '#4fc3f7', '#ff6b6b', '#51cf66', '#ffd43b', '#cc5de8',
+  '#4A90A4', '#ff6b6b', '#51cf66', '#ffd43b', '#cc5de8',
   '#ff922b', '#20c997', '#748ffc', '#f06595', '#ffffff',
   '#888888', '#aaaaaa', '#555555',
 ]
@@ -217,7 +217,7 @@ export default function CandlestickChart({
           if (parsed.bar?.startsWith('#') && parsed.poc?.startsWith('#')) {
             if (!parsed.nonVa) {
               parsed.nonVa = parsed.bar
-              parsed.bar = '#4fc3f7'
+              parsed.bar = '#4A90A4'
               localStorage.setItem('vpColors', JSON.stringify(parsed))
             }
             return parsed
@@ -226,7 +226,7 @@ export default function CandlestickChart({
         }
       } catch { localStorage.removeItem('vpColors') }
     }
-    return { bar: '#4fc3f7', nonVa: '#888888', poc: '#ff0000' }
+    return { bar: '#4A90A4', nonVa: '#888888', poc: '#ff0000' }
   })
   const vpColorsRef = useRef(vpColors)
   vpColorsRef.current = vpColors
@@ -728,7 +728,7 @@ export default function CandlestickChart({
       }
 
       for (const d of allDrawings) {
-        const drawColor = d.color || '#4fc3f7'
+        const drawColor = d.color || '#4A90A4'
         ctx.strokeStyle = d.preview ? 'rgba(79, 195, 247, 0.6)' : drawColor
         ctx.lineWidth = d.preview ? 1 : 1.5
         ctx.setLineDash(d.preview ? [4, 4] : [])
@@ -869,7 +869,7 @@ export default function CandlestickChart({
             ctx.arc(h.x, h.y, HANDLE_RADIUS, 0, Math.PI * 2)
             ctx.fillStyle = '#ffffff'
             ctx.fill()
-            ctx.strokeStyle = activeDraw.color || '#4fc3f7'
+            ctx.strokeStyle = activeDraw.color || '#4A90A4'
             ctx.lineWidth = 2
             ctx.stroke()
           }
@@ -1348,7 +1348,7 @@ export default function CandlestickChart({
                 type="checkbox"
                 checked={vaEnabled}
                 onChange={(e) => setVaEnabled(e.target.checked)}
-                style={{ accentColor: '#4fc3f7' }}
+                style={{ accentColor: '#4A90A4' }}
               />
               Value Area
             </label>
