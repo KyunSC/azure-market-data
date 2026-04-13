@@ -112,9 +112,13 @@ export default function TickerDetail({ params }) {
   }
 
   useEffect(() => {
+    let isInitial = true
+
     const fetchOHLCData = async () => {
-      setLoading(true)
-      setError(null)
+      if (isInitial) {
+        setLoading(true)
+        setError(null)
+      }
 
       // Tick bars always uses 1m base data
       const fetchInterval = tickBars ? '1m' : interval
@@ -138,15 +142,25 @@ export default function TickerDetail({ params }) {
 
         const result = await response.json()
         setOhlcData(result.data)
+        if (!isInitial) setError(null)
       } catch (err) {
-        setError(err.message)
-        setOhlcData([])
+        if (isInitial) {
+          setError(err.message)
+          setOhlcData([])
+        }
       } finally {
-        setLoading(false)
+        if (isInitial) setLoading(false)
+        isInitial = false
       }
     }
 
+    // Poll interval based on chart timeframe
+    const POLL_MS = { '1m': 5_000, '5m': 15_000, '15m': 30_000 }
+    const pollInterval = POLL_MS[tickBars ? '1m' : interval] || 60_000
+
     fetchOHLCData()
+    const timer = window.setInterval(fetchOHLCData, pollInterval)
+    return () => window.clearInterval(timer)
   }, [symbol, period, interval, tickBars])
 
   useEffect(() => {

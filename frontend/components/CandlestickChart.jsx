@@ -242,6 +242,7 @@ export default function CandlestickChart({
   const vpPopupRef = useRef(null)
   const vpDrawRef = useRef(null)
   const dataRef = useRef([])
+  const savedRangeRef = useRef(null)
   const drawingStateRef = useRef({ startPoint: null })
   const [previewPoint, setPreviewPoint] = useState(null)
   const [editingDrawing, setEditingDrawing] = useState(null) // { index, x, y }
@@ -539,7 +540,11 @@ export default function CandlestickChart({
         })
         mainSeries.setData(parsedData)
     }
-    chart.timeScale().fitContent()
+    if (savedRangeRef.current) {
+      chart.timeScale().setVisibleLogicalRange(savedRangeRef.current)
+    } else {
+      chart.timeScale().fitContent()
+    }
     chartRef.current = chart
     seriesRef.current = mainSeries
     indicatorSeriesRef.current = []
@@ -640,6 +645,7 @@ export default function CandlestickChart({
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      savedRangeRef.current = chart.timeScale().getVisibleLogicalRange()
       chart.remove()
     }
   }, [data, activeIndicators, gexLevels, chartType, bgColor, timezone])
