@@ -309,6 +309,7 @@ def main(mytimer: func.TimerRequest) -> None:
                 ('1m', '1d'),
                 ('5m', '5d'),
                 ('15m', '5d'),
+                ('30m', '5d'),
                 ('1h', '1mo'),
             ]
             for interval, period in intraday_intervals:

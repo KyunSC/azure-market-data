@@ -155,7 +155,7 @@ export default function TickerDetail({ params }) {
     }
 
     // Poll interval based on chart timeframe
-    const POLL_MS = { '1m': 5_000, '5m': 15_000, '15m': 30_000 }
+    const POLL_MS = { '1m': 5_000, '5m': 15_000, '15m': 30_000, '30m': 30_000 }
     const pollInterval = POLL_MS[tickBars ? '1m' : interval] || 60_000
 
     fetchOHLCData()

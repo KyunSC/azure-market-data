@@ -40,12 +40,8 @@ public class HistoricalDataService {
     public HistoricalDataResponse getHistoricalData(String symbol, String period, String interval) {
         logger.info("Fetching historical data for {} with period={}, interval={} from Supabase", symbol, period, interval);
 
-        // Longer timeframes aggregate from smaller ones to provide developing candles
-        String queryInterval = switch (interval) {
-            case "4h", "1d" -> "1h";
-            case "1wk" -> "1d";
-            default -> interval;
-        };
+        // All timeframes aggregate from 1m data for developing candles
+        String queryInterval = "1m";
 
         List<HistoricalDataEntity> data = localRepository
                 .findBySymbolAndIntervalTypeOrderByDateAsc(symbol.toUpperCase(), queryInterval);
@@ -57,7 +53,12 @@ public class HistoricalDataService {
         }
 
         data = switch (interval) {
-            case "4h" -> aggregateToNHours(data, 4);
+            case "1m" -> data;
+            case "5m" -> aggregateToNMinutes(data, 5);
+            case "15m" -> aggregateToNMinutes(data, 15);
+            case "30m" -> aggregateToNMinutes(data, 30);
+            case "1h" -> aggregateToNMinutes(data, 60);
+            case "4h" -> aggregateToNMinutes(data, 240);
             case "1d" -> aggregateToDaily(data);
             case "1wk" -> aggregateToWeekly(data);
             default -> data;
@@ -106,23 +107,32 @@ public class HistoricalDataService {
         };
     }
 
-    private List<HistoricalDataEntity> aggregateToNHours(List<HistoricalDataEntity> hourlyData, int n) {
+    private List<HistoricalDataEntity> aggregateToNMinutes(List<HistoricalDataEntity> minuteData, int n) {
         List<HistoricalDataEntity> result = new ArrayList<>();
-        for (int i = 0; i < hourlyData.size(); i += n) {
-            int end = Math.min(i + n, hourlyData.size());
-            List<HistoricalDataEntity> chunk = hourlyData.subList(i, end);
+        if (minuteData.isEmpty()) return result;
 
-            HistoricalDataEntity first = chunk.get(0);
-            double open = first.getOpen();
-            double high = chunk.stream().mapToDouble(HistoricalDataEntity::getHigh).max().orElse(0);
-            double low = chunk.stream().mapToDouble(HistoricalDataEntity::getLow).min().orElse(0);
-            double close = chunk.get(chunk.size() - 1).getClose();
-            long volume = chunk.stream().mapToLong(HistoricalDataEntity::getVolume).sum();
+        String intervalLabel = n >= 60 ? (n / 60) + "h" : n + "m";
 
-            HistoricalDataEntity agg = new HistoricalDataEntity(
-                    first.getSymbol(), first.getDate(), n + "h",
-                    open, high, low, close, volume, first.getFetchedAt());
-            result.add(agg);
+        // Group 1m bars into time-aligned buckets
+        LinkedHashMap<LocalDateTime, List<HistoricalDataEntity>> grouped = new LinkedHashMap<>();
+        for (HistoricalDataEntity e : minuteData) {
+            LocalDateTime dt = e.getDate();
+            int totalMinutes = dt.getHour() * 60 + dt.getMinute();
+            int bucketMinutes = (totalMinutes / n) * n;
+            LocalDateTime bucketKey = dt.toLocalDate().atStartOfDay().plusMinutes(bucketMinutes);
+            grouped.computeIfAbsent(bucketKey, k -> new ArrayList<>()).add(e);
+        }
+
+        for (Map.Entry<LocalDateTime, List<HistoricalDataEntity>> entry : grouped.entrySet()) {
+            List<HistoricalDataEntity> bars = entry.getValue();
+            HistoricalDataEntity first = bars.get(0);
+            double high = bars.stream().mapToDouble(HistoricalDataEntity::getHigh).max().orElse(0);
+            double low = bars.stream().mapToDouble(HistoricalDataEntity::getLow).min().orElse(0);
+            long volume = bars.stream().mapToLong(HistoricalDataEntity::getVolume).sum();
+            result.add(new HistoricalDataEntity(
+                    first.getSymbol(), entry.getKey(), intervalLabel,
+                    first.getOpen(), high, low, bars.get(bars.size() - 1).getClose(),
+                    volume, first.getFetchedAt()));
         }
         return result;
     }
