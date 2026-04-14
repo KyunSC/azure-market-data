@@ -11,11 +11,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -36,7 +40,12 @@ public class HistoricalDataService {
     public HistoricalDataResponse getHistoricalData(String symbol, String period, String interval) {
         logger.info("Fetching historical data for {} with period={}, interval={} from Supabase", symbol, period, interval);
 
-        String queryInterval = interval.equals("4h") ? "1h" : interval;
+        // Longer timeframes aggregate from smaller ones to provide developing candles
+        String queryInterval = switch (interval) {
+            case "4h", "1d" -> "1h";
+            case "1wk" -> "1d";
+            default -> interval;
+        };
 
         List<HistoricalDataEntity> data = localRepository
                 .findBySymbolAndIntervalTypeOrderByDateAsc(symbol.toUpperCase(), queryInterval);
@@ -47,9 +56,12 @@ public class HistoricalDataService {
             logger.info("Found {} records for {} from Supabase", data.size(), symbol);
         }
 
-        if (interval.equals("4h")) {
-            data = aggregateToNHours(data, 4);
-        }
+        data = switch (interval) {
+            case "4h" -> aggregateToNHours(data, 4);
+            case "1d" -> aggregateToDaily(data);
+            case "1wk" -> aggregateToWeekly(data);
+            default -> data;
+        };
 
         data = filterByPeriod(data, period);
 
@@ -111,6 +123,54 @@ public class HistoricalDataService {
                     first.getSymbol(), first.getDate(), n + "h",
                     open, high, low, close, volume, first.getFetchedAt());
             result.add(agg);
+        }
+        return result;
+    }
+
+    private List<HistoricalDataEntity> aggregateToDaily(List<HistoricalDataEntity> hourlyData) {
+        List<HistoricalDataEntity> result = new ArrayList<>();
+        if (hourlyData.isEmpty()) return result;
+
+        LinkedHashMap<LocalDate, List<HistoricalDataEntity>> grouped = new LinkedHashMap<>();
+        for (HistoricalDataEntity e : hourlyData) {
+            grouped.computeIfAbsent(e.getDate().toLocalDate(), k -> new ArrayList<>()).add(e);
+        }
+
+        for (Map.Entry<LocalDate, List<HistoricalDataEntity>> entry : grouped.entrySet()) {
+            List<HistoricalDataEntity> bars = entry.getValue();
+            HistoricalDataEntity first = bars.get(0);
+            double high = bars.stream().mapToDouble(HistoricalDataEntity::getHigh).max().orElse(0);
+            double low = bars.stream().mapToDouble(HistoricalDataEntity::getLow).min().orElse(0);
+            long volume = bars.stream().mapToLong(HistoricalDataEntity::getVolume).sum();
+            result.add(new HistoricalDataEntity(
+                    first.getSymbol(), entry.getKey().atStartOfDay(), "1d",
+                    first.getOpen(), high, low, bars.get(bars.size() - 1).getClose(),
+                    volume, first.getFetchedAt()));
+        }
+        return result;
+    }
+
+    private List<HistoricalDataEntity> aggregateToWeekly(List<HistoricalDataEntity> dailyData) {
+        List<HistoricalDataEntity> result = new ArrayList<>();
+        if (dailyData.isEmpty()) return result;
+
+        LinkedHashMap<LocalDate, List<HistoricalDataEntity>> grouped = new LinkedHashMap<>();
+        for (HistoricalDataEntity e : dailyData) {
+            // Group by Monday of the week
+            LocalDate weekStart = e.getDate().toLocalDate().with(DayOfWeek.MONDAY);
+            grouped.computeIfAbsent(weekStart, k -> new ArrayList<>()).add(e);
+        }
+
+        for (Map.Entry<LocalDate, List<HistoricalDataEntity>> entry : grouped.entrySet()) {
+            List<HistoricalDataEntity> bars = entry.getValue();
+            HistoricalDataEntity first = bars.get(0);
+            double high = bars.stream().mapToDouble(HistoricalDataEntity::getHigh).max().orElse(0);
+            double low = bars.stream().mapToDouble(HistoricalDataEntity::getLow).min().orElse(0);
+            long volume = bars.stream().mapToLong(HistoricalDataEntity::getVolume).sum();
+            result.add(new HistoricalDataEntity(
+                    first.getSymbol(), entry.getKey().atStartOfDay(), "1wk",
+                    first.getOpen(), high, low, bars.get(bars.size() - 1).getClose(),
+                    volume, first.getFetchedAt()));
         }
         return result;
     }
