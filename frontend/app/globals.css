@@ -220,6 +220,9 @@ body {
   font-size: 0.85rem;
   transition: all 0.2s;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chart-type-button:hover {
@@ -525,6 +528,9 @@ body {
   font-size: 0.85rem;
   transition: all 0.2s;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .indicator-button:hover {
