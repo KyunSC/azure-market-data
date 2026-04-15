@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 const DISPLAY_NAMES = {
   'ES=F': '/ES',
   'NQ=F': '/NQ',
+  '^VIX': 'VIX',
 }
 
 export default function TickerCard({ ticker }) {

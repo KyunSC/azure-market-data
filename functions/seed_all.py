@@ -11,7 +11,7 @@ from GEXCalculator.gex_calculator import fetch_prices_and_compute_gex, GEX_PAIRS
 
 LOCAL_DB = "dbname=marketmonitor user=sunny host=localhost port=5432"
 SUPABASE_DB = "postgresql://postgres.latqdamkyjttyleplqzj:wr%25QN5G8w4U%40nC%25%25@aws-0-us-west-2.pooler.supabase.com:6543/postgres"
-TICKERS = ['ES=F', 'NQ=F']
+TICKERS = ['ES=F', 'NQ=F', '^VIX']
 
 # Max periods per yfinance limits
 INTERVALS = [

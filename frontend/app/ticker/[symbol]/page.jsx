@@ -19,6 +19,7 @@ export default function TickerDetail({ params }) {
   const DISPLAY_NAMES = {
     'ES=F': '/ES',
     'NQ=F': '/NQ',
+    '^VIX': 'VIX',
   }
   const displayName = DISPLAY_NAMES[symbol] || symbol
   const [ohlcData, setOhlcData] = useState([])

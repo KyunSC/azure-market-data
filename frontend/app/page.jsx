@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Dashboard from '../components/Dashboard'
 
-const DEFAULT_TICKERS = ['ES=F', 'NQ=F']
+const DEFAULT_TICKERS = ['ES=F', 'NQ=F', '^VIX']
 const REFRESH_INTERVAL = 15000
 
 export default function Home() {
