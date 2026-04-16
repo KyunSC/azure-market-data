@@ -8,10 +8,13 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -30,43 +33,157 @@ public class HistoricalDataService {
 
     private final SupabaseHistoricalDataRepository localRepository;
 
+    /**
+     * Proxy reference to self so internal calls go through Spring's AOP and
+     * @Cacheable actually fires. Without this, the dispatcher's call to
+     * {@code getHistoricalData*Cached} bypasses the proxy and skips caching.
+     */
+    @Autowired
+    @Lazy
+    private HistoricalDataService self;
+
     public HistoricalDataService(SupabaseHistoricalDataRepository localRepository) {
         this.localRepository = localRepository;
+    }
+
+    /** Intervals whose last bar is immutable within a session → cache aggressively. */
+    private static final Set<String> LONG_CACHE_INTERVALS = Set.of("1d", "1wk");
+
+    /**
+     * Dispatcher: routes to a cache bucket based on the interval. Live intraday
+     * goes through a short TTL; daily/weekly uses a much longer TTL because the
+     * last bar doesn't change during the session.
+     */
+    public HistoricalDataResponse getHistoricalData(String symbol, String period, String interval) {
+        return LONG_CACHE_INTERVALS.contains(interval)
+                ? self.getHistoricalDataLongCached(symbol, period, interval)
+                : self.getHistoricalDataShortCached(symbol, period, interval);
     }
 
     @Cacheable(value = "historicalData", key = "#symbol + '-' + #period + '-' + #interval")
     @Retry(name = "historicalData")
     @CircuitBreaker(name = "historicalData", fallbackMethod = "getHistoricalDataFallback")
-    public HistoricalDataResponse getHistoricalData(String symbol, String period, String interval) {
+    public HistoricalDataResponse getHistoricalDataShortCached(String symbol, String period, String interval) {
+        return loadHistoricalData(symbol, period, interval);
+    }
+
+    @Cacheable(value = "historicalDataLong", key = "#symbol + '-' + #period + '-' + #interval")
+    @Retry(name = "historicalData")
+    @CircuitBreaker(name = "historicalData", fallbackMethod = "getHistoricalDataFallback")
+    public HistoricalDataResponse getHistoricalDataLongCached(String symbol, String period, String interval) {
+        return loadHistoricalData(symbol, period, interval);
+    }
+
+    private HistoricalDataResponse loadHistoricalData(String symbol, String period, String interval) {
         logger.info("Fetching historical data for {} with period={}, interval={} from Supabase", symbol, period, interval);
 
-        // All timeframes aggregate from 1m data for developing candles
-        String queryInterval = "1m";
+        // Pick the smallest stored interval that still satisfies the request, so we
+        // transfer as few rows as possible from Supabase (egress-sensitive).
+        String queryInterval = storedIntervalFor(interval);
 
-        List<HistoricalDataEntity> data = localRepository
-                .findBySymbolAndIntervalTypeOrderByDateAsc(symbol.toUpperCase(), queryInterval);
+        // Bound the DB query by date. Use a generous buffer so weekends/holidays
+        // don't leave the period empty; precise trimming happens in filterByPeriod
+        // anchored on the most recent bar.
+        LocalDateTime dbCutoff = dbCutoffFor(period);
+
+        List<HistoricalDataEntity> data = dbCutoff == null
+                ? localRepository.findBySymbolAndIntervalTypeOrderByDateAsc(symbol.toUpperCase(), queryInterval)
+                : localRepository.findBySymbolAndIntervalTypeAndDateGreaterThanEqualOrderByDateAsc(
+                        symbol.toUpperCase(), queryInterval, dbCutoff);
 
         if (data.isEmpty()) {
-            logger.warn("No historical data found for {} with interval {}", symbol, queryInterval);
+            logger.warn("No historical data found for {} with interval {} (query={}, cutoff={})",
+                    symbol, interval, queryInterval, dbCutoff);
         } else {
-            logger.info("Found {} records for {} from Supabase", data.size(), symbol);
+            logger.info("Found {} {} records for {} (requested interval={}, cutoff={})",
+                    data.size(), queryInterval, symbol, interval, dbCutoff);
         }
 
-        data = switch (interval) {
-            case "1m" -> data;
-            case "5m" -> aggregateToNMinutes(data, 5);
-            case "15m" -> aggregateToNMinutes(data, 15);
+        data = aggregate(data, queryInterval, interval);
+        data = filterByPeriod(data, period);
+        return buildResponseFromEntities(symbol, period, interval, data);
+    }
+
+    /**
+     * Incremental fetch: returns only bars aligned to {@code interval} whose bucket
+     * start is at or after {@code sinceEpochSeconds}. Intended for live polling so
+     * the client sends back the last bar it has and we return just the delta.
+     * Not cached — caching per-since-timestamp would never hit.
+     */
+    @Retry(name = "historicalData")
+    @CircuitBreaker(name = "historicalData", fallbackMethod = "getHistoricalSinceFallback")
+    public HistoricalDataResponse getHistoricalDataSince(String symbol, String interval, long sinceEpochSeconds) {
+        String queryInterval = storedIntervalFor(interval);
+        LocalDateTime since = Instant.ofEpochSecond(sinceEpochSeconds)
+                .atZone(ZoneId.systemDefault()).toLocalDateTime();
+
+        List<HistoricalDataEntity> data = localRepository
+                .findBySymbolAndIntervalTypeAndDateGreaterThanEqualOrderByDateAsc(
+                        symbol.toUpperCase(), queryInterval, since);
+
+        logger.debug("Incremental fetch {} {} since {} → {} {} rows",
+                symbol, interval, since, data.size(), queryInterval);
+
+        data = aggregate(data, queryInterval, interval);
+        return buildResponseFromEntities(symbol, "since", interval, data);
+    }
+
+    public HistoricalDataResponse getHistoricalSinceFallback(String symbol, String interval,
+                                                              long sinceEpochSeconds, Exception ex) {
+        logger.warn("Circuit breaker fallback for incremental {} {}. Reason: {}", symbol, interval, ex.getMessage());
+        return new HistoricalDataResponse(
+                symbol.toUpperCase(), "since", interval,
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                List.of());
+    }
+
+    /** Pick the coarsest stored interval that still produces the requested bars. */
+    private String storedIntervalFor(String requested) {
+        return switch (requested) {
+            case "1m" -> "1m";
+            case "5m" -> "5m";
+            case "15m" -> "15m";
+            case "30m" -> "15m";
+            case "1h" -> "1h";
+            case "4h" -> "1h";
+            case "1d" -> "1d";
+            case "1wk" -> "1d";
+            default -> "1m";
+        };
+    }
+
+    /** Aggregate stored bars up to the requested interval. */
+    private List<HistoricalDataEntity> aggregate(List<HistoricalDataEntity> data,
+                                                  String stored, String requested) {
+        if (stored.equals(requested)) return data;
+        return switch (requested) {
             case "30m" -> aggregateToNMinutes(data, 30);
-            case "1h" -> aggregateToNMinutes(data, 60);
             case "4h" -> aggregateToNMinutes(data, 240);
-            case "1d" -> aggregateToDaily(data);
             case "1wk" -> aggregateToWeekly(data);
             default -> data;
         };
+    }
 
-        data = filterByPeriod(data, period);
-
-        return buildResponseFromEntities(symbol, period, interval, data);
+    /**
+     * Loose cutoff for the DB query: period plus a buffer for weekends/holidays.
+     * Return null to disable DB-level filtering (period=max or unknown).
+     */
+    private LocalDateTime dbCutoffFor(String period) {
+        LocalDateTime now = LocalDateTime.now();
+        return switch (period) {
+            case "1d" -> now.minusDays(8);
+            case "5d" -> now.minusDays(12);
+            case "10d" -> now.minusDays(17);
+            case "14d" -> now.minusDays(21);
+            case "1mo" -> now.minusMonths(1).minusDays(7);
+            case "3mo" -> now.minusMonths(3).minusDays(7);
+            case "6mo" -> now.minusMonths(6).minusDays(7);
+            case "1y" -> now.minusYears(1).minusDays(7);
+            case "2y" -> now.minusYears(2).minusDays(7);
+            case "5y" -> now.minusYears(5).minusDays(7);
+            case "10y" -> now.minusYears(10).minusDays(7);
+            default -> null;
+        };
     }
 
     private static final Set<String> INTRADAY_INTERVALS = Set.of("1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "4h");
@@ -131,29 +248,6 @@ public class HistoricalDataService {
             long volume = bars.stream().mapToLong(HistoricalDataEntity::getVolume).sum();
             result.add(new HistoricalDataEntity(
                     first.getSymbol(), entry.getKey(), intervalLabel,
-                    first.getOpen(), high, low, bars.get(bars.size() - 1).getClose(),
-                    volume, first.getFetchedAt()));
-        }
-        return result;
-    }
-
-    private List<HistoricalDataEntity> aggregateToDaily(List<HistoricalDataEntity> hourlyData) {
-        List<HistoricalDataEntity> result = new ArrayList<>();
-        if (hourlyData.isEmpty()) return result;
-
-        LinkedHashMap<LocalDate, List<HistoricalDataEntity>> grouped = new LinkedHashMap<>();
-        for (HistoricalDataEntity e : hourlyData) {
-            grouped.computeIfAbsent(e.getDate().toLocalDate(), k -> new ArrayList<>()).add(e);
-        }
-
-        for (Map.Entry<LocalDate, List<HistoricalDataEntity>> entry : grouped.entrySet()) {
-            List<HistoricalDataEntity> bars = entry.getValue();
-            HistoricalDataEntity first = bars.get(0);
-            double high = bars.stream().mapToDouble(HistoricalDataEntity::getHigh).max().orElse(0);
-            double low = bars.stream().mapToDouble(HistoricalDataEntity::getLow).min().orElse(0);
-            long volume = bars.stream().mapToLong(HistoricalDataEntity::getVolume).sum();
-            result.add(new HistoricalDataEntity(
-                    first.getSymbol(), entry.getKey().atStartOfDay(), "1d",
                     first.getOpen(), high, low, bars.get(bars.size() - 1).getClose(),
                     volume, first.getFetchedAt()));
         }
