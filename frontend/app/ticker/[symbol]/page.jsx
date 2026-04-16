@@ -67,7 +67,8 @@ export default function TickerDetail({ params }) {
     const etfSymbol = GEX_ETF_MAP[symbol]
     if (!etfSymbol) return
 
-    const fetchGex = async () => {
+    const fetchGex = async ({ skipIfHidden = true } = {}) => {
+      if (skipIfHidden && document.hidden) return
       try {
         const res = await fetch(`/api/gamma?symbol=${etfSymbol}`)
         if (res.ok) {
@@ -80,7 +81,7 @@ export default function TickerDetail({ params }) {
       }
     }
 
-    fetchGex()
+    fetchGex({ skipIfHidden: false })
     const gexInterval = window.setInterval(fetchGex, 15 * 60 * 1000)
     return () => window.clearInterval(gexInterval)
   }, [symbol])
@@ -114,40 +115,77 @@ export default function TickerDetail({ params }) {
 
   useEffect(() => {
     let isInitial = true
+    let lastBars = []
+
+    // Intraday bars use epoch-seconds strings; daily/weekly use YYYY-MM-DD.
+    // Incremental polling is only worthwhile for intraday — daily series are
+    // tiny and the backend's long cache already absorbs repeated full fetches.
+    const INCREMENTAL_INTERVALS = new Set(['1m', '5m', '15m', '30m', '1h', '4h'])
+    const fetchInterval = tickBars ? '1m' : interval
+    const canIncremental = INCREMENTAL_INTERVALS.has(fetchInterval)
+
+    const parseError = async (response) => {
+      const suffix = response.status >= 500 ? ' (API)' : ''
+      let errorMessage = `HTTP ${response.status}${suffix}`
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.error || errorMessage
+      } catch { /* not JSON */ }
+      return errorMessage
+    }
+
+    const fetchFull = async () => {
+      const response = await fetch(
+        `/api/historical?symbol=${symbol}&period=${period}&interval=${fetchInterval}`
+      )
+      if (!response.ok) throw new Error(await parseError(response))
+      const result = await response.json()
+      lastBars = result.data
+      setOhlcData(result.data)
+    }
+
+    const fetchIncremental = async () => {
+      if (!lastBars.length) return fetchFull()
+      const lastTime = Number(lastBars[lastBars.length - 1].time)
+      if (!Number.isFinite(lastTime)) return fetchFull()
+
+      const response = await fetch(
+        `/api/historical/since?symbol=${symbol}&interval=${fetchInterval}&since=${lastTime}`
+      )
+      if (!response.ok) throw new Error(await parseError(response))
+      const result = await response.json()
+      const newBars = result.data || []
+      if (!newBars.length) return
+
+      // Replace any existing bars at-or-after the first returned bar (the
+      // last known bucket may still be developing), then append the rest.
+      const firstNew = Number(newBars[0].time)
+      const merged = lastBars.filter(b => Number(b.time) < firstNew).concat(newBars)
+      lastBars = merged
+      setOhlcData(merged)
+    }
 
     const fetchOHLCData = async () => {
+      // Skip polls while the tab is hidden — the user can't see them anyway,
+      // and each skipped poll avoids a Supabase read.
+      if (!isInitial && typeof document !== 'undefined' && document.hidden) return
+
       if (isInitial) {
         setLoading(true)
         setError(null)
       }
-
-      // Tick bars always uses 1m base data
-      const fetchInterval = tickBars ? '1m' : interval
-
       try {
-        const response = await fetch(
-          `/api/historical?symbol=${symbol}&period=${period}&interval=${fetchInterval}`
-        )
-
-        if (!response.ok) {
-          const suffix = response.status >= 500 ? ' (API)' : ''
-          let errorMessage = `HTTP ${response.status}${suffix}`
-          try {
-            const errorData = await response.json()
-            errorMessage = errorData.error || errorMessage
-          } catch {
-            // Response wasn't JSON
-          }
-          throw new Error(errorMessage)
+        if (isInitial || !canIncremental) {
+          await fetchFull()
+        } else {
+          await fetchIncremental()
         }
-
-        const result = await response.json()
-        setOhlcData(result.data)
         if (!isInitial) setError(null)
       } catch (err) {
         if (isInitial) {
           setError(err.message)
           setOhlcData([])
+          lastBars = []
         }
       } finally {
         if (isInitial) setLoading(false)
@@ -157,11 +195,17 @@ export default function TickerDetail({ params }) {
 
     // Poll interval based on chart timeframe
     const POLL_MS = { '1m': 5_000, '5m': 15_000, '15m': 30_000, '30m': 30_000 }
-    const pollInterval = POLL_MS[tickBars ? '1m' : interval] || 60_000
+    const pollInterval = POLL_MS[fetchInterval] || 60_000
 
     fetchOHLCData()
     const timer = window.setInterval(fetchOHLCData, pollInterval)
-    return () => window.clearInterval(timer)
+    // Refresh immediately on tab re-focus so users see fresh data without waiting a full poll cycle.
+    const onVisible = () => { if (!document.hidden) fetchOHLCData() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [symbol, period, interval, tickBars])
 
   useEffect(() => {

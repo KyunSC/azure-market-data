@@ -12,7 +12,8 @@ export default function Home() {
   const [error, setError] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
 
-  const fetchData = async () => {
+  const fetchData = async ({ skipIfHidden = true } = {}) => {
+    if (skipIfHidden && typeof document !== 'undefined' && document.hidden) return
     try {
       const tickerParam = DEFAULT_TICKERS.join(',')
       const response = await fetch(`/api/market?tickers=${tickerParam}`)
@@ -34,9 +35,14 @@ export default function Home() {
   }
 
   useEffect(() => {
-    fetchData()
+    fetchData({ skipIfHidden: false })
     const interval = setInterval(fetchData, REFRESH_INTERVAL)
-    return () => clearInterval(interval)
+    const onVisible = () => { if (!document.hidden) fetchData({ skipIfHidden: false }) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
 
   return (
