@@ -89,6 +89,34 @@ const DRAWING_PRESET_COLORS = [
   '#888888', '#aaaaaa', '#555555',
 ]
 
+function parseChartData(rawData, timezone) {
+  const rawParsed = rawData
+    .filter(d => d.open != null && d.high != null && d.low != null && d.close != null)
+    .map(d => {
+      const raw = /^\d+$/.test(d.time) ? Number(d.time) : d.time
+      return {
+        time: typeof raw === 'number' ? shiftToTimezone(raw, timezone) : raw,
+        open: Number(d.open),
+        high: Number(d.high),
+        low: Number(d.low),
+        close: Number(d.close),
+        volume: Number(d.volume),
+      }
+    })
+    .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close))
+
+  rawParsed.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
+  const result = []
+  for (const row of rawParsed) {
+    if (result.length && result[result.length - 1].time === row.time) {
+      result[result.length - 1] = row
+    } else {
+      result.push(row)
+    }
+  }
+  return result
+}
+
 const HANDLE_RADIUS = 5
 const HANDLE_HIT_RADIUS = 10
 
@@ -243,12 +271,24 @@ export default function CandlestickChart({
   const vpDrawRef = useRef(null)
   const dataRef = useRef([])
   const savedRangeRef = useRef(null)
+
+  // Load saved chart range from localStorage on first mount
+  const rangeLoadedRef = useRef(false)
+  if (!rangeLoadedRef.current && typeof window !== 'undefined') {
+    rangeLoadedRef.current = true
+    try {
+      const saved = localStorage.getItem(`chartRange_${symbol}`)
+      if (saved) savedRangeRef.current = JSON.parse(saved)
+    } catch { /* noop */ }
+  }
   const drawingStateRef = useRef({ startPoint: null })
   const [previewPoint, setPreviewPoint] = useState(null)
   const [editingDrawing, setEditingDrawing] = useState(null) // { index, x, y }
   const hoveredIdxRef = useRef(null)
   const dragRef = useRef(null) // { index, handle, startTime, startPrice, original, current }
   const renderFnRef = useRef(null)
+  const isFirstDataRef = useRef(true)
+  const gexPriceLinesRef = useRef([])
 
   // Compute volume profile from current chart data
   useEffect(() => {
@@ -386,36 +426,6 @@ export default function CandlestickChart({
       height: Math.max(450, window.innerHeight - 360),
     })
 
-    const rawParsed = data
-      .filter(d => d.open != null && d.high != null && d.low != null && d.close != null)
-      .map(d => {
-        const raw = /^\d+$/.test(d.time) ? Number(d.time) : d.time
-        return {
-          time: typeof raw === 'number' ? shiftToTimezone(raw, timezone) : raw,
-          open: Number(d.open),
-          high: Number(d.high),
-          low: Number(d.low),
-          close: Number(d.close),
-          volume: Number(d.volume),
-        }
-      })
-      .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close))
-
-    // lightweight-charts requires strictly ascending unique times. Upstream
-    // data can contain duplicate timestamps (yfinance DST boundaries, ingest
-    // overlaps), so sort then collapse duplicates keeping the last row.
-    rawParsed.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
-    const parsedData = []
-    for (const row of rawParsed) {
-      if (parsedData.length && parsedData[parsedData.length - 1].time === row.time) {
-        parsedData[parsedData.length - 1] = row
-      } else {
-        parsedData.push(row)
-      }
-    }
-
-    dataRef.current = parsedData
-    const lineData = parsedData.map(d => ({ time: d.time, value: d.close }))
     let mainSeries
     switch (chartType) {
       // --- Bar types ---
@@ -423,19 +433,16 @@ export default function CandlestickChart({
         mainSeries = chart.addSeries(BarSeries, {
           upColor, downColor, openVisible: true, thinBars: false,
         })
-        mainSeries.setData(parsedData)
         break
       case 'hlc':
         mainSeries = chart.addSeries(BarSeries, {
           upColor, downColor, openVisible: false, thinBars: false,
         })
-        mainSeries.setData(parsedData)
         break
       case 'highlow':
         mainSeries = chart.addSeries(BarSeries, {
           upColor, downColor, openVisible: false, thinBars: true,
         })
-        mainSeries.setData(parsedData)
         break
 
       // --- Candlestick types ---
@@ -445,43 +452,27 @@ export default function CandlestickChart({
           borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
           wickUpColor: upColor, wickDownColor: downColor,
         })
-        mainSeries.setData(parsedData)
         break
-      case 'candlestick-trend': {
+      case 'candlestick-trend':
         mainSeries = chart.addSeries(CandlestickSeries, {
           upColor, downColor,
           borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
           wickUpColor: upColor, wickDownColor: downColor,
         })
-        const trendData = parsedData.map((d, i) => {
-          const prev = i > 0 ? parsedData[i - 1].close : d.open
-          const isUp = d.close >= prev
-          return {
-            ...d,
-            color: isUp ? upColor : downColor,
-            borderColor: isUp ? (borderUpColor || upColor) : (borderDownColor || downColor),
-            wickColor: isUp ? upColor : downColor,
-          }
-        })
-        mainSeries.setData(trendData)
         break
-      }
-      case '3d-candlestick': {
+      case '3d-candlestick':
         mainSeries = chart.addSeries(CandlestickSeries, {
           upColor, downColor,
           borderUpColor: '#ffffff40', borderDownColor: '#ffffff40',
           wickUpColor: upColor, wickDownColor: downColor,
         })
-        mainSeries.setData(parsedData)
         break
-      }
       case 'hollow':
         mainSeries = chart.addSeries(CandlestickSeries, {
           upColor: bgColor, downColor: bgColor,
           borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
           wickUpColor: upColor, wickDownColor: downColor,
         })
-        mainSeries.setData(parsedData)
         break
       case 'candlestick-flat':
         mainSeries = chart.addSeries(CandlestickSeries, {
@@ -489,47 +480,40 @@ export default function CandlestickChart({
           borderUpColor: borderUpColor || upColor, borderDownColor: borderDownColor || downColor,
           wickUpColor: '#888', wickDownColor: '#888',
         })
-        mainSeries.setData(parsedData)
         break
 
       // --- Line types ---
       case 'line':
         mainSeries = chart.addSeries(LineSeries, { color: upColor, lineWidth: 2 })
-        mainSeries.setData(lineData)
         break
       case 'line-shaded':
         mainSeries = chart.addSeries(AreaSeries, {
           topColor: upColor + '60', bottomColor: upColor + '05',
           lineColor: upColor, lineWidth: 2,
         })
-        mainSeries.setData(lineData)
         break
       case 'line-gradient':
         mainSeries = chart.addSeries(AreaSeries, {
           topColor: upColor + '80', bottomColor: 'transparent',
           lineColor: upColor, lineWidth: 2,
         })
-        mainSeries.setData(lineData)
         break
       case 'square-line':
         mainSeries = chart.addSeries(LineSeries, {
           color: upColor, lineWidth: 2, lineType: 1,
         })
-        mainSeries.setData(lineData)
         break
       case 'square-line-shaded':
         mainSeries = chart.addSeries(AreaSeries, {
           topColor: upColor + '60', bottomColor: upColor + '05',
           lineColor: upColor, lineWidth: 2, lineType: 1,
         })
-        mainSeries.setData(lineData)
         break
       case 'square-line-gradient':
         mainSeries = chart.addSeries(AreaSeries, {
           topColor: upColor + '80', bottomColor: 'transparent',
           lineColor: upColor, lineWidth: 2, lineType: 1,
         })
-        mainSeries.setData(lineData)
         break
 
       default:
@@ -538,18 +522,93 @@ export default function CandlestickChart({
           borderUpColor: upColor, borderDownColor: downColor,
           wickUpColor: upColor, wickDownColor: downColor,
         })
-        mainSeries.setData(parsedData)
     }
-    if (savedRangeRef.current) {
-      chart.timeScale().setVisibleLogicalRange(savedRangeRef.current)
-    } else {
-      chart.timeScale().fitContent()
-    }
+
     chartRef.current = chart
     seriesRef.current = mainSeries
     indicatorSeriesRef.current = []
+    isFirstDataRef.current = true
 
-    // Add indicator series
+    // Show crosshair marker on indicator lines only when cursor is within 2px
+    const markerState = new Map()
+    chart.subscribeCrosshairMove((param) => {
+      for (const entry of indicatorSeriesRef.current) {
+        const { series: indSeries } = entry
+        let shouldShow = false
+        const seriesData = param.seriesData?.get(indSeries)
+        if (seriesData && seriesData.value !== undefined && param.point?.y !== undefined) {
+          const indY = indSeries.priceToCoordinate(seriesData.value)
+          if (indY !== null) {
+            shouldShow = Math.abs(param.point.y - indY) < 2
+          }
+        }
+        if (markerState.get(indSeries) !== shouldShow) {
+          markerState.set(indSeries, shouldShow)
+          indSeries.applyOptions({ crosshairMarkerVisible: shouldShow })
+        }
+      }
+    })
+
+    const handleResize = () => {
+      if (chartContainerRef.current) {
+        chart.applyOptions({
+          width: getInnerWidth(),
+          height: Math.max(450, window.innerHeight - 360),
+        })
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      const range = chart.timeScale().getVisibleRange()
+      savedRangeRef.current = range
+      try {
+        if (range) localStorage.setItem(`chartRange_${symbol}`, JSON.stringify(range))
+        else localStorage.removeItem(`chartRange_${symbol}`)
+      } catch { /* noop */ }
+      chart.remove()
+    }
+  }, [chartType, bgColor, timezone])
+
+  // Update data in-place without recreating the chart
+  useEffect(() => {
+    const chart = chartRef.current
+    const mainSeries = seriesRef.current
+    if (!chart || !mainSeries) return
+
+    const parsedData = parseChartData(data, timezone)
+    dataRef.current = parsedData
+
+    const isLineType = ['line', 'square-line', 'line-shaded', 'line-gradient', 'square-line-shaded', 'square-line-gradient'].includes(chartType)
+    const isTrend = chartType === 'candlestick-trend'
+
+    if (isLineType) {
+      mainSeries.setData(parsedData.map(d => ({ time: d.time, value: d.close })))
+    } else if (isTrend) {
+      const trendData = parsedData.map((d, i) => {
+        const prev = i > 0 ? parsedData[i - 1].close : d.open
+        const isUp = d.close >= prev
+        return {
+          ...d,
+          color: isUp ? upColor : downColor,
+          borderColor: isUp ? (borderUpColor || upColor) : (borderDownColor || downColor),
+          wickColor: isUp ? upColor : downColor,
+        }
+      })
+      mainSeries.setData(trendData)
+    } else {
+      mainSeries.setData(parsedData)
+    }
+
+    // Update indicator series data
+    // Remove old indicator series and recreate with new data
+    for (const entry of indicatorSeriesRef.current) {
+      chart.removeSeries(entry.series)
+    }
+    indicatorSeriesRef.current = []
+
     for (const indId of activeIndicators) {
       const indicator = AVAILABLE_INDICATORS.find(i => i.id === indId)
       if (!indicator) continue
@@ -594,6 +653,12 @@ export default function CandlestickChart({
       }
     }
 
+    // Remove old GEX price lines before adding new ones
+    for (const pl of gexPriceLinesRef.current) {
+      mainSeries.removePriceLine(pl)
+    }
+    gexPriceLinesRef.current = []
+
     // Add GEX level price lines
     if (gexLevels && gexLevels.levels && activeIndicators.includes('gex')) {
       for (const level of gexLevels.levels) {
@@ -601,7 +666,7 @@ export default function CandlestickChart({
         const isKey = level.label === 'call_wall' || level.label === 'put_wall'
         const labelName = GEX_LABELS[level.label] || level.label
         const gexVal = level.gex != null ? ` ${(level.gex / 1e6).toFixed(1)}M` : ''
-        mainSeries.createPriceLine({
+        const pl = mainSeries.createPriceLine({
           price: level.strikeFutures,
           color,
           lineWidth: isKey ? 2 : 1,
@@ -609,46 +674,20 @@ export default function CandlestickChart({
           axisLabelVisible: true,
           title: `${labelName}${gexVal}`,
         })
+        gexPriceLinesRef.current.push(pl)
       }
     }
 
-    // Show crosshair marker on indicator lines only when cursor is within 2px
-    const markerState = new Map()
-    chart.subscribeCrosshairMove((param) => {
-      for (const entry of indicatorSeriesRef.current) {
-        const { series: indSeries } = entry
-        let shouldShow = false
-        const seriesData = param.seriesData?.get(indSeries)
-        if (seriesData && seriesData.value !== undefined && param.point?.y !== undefined) {
-          const indY = indSeries.priceToCoordinate(seriesData.value)
-          if (indY !== null) {
-            shouldShow = Math.abs(param.point.y - indY) < 2
-          }
-        }
-        if (markerState.get(indSeries) !== shouldShow) {
-          markerState.set(indSeries, shouldShow)
-          indSeries.applyOptions({ crosshairMarkerVisible: shouldShow })
-        }
-      }
-    })
-
-    const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({
-          width: getInnerWidth(),
-          height: Math.max(450, window.innerHeight - 360),
-        })
+    // On first data load, restore saved range or fit content
+    if (isFirstDataRef.current) {
+      isFirstDataRef.current = false
+      if (savedRangeRef.current) {
+        chart.timeScale().setVisibleRange(savedRangeRef.current)
+      } else {
+        chart.timeScale().fitContent()
       }
     }
-
-    window.addEventListener('resize', handleResize)
-
-    return () => {
-      window.removeEventListener('resize', handleResize)
-      savedRangeRef.current = chart.timeScale().getVisibleLogicalRange()
-      chart.remove()
-    }
-  }, [data, activeIndicators, gexLevels, chartType, bgColor, timezone])
+  }, [data, activeIndicators, gexLevels, chartType, timezone, upColor, downColor, borderUpColor, borderDownColor])
 
   useEffect(() => {
     if (!seriesRef.current) return
