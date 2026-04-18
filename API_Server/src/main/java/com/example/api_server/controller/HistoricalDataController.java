@@ -30,13 +30,19 @@ public class HistoricalDataController {
      * seconds of the last bucket it already has; response contains only bars
      * with bucket start &gt;= since. The first returned bar (if any) should
      * replace the client's last bar, since it may still be developing.
+     *
+     * Optional {@code lastFetched} is the {@code lastFetched} value the
+     * client received on its previous poll. When supplied, the server
+     * short-circuits without querying OHLC rows if ingestion hasn't written
+     * anything new since that timestamp.
      */
     @GetMapping("/since")
     @RateLimiter(name = "marketDataApi")
     public HistoricalDataResponse getHistoricalDataSince(
             @RequestParam String symbol,
             @RequestParam(defaultValue = "1d") String interval,
-            @RequestParam long since) {
-        return historicalDataService.getHistoricalDataSince(symbol, interval, since);
+            @RequestParam long since,
+            @RequestParam(required = false) Long lastFetched) {
+        return historicalDataService.getHistoricalDataSince(symbol, interval, since, lastFetched);
     }
 }

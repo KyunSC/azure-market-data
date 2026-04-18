@@ -9,6 +9,13 @@ public class HistoricalDataResponse {
     private String timestamp;
     private List<OhlcData> data;
 
+    /**
+     * Epoch-second of the most recent {@code fetched_at} the server has seen
+     * for this symbol/interval. Clients echo this back on the next /since
+     * call so the server can short-circuit when ingestion hasn't advanced.
+     */
+    private Long lastFetched;
+
     public HistoricalDataResponse() {
     }
 
@@ -34,4 +41,7 @@ public class HistoricalDataResponse {
 
     public List<OhlcData> getData() { return data; }
     public void setData(List<OhlcData> data) { this.data = data; }
+
+    public Long getLastFetched() { return lastFetched; }
+    public void setLastFetched(Long lastFetched) { this.lastFetched = lastFetched; }
 }

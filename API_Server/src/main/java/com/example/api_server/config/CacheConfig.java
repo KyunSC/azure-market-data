@@ -17,12 +17,21 @@ public class CacheConfig {
     public CacheManager cacheManager() {
         SimpleCacheManager manager = new SimpleCacheManager();
         manager.setCaches(List.of(
-                // Live intraday bars: short TTL so polls stay fresh.
-                buildCache("historicalData", Duration.ofSeconds(60), 200),
+                // Live intraday bars: full-fetch cache. Bumped beyond poll-cycle
+                // time so repeated full refreshes within a minute share a hit.
+                buildCache("historicalData", Duration.ofSeconds(90), 200),
                 // Non-live timeframes (1d/1wk): session-long bars rarely change,
                 // so cache aggressively to cut Supabase egress.
-                buildCache("historicalDataLong", Duration.ofMinutes(30), 200),
-                buildCache("gammaExposure", Duration.ofSeconds(60), 50),
+                buildCache("historicalDataLong", Duration.ofHours(1), 200),
+                // MAX(fetched_at) probe for the /since incremental endpoint.
+                // Short TTL so newly-ingested bars surface quickly, but long
+                // enough that a tight poll loop (every few seconds) shares a
+                // single cache entry across clients instead of hitting
+                // Supabase on every poll.
+                buildCache("latestFetchedAt", Duration.ofSeconds(15), 200),
+                // GEX is recomputed by the scheduled ingestion job every 15
+                // minutes, so serving 5-minute-old data is fine.
+                buildCache("gammaExposure", Duration.ofMinutes(5), 50),
                 buildCache("marketData", Duration.ofSeconds(60), 50)
         ));
         return manager;

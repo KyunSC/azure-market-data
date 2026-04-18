@@ -108,14 +108,39 @@ public class HistoricalDataService {
      * Incremental fetch: returns only bars aligned to {@code interval} whose bucket
      * start is at or after {@code sinceEpochSeconds}. Intended for live polling so
      * the client sends back the last bar it has and we return just the delta.
-     * Not cached — caching per-since-timestamp would never hit.
+     *
+     * The MAX(fetched_at) probe is cached, so a tight poll loop costs at most
+     * one tiny timestamp query per cache TTL. When {@code lastFetchedEpoch}
+     * matches the current MAX, we know ingestion hasn't written anything new
+     * (including in-place updates of the developing bar) and short-circuit
+     * without touching Supabase for OHLC rows. The new MAX is returned in
+     * {@link HistoricalDataResponse#getLastFetched()} so the client can echo
+     * it on the next poll.
      */
     @Retry(name = "historicalData")
     @CircuitBreaker(name = "historicalData", fallbackMethod = "getHistoricalSinceFallback")
-    public HistoricalDataResponse getHistoricalDataSince(String symbol, String interval, long sinceEpochSeconds) {
+    public HistoricalDataResponse getHistoricalDataSince(String symbol, String interval,
+                                                         long sinceEpochSeconds,
+                                                         Long lastFetchedEpoch) {
         String queryInterval = storedIntervalFor(interval);
         LocalDateTime since = Instant.ofEpochSecond(sinceEpochSeconds)
                 .atZone(ZoneId.systemDefault()).toLocalDateTime();
+
+        LocalDateTime maxFetched = self.latestFetchedAt(symbol.toUpperCase(), queryInterval);
+        Long maxFetchedEpoch = maxFetched == null
+                ? null
+                : maxFetched.atZone(ZoneId.systemDefault()).toEpochSecond();
+
+        // No data at all yet for this symbol/interval.
+        if (maxFetched == null) {
+            return emptyDeltaResponse(symbol, interval, null);
+        }
+
+        // Client is already current with what ingestion has written. Skip the
+        // delta query entirely — no OHLC rows pulled from Supabase.
+        if (lastFetchedEpoch != null && lastFetchedEpoch >= maxFetchedEpoch) {
+            return emptyDeltaResponse(symbol, interval, maxFetchedEpoch);
+        }
 
         List<HistoricalDataEntity> data = localRepository
                 .findBySymbolAndIntervalTypeAndDateGreaterThanEqualOrderByDateAsc(
@@ -125,11 +150,31 @@ public class HistoricalDataService {
                 symbol, interval, since, data.size(), queryInterval);
 
         data = aggregate(data, queryInterval, interval);
-        return buildResponseFromEntities(symbol, "since", interval, data);
+        HistoricalDataResponse response = buildResponseFromEntities(symbol, "since", interval, data);
+        response.setLastFetched(maxFetchedEpoch);
+        return response;
+    }
+
+    private HistoricalDataResponse emptyDeltaResponse(String symbol, String interval, Long lastFetched) {
+        HistoricalDataResponse response = buildResponseFromEntities(symbol, "since", interval, List.of());
+        response.setLastFetched(lastFetched);
+        return response;
+    }
+
+    /**
+     * Cached MAX(fetched_at) probe. Advances whenever ingestion writes a row
+     * (including in-place updates of the developing bar), so it's a reliable
+     * "anything new since you last polled?" signal that costs one timestamp
+     * per cache TTL across all clients.
+     */
+    @Cacheable(value = "latestFetchedAt", key = "#symbol + '-' + #intervalType")
+    public LocalDateTime latestFetchedAt(String symbol, String intervalType) {
+        return localRepository.findMaxFetchedAtBySymbolAndIntervalType(symbol, intervalType);
     }
 
     public HistoricalDataResponse getHistoricalSinceFallback(String symbol, String interval,
-                                                              long sinceEpochSeconds, Exception ex) {
+                                                              long sinceEpochSeconds,
+                                                              Long lastFetchedEpoch, Exception ex) {
         logger.warn("Circuit breaker fallback for incremental {} {}. Reason: {}", symbol, interval, ex.getMessage());
         return new HistoricalDataResponse(
                 symbol.toUpperCase(), "since", interval,

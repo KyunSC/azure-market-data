@@ -116,6 +116,11 @@ export default function TickerDetail({ params }) {
   useEffect(() => {
     let isInitial = true
     let lastBars = []
+    // Echoed back to the server on each /since poll so it can short-circuit
+    // when ingestion hasn't written anything new — that turns a fast poll
+    // loop into a sequence of empty cache-hit responses with zero Supabase
+    // egress, while still showing fresh data the moment ingestion runs.
+    let lastFetched = null
 
     // Intraday bars use epoch-seconds strings; daily/weekly use YYYY-MM-DD.
     // Incremental polling is only worthwhile for intraday — daily series are
@@ -141,6 +146,7 @@ export default function TickerDetail({ params }) {
       if (!response.ok) throw new Error(await parseError(response))
       const result = await response.json()
       lastBars = result.data
+      lastFetched = result.lastFetched ?? lastFetched
       setOhlcData(result.data)
     }
 
@@ -149,11 +155,19 @@ export default function TickerDetail({ params }) {
       const lastTime = Number(lastBars[lastBars.length - 1].time)
       if (!Number.isFinite(lastTime)) return fetchFull()
 
-      const response = await fetch(
-        `/api/historical/since?symbol=${symbol}&interval=${fetchInterval}&since=${lastTime}`
-      )
+      const url = new URL('/api/historical/since', window.location.origin)
+      url.searchParams.set('symbol', symbol)
+      url.searchParams.set('interval', fetchInterval)
+      url.searchParams.set('since', String(lastTime))
+      if (lastFetched != null) url.searchParams.set('lastFetched', String(lastFetched))
+
+      const response = await fetch(url.toString())
       if (!response.ok) throw new Error(await parseError(response))
       const result = await response.json()
+      // Track the server's view of the latest ingestion timestamp regardless
+      // of whether new bars came back — empty responses still advance it as
+      // ingestion's MAX(fetched_at) cache refreshes.
+      if (result.lastFetched != null) lastFetched = result.lastFetched
       const newBars = result.data || []
       if (!newBars.length) return
 
@@ -193,8 +207,19 @@ export default function TickerDetail({ params }) {
       }
     }
 
-    // Poll interval based on chart timeframe
-    const POLL_MS = { '1m': 5_000, '5m': 15_000, '15m': 30_000, '30m': 30_000 }
+    // The /since endpoint echoes back the server's latest ingestion timestamp
+    // as `lastFetched`; subsequent polls send it back, and the server returns
+    // an empty body without touching Supabase whenever ingestion hasn't moved
+    // on. That makes a tight poll loop essentially free, so we can keep the
+    // candle visually responsive without burning egress.
+    const POLL_MS = {
+      '1m': 5_000,
+      '5m': 10_000,
+      '15m': 15_000,
+      '30m': 15_000,
+      '1h': 30_000,
+      '4h': 30_000,
+    }
     const pollInterval = POLL_MS[fetchInterval] || 60_000
 
     fetchOHLCData()
