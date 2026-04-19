@@ -32,7 +32,11 @@ public class CacheConfig {
                 // GEX is recomputed by the scheduled ingestion job every 15
                 // minutes, so serving 5-minute-old data is fine.
                 buildCache("gammaExposure", Duration.ofMinutes(5), 50),
-                buildCache("marketData", Duration.ofSeconds(60), 50)
+                buildCache("marketData", Duration.ofSeconds(60), 50),
+                // Live tick endpoint — cached briefly so a 2–3s client poll
+                // cycle fans out to a single yfinance call per TTL across all
+                // viewers. Keep short enough to feel live.
+                buildCache("liveMarketData", Duration.ofSeconds(3), 50)
         ));
         return manager;
     }

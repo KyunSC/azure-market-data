@@ -40,6 +40,7 @@ export default function TickerDetail({ params }) {
   const [drawingTool, setDrawingTool] = useState(null)
   const [drawings, setDrawings] = useState([])
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE)
+  const [livePrice, setLivePrice] = useState(null)
 
   // Hydrate from localStorage after mount to avoid SSR/client mismatch
   useEffect(() => {
@@ -112,6 +113,39 @@ export default function TickerDetail({ params }) {
       if (!['1d', '5d'].includes(period)) setPeriod('5d')
     }
   }
+
+  // Live tick poller. Hits /api/market/live, which calls yfinance via the
+  // Azure Function and never reads Supabase. Cached ~3s on the backend so
+  // many viewers share a single upstream call per TTL. The returned price
+  // is merged into the developing bar inside CandlestickChart via
+  // mainSeries.update() — no setData, no indicator recompute.
+  useEffect(() => {
+    setLivePrice(null)
+    let cancelled = false
+
+    const fetchLive = async () => {
+      if (document.hidden) return
+      try {
+        const res = await fetch(`/api/market/live?symbol=${encodeURIComponent(symbol)}`)
+        if (!res.ok) return
+        const body = await res.json()
+        const price = body?.tickers?.[0]?.price
+        if (!cancelled && typeof price === 'number' && Number.isFinite(price)) {
+          setLivePrice(price)
+        }
+      } catch { /* network hiccup — next tick will retry */ }
+    }
+
+    fetchLive()
+    const timer = window.setInterval(fetchLive, 3000)
+    const onVisible = () => { if (!document.hidden) fetchLive() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [symbol])
 
   useEffect(() => {
     let isInitial = true
@@ -318,7 +352,7 @@ export default function TickerDetail({ params }) {
         {loading && <p className="status">Loading chart...</p>}
         {error && <p className="status error">Error: {error}</p>}
         {!loading && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} borderUpColor={borderUpColor} borderDownColor={borderDownColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} timezone={timezone} />
+          <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} borderUpColor={borderUpColor} borderDownColor={borderDownColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} timezone={timezone} livePrice={livePrice} />
         )}
         {!loading && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>

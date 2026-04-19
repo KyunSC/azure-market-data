@@ -223,6 +223,7 @@ export default function CandlestickChart({
   onDrawingComplete = () => {},
   onDrawingUpdate = () => {},
   timezone = 'America/New_York',
+  livePrice = null,
 }) {
   const chartContainerRef = useRef()
   const chartRef = useRef()
@@ -659,15 +660,20 @@ export default function CandlestickChart({
     }
     gexPriceLinesRef.current = []
 
-    // Add GEX level price lines
+    // Add GEX level price lines. The strike_futures column is nullable in the
+    // DB, so a level can come through with strikeFutures === null; passing that
+    // to createPriceLine trips lightweight-charts' "must be a number, got
+    // 'object'" assertion (typeof null === 'object'). Skip those levels.
     if (gexLevels && gexLevels.levels && activeIndicators.includes('gex')) {
       for (const level of gexLevels.levels) {
+        const price = Number(level.strikeFutures)
+        if (!Number.isFinite(price)) continue
         const color = GEX_COLORS[level.label] || '#ffffff'
         const isKey = level.label === 'call_wall' || level.label === 'put_wall'
         const labelName = GEX_LABELS[level.label] || level.label
         const gexVal = level.gex != null ? ` ${(level.gex / 1e6).toFixed(1)}M` : ''
         const pl = mainSeries.createPriceLine({
-          price: level.strikeFutures,
+          price,
           color,
           lineWidth: isKey ? 2 : 1,
           lineStyle: level.label === 'zero_gamma' ? 2 : 0,
@@ -688,6 +694,43 @@ export default function CandlestickChart({
       }
     }
   }, [data, activeIndicators, gexLevels, chartType, timezone, upColor, downColor, borderUpColor, borderDownColor])
+
+  // Merge the live tick into the developing bar via mainSeries.update().
+  // Deliberately depends ONLY on livePrice so a tick doesn't re-run setData
+  // or rebuild indicators — that would flicker and burn CPU. When the next
+  // confirmed bar arrives through /since, the main setData effect rewrites
+  // the last bar authoritatively, and the next livePrice tick updates that
+  // new bar. Volume stays untouched because a single tick price can't be
+  // turned into a reliable volume estimate.
+  useEffect(() => {
+    const mainSeries = seriesRef.current
+    const bars = dataRef.current
+    if (!mainSeries || !bars?.length || livePrice == null) return
+    const last = bars[bars.length - 1]
+    if (last?.time == null) return
+
+    const isLineType = ['line', 'square-line', 'line-shaded', 'line-gradient', 'square-line-shaded', 'square-line-gradient'].includes(chartType)
+    try {
+      if (isLineType) {
+        mainSeries.update({ time: last.time, value: livePrice })
+      } else {
+        const merged = {
+          ...last,
+          high: Math.max(last.high, livePrice),
+          low: Math.min(last.low, livePrice),
+          close: livePrice,
+        }
+        if (chartType === 'candlestick-trend') {
+          const prev = bars.length > 1 ? bars[bars.length - 2].close : last.open
+          const isUp = livePrice >= prev
+          merged.color = isUp ? upColor : downColor
+          merged.borderColor = isUp ? (borderUpColor || upColor) : (borderDownColor || downColor)
+          merged.wickColor = isUp ? upColor : downColor
+        }
+        mainSeries.update(merged)
+      }
+    } catch { /* series not ready / stale ref during chartType swap — skip */ }
+  }, [livePrice, chartType, upColor, downColor, borderUpColor, borderDownColor])
 
   useEffect(() => {
     if (!seriesRef.current) return

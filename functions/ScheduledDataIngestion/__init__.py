@@ -151,12 +151,26 @@ def insert_gex_data(cursor, etf_symbol, gex_result):
     return exposure_id
 
 def fallback_gex_from_previous(cursor, etf_symbol):
-    """Re-insert the most recent market-hours GEX data as a new entry."""
+    """Re-insert the most recent VALID market-hours GEX data as a new entry.
+
+    Filters out rows with null prices or null strike data so a chain of failed
+    fallbacks can't propagate empty strikes forward (which is what produced
+    the "no GEX lines on NQ" symptom — every level had strike_futures=null).
+    """
     cursor.execute("""
-        SELECT id, etf_price, futures_price, conversion_ratio, expirations_used
-        FROM gamma_exposure
-        WHERE symbol = %s AND market_open = true
-        ORDER BY computed_at DESC
+        SELECT ge.id, ge.etf_price, ge.futures_price, ge.conversion_ratio, ge.expirations_used
+        FROM gamma_exposure ge
+        WHERE ge.symbol = %s
+          AND ge.market_open = true
+          AND ge.etf_price IS NOT NULL
+          AND ge.futures_price IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM gamma_levels gl
+              WHERE gl.gamma_exposure_id = ge.id
+                AND gl.strike_futures IS NOT NULL
+                AND gl.strike_etf IS NOT NULL
+          )
+        ORDER BY ge.computed_at DESC
         LIMIT 1
     """, (etf_symbol,))
     row = cursor.fetchone()
@@ -169,6 +183,8 @@ def fallback_gex_from_previous(cursor, etf_symbol):
         SELECT strike_etf, strike_futures, gex, gex_call, gex_put, label
         FROM gamma_levels
         WHERE gamma_exposure_id = %s
+          AND strike_etf IS NOT NULL
+          AND strike_futures IS NOT NULL
     """, (prev_id,))
     levels = cursor.fetchall()
     if not levels:
