@@ -709,6 +709,12 @@ export default function CandlestickChart({
     const last = bars[bars.length - 1]
     if (last?.time == null) return
 
+    // Reject obvious bad ticks (stale price, zero, wrong-symbol quote).
+    // A single 3s live tick shouldn't move more than ~1% from the bar's
+    // own close on a normal market. If it does, assume yfinance fast_info
+    // hiccuped and skip this update — the next tick will self-correct.
+    if (!(last.close > 0) || Math.abs(livePrice - last.close) / last.close > 0.01) return
+
     const isLineType = ['line', 'square-line', 'line-shaded', 'line-gradient', 'square-line-shaded', 'square-line-gradient'].includes(chartType)
     try {
       if (isLineType) {

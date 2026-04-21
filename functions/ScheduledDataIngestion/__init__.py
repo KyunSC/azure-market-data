@@ -12,6 +12,7 @@ import pytz
 # Add parent directory to path so we can import GEXCalculator module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from GEXCalculator.gex_calculator import fetch_prices_and_compute_gex, GEX_PAIRS
+from shared.sanitize import sanitize_bar
 
 TICKER_TIMEOUT_SECONDS = 10
 
@@ -216,8 +217,27 @@ def fallback_gex_from_previous(cursor, etf_symbol):
     return new_id
 
 def upsert_historical_data(cursor, symbol, data):
-    """Upsert historical OHLC data."""
+    """Upsert historical OHLC data.
+
+    Each row is sanitized against the previous row's close to clamp yfinance
+    phantom ticks (see shared.sanitize). Without this, re-ingestion would
+    stamp the same bad OHLC back into Supabase every 5 min.
+    """
+    prev_close = None
     for row in data:
+        clean = sanitize_bar(row, prev_close=prev_close)
+        if clean is not row and (
+            clean['open'] != row['open']
+            or clean['high'] != row['high']
+            or clean['low'] != row['low']
+        ):
+            logging.warning(
+                'Sanitized phantom tick for %s %s @ %s: open %s→%s, high %s→%s, low %s→%s',
+                symbol, row.get('interval_type'), row.get('date'),
+                row['open'], clean['open'],
+                row['high'], clean['high'],
+                row['low'], clean['low'],
+            )
         cursor.execute("""
             INSERT INTO historical_data
                 (symbol, date, interval_type, open, high, low, close_price, volume, fetched_at)
@@ -232,15 +252,16 @@ def upsert_historical_data(cursor, symbol, data):
                 fetched_at = EXCLUDED.fetched_at
         """, (
             symbol,
-            row['date'],
-            row['interval_type'],
-            row['open'],
-            row['high'],
-            row['low'],
-            row['close'],
-            row['volume'],
+            clean['date'],
+            clean['interval_type'],
+            clean['open'],
+            clean['high'],
+            clean['low'],
+            clean['close'],
+            clean['volume'],
             datetime.utcnow()
         ))
+        prev_close = clean['close']
 
 def main(mytimer: func.TimerRequest) -> None:
     utc_timestamp = datetime.utcnow()
