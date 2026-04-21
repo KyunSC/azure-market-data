@@ -41,7 +41,7 @@ export default function DrawingSelector({ activeTool, onSelectTool, onClearAll, 
         onClick={() => setOpen(prev => !prev)}
         title={activeTool ? `Draw: ${DRAWING_TOOLS.find(t => t.id === activeTool)?.label}` : 'Drawing Tools'}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" suppressHydrationWarning>
           <path d="M11 2l3 3L5 14l-3 1 1-3Z" />
         </svg>
       </button>
