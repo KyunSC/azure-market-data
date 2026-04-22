@@ -28,7 +28,8 @@ function shiftToTimezone(utcEpoch, tz) {
   const d = new Date(utcEpoch * 1000)
   const utcStr = d.toLocaleString('en-US', { timeZone: 'UTC' })
   const tzStr = d.toLocaleString('en-US', { timeZone: tz })
-  return utcEpoch + (new Date(tzStr) - new Date(utcStr)) / 1000
+  const result = utcEpoch + (new Date(tzStr) - new Date(utcStr)) / 1000
+  return Number.isFinite(result) ? result : utcEpoch
 }
 
 // Wilder-smoothed ATR, first bar falls back to H-L.
@@ -250,7 +251,7 @@ function parseChartData(rawData, timezone) {
         volume: Number(d.volume),
       }
     })
-    .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close))
+    .filter(d => !isNaN(d.open) && !isNaN(d.high) && !isNaN(d.low) && !isNaN(d.close) && (typeof d.time !== 'number' || Number.isFinite(d.time)))
 
   rawParsed.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
   const result = []
@@ -875,7 +876,7 @@ export default function CandlestickChart({
     const bars = dataRef.current
     if (!mainSeries || !bars?.length || livePrice == null) return
     const last = bars[bars.length - 1]
-    if (last?.time == null) return
+    if (last?.time == null || (typeof last.time === 'number' && !Number.isFinite(last.time))) return
 
     // Reject obvious bad ticks (stale price, zero, wrong-symbol quote).
     // A single 3s live tick shouldn't move more than ~1% from the bar's
