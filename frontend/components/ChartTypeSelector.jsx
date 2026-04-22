@@ -54,7 +54,7 @@ export default function ChartTypeSelector({ chartType, onSelect }) {
         onClick={() => setOpen(prev => !prev)}
         title={findLabel(chartType)}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" suppressHydrationWarning>
           <line x1="3" y1="2" x2="3" y2="4" />
           <rect x="1" y="4" width="4" height="7" rx="0" />
           <line x1="3" y1="11" x2="3" y2="14" />

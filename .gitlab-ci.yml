@@ -1,0 +1,13 @@
+stages:
+  - test
+
+python-tests:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - pip install psycopg2-binary pytz
+  script:
+    - cd functions && python3 -m unittest tests.test_sanitize -v
+  only:
+    - main
+    - merge_requests

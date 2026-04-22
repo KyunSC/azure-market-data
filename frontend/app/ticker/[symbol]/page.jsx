@@ -83,7 +83,7 @@ export default function TickerDetail({ params }) {
     }
 
     fetchGex({ skipIfHidden: false })
-    const gexInterval = window.setInterval(fetchGex, 15 * 60 * 1000)
+    const gexInterval = window.setInterval(fetchGex, 5 * 60 * 1000)
     return () => window.clearInterval(gexInterval)
   }, [symbol])
 

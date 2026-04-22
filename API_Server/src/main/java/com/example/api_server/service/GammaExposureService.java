@@ -33,7 +33,15 @@ public class GammaExposureService {
     public GammaExposureResponse getGammaExposure(String symbol) {
         logger.info("Fetching gamma exposure for symbol: {}", symbol);
 
-        GammaExposureEntity entity = repository.findFirstBySymbolOrderByComputedAtDesc(symbol.toUpperCase());
+        String upper = symbol.toUpperCase();
+        // Prefer the latest row whose levels still have usable strike data.
+        // A legacy fallback bug produced rows with all-null strikes (visible
+        // on QQQ/NQ); serving those drops GEX lines off the chart even though
+        // a good earlier row exists.
+        GammaExposureEntity entity = repository.findLatestValidBySymbol(upper);
+        if (entity == null) {
+            entity = repository.findFirstBySymbolOrderByComputedAtDesc(upper);
+        }
 
         if (entity == null) {
             logger.warn("No gamma exposure data found for {}", symbol);
@@ -56,6 +64,7 @@ public class GammaExposureService {
         }
 
         List<GammaLevelData> levels = entity.getLevels().stream()
+                .filter(l -> l.getStrikeFutures() != null)
                 .map(this::toGammaLevelData)
                 .toList();
 

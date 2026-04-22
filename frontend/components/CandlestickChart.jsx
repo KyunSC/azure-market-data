@@ -334,16 +334,21 @@ export default function CandlestickChart({
       ctx.scale(dpr, dpr)
       ctx.clearRect(0, 0, container.clientWidth, container.clientHeight)
 
-      const maxBarWidth = container.clientWidth * 0.15
+      // Find chart plotting area boundaries from the inner canvas element
+      const chartPane = container.querySelector('table td canvas')
+      let chartLeft = 0
+      let chartRight = container.clientWidth
+      if (chartPane) {
+        const paneRect = chartPane.getBoundingClientRect()
+        const containerRect = container.getBoundingClientRect()
+        chartLeft = Math.max(0, paneRect.left - containerRect.left)
+        chartRight = Math.min(container.clientWidth, paneRect.right - containerRect.left)
+      }
+
+      const maxBarWidth = (chartRight - chartLeft) * 0.15
       const { buckets, maxVol } = vpData
       const pocBucket = buckets.reduce((max, b) => b.volume > max.volume ? b : max, buckets[0])
       const va = vaEnabled ? computeValueArea(buckets, vaPct) : null
-
-      // Find left edge of chart plotting area by locating the inner chart canvas
-      const chartPane = container.querySelector('table td canvas')
-      const leftEdge = chartPane
-        ? chartPane.getBoundingClientRect().left - container.getBoundingClientRect().left
-        : 0
 
       for (let i = 0; i < buckets.length; i++) {
         const bucket = buckets[i]
@@ -354,7 +359,7 @@ export default function CandlestickChart({
 
         const barHeight = Math.abs(yBottom - yTop)
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
-        const x = vpSideRef.current === 'left' ? leftEdge : container.clientWidth - barWidth - 50
+        const x = vpSideRef.current === 'left' ? chartLeft : chartRight - barWidth
 
         const isPOC = bucket === pocBucket
         const inVA = va && i >= va.lo && i <= va.hi
@@ -528,6 +533,7 @@ export default function CandlestickChart({
     chartRef.current = chart
     seriesRef.current = mainSeries
     indicatorSeriesRef.current = []
+    gexPriceLinesRef.current = []
     isFirstDataRef.current = true
 
     // Show crosshair marker on indicator lines only when cursor is within 2px
@@ -660,14 +666,16 @@ export default function CandlestickChart({
     }
     gexPriceLinesRef.current = []
 
-    // Add GEX level price lines. The strike_futures column is nullable in the
-    // DB, so a level can come through with strikeFutures === null; passing that
-    // to createPriceLine trips lightweight-charts' "must be a number, got
-    // 'object'" assertion (typeof null === 'object'). Skip those levels.
     if (gexLevels && gexLevels.levels && activeIndicators.includes('gex')) {
       for (const level of gexLevels.levels) {
-        const price = Number(level.strikeFutures)
-        if (!Number.isFinite(price)) continue
+        // strikeFutures is nullable; Number(null)===0 passes isFinite so check explicitly.
+        // Fall back to strikeEtf * conversionRatio when strikeFutures is missing.
+        const price = level.strikeFutures != null
+          ? Number(level.strikeFutures)
+          : (level.strikeEtf != null && gexLevels.conversionRatio != null)
+            ? Number(level.strikeEtf) * Number(gexLevels.conversionRatio)
+            : NaN
+        if (!Number.isFinite(price) || price === 0) continue
         const color = GEX_COLORS[level.label] || '#ffffff'
         const isKey = level.label === 'call_wall' || level.label === 'put_wall'
         const labelName = GEX_LABELS[level.label] || level.label
@@ -1275,11 +1283,15 @@ export default function CandlestickChart({
       const rect = container.getBoundingClientRect()
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
-      const maxBarWidth = container.clientWidth * 0.15
       const chartPane = container.querySelector('table td canvas')
-      const leftEdge = chartPane
-        ? chartPane.getBoundingClientRect().left - rect.left
-        : 0
+      let chartLeft = 0
+      let chartRight = container.clientWidth
+      if (chartPane) {
+        const paneRect = chartPane.getBoundingClientRect()
+        chartLeft = Math.max(0, paneRect.left - rect.left)
+        chartRight = Math.min(container.clientWidth, paneRect.right - rect.left)
+      }
+      const maxBarWidth = (chartRight - chartLeft) * 0.15
       const { buckets, maxVol } = vpData
       for (const bucket of buckets) {
         if (bucket.volume === 0) continue
@@ -1287,7 +1299,7 @@ export default function CandlestickChart({
         const yBottom = series.priceToCoordinate(bucket.priceBottom)
         if (yTop === null || yBottom === null) continue
         const barWidth = (bucket.volume / maxVol) * maxBarWidth
-        const x = vpSideRef.current === 'left' ? leftEdge : container.clientWidth - barWidth - 50
+        const x = vpSideRef.current === 'left' ? chartLeft : chartRight - barWidth
         const yMin = Math.min(yTop, yBottom)
         const yMax = yMin + Math.abs(yBottom - yTop)
         if (mx >= x && mx <= x + barWidth && my >= yMin && my <= yMax) {
