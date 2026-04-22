@@ -1105,8 +1105,8 @@ export default function CandlestickChart({
                   ctx.fillStyle = drawColor + '50'
                   ctx.strokeStyle = drawColor + '70'
                 } else {
-                  ctx.fillStyle = drawColor + '25'
-                  ctx.strokeStyle = drawColor + '40'
+                  ctx.fillStyle = 'rgba(136,136,136,0.2)'
+                  ctx.strokeStyle = 'rgba(136,136,136,0.35)'
                 }
                 ctx.lineWidth = isPOC ? 1 : 0.5
                 ctx.fillRect(bx, Math.min(yTop, yBottom), barW, Math.max(barH, 1))
