@@ -549,11 +549,13 @@ export default function CandlestickChart({
     chart.subscribeCrosshairMove(drawProfile)
     const resizeObs = new ResizeObserver(drawProfile)
     resizeObs.observe(chartContainerRef.current)
+    chartContainerRef.current.addEventListener('wheel', drawProfile, { passive: true })
 
     return () => {
       sub && chart.timeScale().unsubscribeVisibleLogicalRangeChange(drawProfile)
       chart.unsubscribeCrosshairMove(drawProfile)
       resizeObs.disconnect()
+      chartContainerRef.current?.removeEventListener('wheel', drawProfile)
     }
   }, [vpData, data, activeIndicators, gexLevels, chartType, vaEnabled, vaPct, vpSide])
 
@@ -966,6 +968,15 @@ export default function CandlestickChart({
       ctx.scale(dpr, dpr)
       ctx.clearRect(0, 0, container.clientWidth, container.clientHeight)
 
+      const containerRect = container.getBoundingClientRect()
+      const chartPane = container.querySelector('table td canvas')
+      let chartTop = 0, chartBottom = container.clientHeight
+      if (chartPane) {
+        const paneRect = chartPane.getBoundingClientRect()
+        chartTop = Math.max(0, paneRect.top - containerRect.top)
+        chartBottom = Math.min(container.clientHeight, paneRect.bottom - containerRect.top)
+      }
+
       const toPixel = (time, price) => {
         const x = chart.timeScale().timeToCoordinate(time)
         const y = series.priceToCoordinate(price)
@@ -1081,6 +1092,11 @@ export default function CandlestickChart({
               const va = computeValueArea(vpBuckets, 0.7)
               const maxBarWidth = rangeWidth
 
+              ctx.save()
+              ctx.beginPath()
+              ctx.rect(leftX, chartTop, rangeWidth, chartBottom - chartTop)
+              ctx.clip()
+
               for (let bi = 0; bi < vpBuckets.length; bi++) {
                 const bucket = vpBuckets[bi]
                 if (bucket.volume === 0) continue
@@ -1112,6 +1128,8 @@ export default function CandlestickChart({
                 ctx.fillRect(bx, Math.min(yTop, yBottom), barW, Math.max(barH, 1))
                 ctx.strokeRect(bx, Math.min(yTop, yBottom), barW, Math.max(barH, 1))
               }
+
+              ctx.restore()
             }
           }
         }
@@ -1143,10 +1161,15 @@ export default function CandlestickChart({
     const sub = chart.timeScale().subscribeVisibleLogicalRangeChange(renderDrawings)
     const resizeObs = new ResizeObserver(renderDrawings)
     resizeObs.observe(chartContainerRef.current)
+    const container = chartContainerRef.current
+    container.addEventListener('wheel', renderDrawings, { passive: true })
+    container.addEventListener('mousemove', renderDrawings, { passive: true })
 
     return () => {
       sub && chart.timeScale().unsubscribeVisibleLogicalRangeChange(renderDrawings)
       resizeObs.disconnect()
+      container.removeEventListener('wheel', renderDrawings)
+      container.removeEventListener('mousemove', renderDrawings)
     }
   }, [drawings, previewPoint, drawingTool])
 
