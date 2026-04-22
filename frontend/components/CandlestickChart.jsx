@@ -338,17 +338,26 @@ export default function CandlestickChart({
       const chartPane = container.querySelector('table td canvas')
       let chartLeft = 0
       let chartRight = container.clientWidth
+      let chartTop = 0
+      let chartBottom = container.clientHeight
       if (chartPane) {
         const paneRect = chartPane.getBoundingClientRect()
         const containerRect = container.getBoundingClientRect()
         chartLeft = Math.max(0, paneRect.left - containerRect.left)
         chartRight = Math.min(container.clientWidth, paneRect.right - containerRect.left)
+        chartTop = Math.max(0, paneRect.top - containerRect.top)
+        chartBottom = Math.min(container.clientHeight, paneRect.bottom - containerRect.top)
       }
 
       const maxBarWidth = (chartRight - chartLeft) * 0.15
       const { buckets, maxVol } = vpData
       const pocBucket = buckets.reduce((max, b) => b.volume > max.volume ? b : max, buckets[0])
       const va = vaEnabled ? computeValueArea(buckets, vaPct) : null
+
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(chartLeft, chartTop, chartRight - chartLeft, chartBottom - chartTop)
+      ctx.clip()
 
       for (let i = 0; i < buckets.length; i++) {
         const bucket = buckets[i]
@@ -382,6 +391,8 @@ export default function CandlestickChart({
         ctx.fillRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
         ctx.strokeRect(x, Math.min(yTop, yBottom), barWidth, Math.max(barHeight, 1))
       }
+
+      ctx.restore()
     }
 
     vpDrawRef.current = drawProfile
