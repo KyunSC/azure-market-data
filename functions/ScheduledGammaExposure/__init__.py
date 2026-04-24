@@ -51,7 +51,7 @@ def insert_gex_data(cursor, etf_symbol, gex_result):
 
 
 def fallback_gex_from_previous(cursor, etf_symbol):
-    """Re-insert the most recent VALID market-hours GEX as a new entry.
+    """Re-insert the most recent VALID GEX row as a new entry.
 
     Filters out rows with null prices or null strike data so a chain of failed
     fallbacks can't propagate empty strikes forward (which produced the
@@ -61,7 +61,6 @@ def fallback_gex_from_previous(cursor, etf_symbol):
         SELECT ge.id, ge.etf_price, ge.futures_price, ge.conversion_ratio, ge.expirations_used
         FROM gamma_exposure ge
         WHERE ge.symbol = %s
-          AND ge.market_open = true
           AND ge.etf_price IS NOT NULL
           AND ge.futures_price IS NOT NULL
           AND EXISTS (
