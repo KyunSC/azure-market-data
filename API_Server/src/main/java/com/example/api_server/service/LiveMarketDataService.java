@@ -51,27 +51,31 @@ public class LiveMarketDataService {
                     .block();
         } catch (Exception ex) {
             logger.warn("Live price fetch for {} failed: {}", normalized, ex.getMessage());
-            return buildResponse(normalized, null, null);
+            return buildResponse(normalized, null, null, null);
         }
 
         Double price = null;
         Long volume = null;
+        Double previousClose = null;
         Object tickersObj = body == null ? null : body.get("tickers");
         if (tickersObj instanceof List<?> tickers && !tickers.isEmpty() && tickers.get(0) instanceof Map<?, ?> first) {
             Object p = first.get("price");
             Object v = first.get("volume");
+            Object pc = first.get("previous_close");
             if (p instanceof Number) price = ((Number) p).doubleValue();
             if (v instanceof Number) volume = ((Number) v).longValue();
+            if (pc instanceof Number) previousClose = ((Number) pc).doubleValue();
         }
 
-        return buildResponse(normalized, price, volume);
+        return buildResponse(normalized, price, volume, previousClose);
     }
 
-    private MarketDataResponse buildResponse(String symbol, Double price, Long volume) {
+    private MarketDataResponse buildResponse(String symbol, Double price, Long volume, Double previousClose) {
         TickerData ticker = new TickerData();
         ticker.setSymbol(symbol);
         ticker.setPrice(price);
         ticker.setVolume(volume);
+        ticker.setPreviousClose(previousClose);
 
         MarketDataResponse response = new MarketDataResponse();
         response.setTimestamp(String.valueOf(Instant.now().getEpochSecond()));

@@ -89,6 +89,20 @@ body {
   color: #888;
 }
 
+.change {
+  margin-top: 0.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.change.positive {
+  color: #4caf50;
+}
+
+.change.negative {
+  color: #ff6b6b;
+}
+
 .volume {
   margin-top: 0.5rem;
   color: #888;

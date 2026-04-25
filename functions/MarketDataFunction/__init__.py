@@ -32,6 +32,7 @@ def fetch_ticker_data(symbol):
 
     price = info.get('lastPrice')
     volume = info.get('lastVolume')
+    previous_close = info.get('previousClose')
 
     ticker_data = {"symbol": symbol}
 
@@ -46,6 +47,11 @@ def fetch_ticker_data(symbol):
     else:
         ticker_data["volume"] = None
         ticker_data["volume_error"] = "unavailable or invalid"
+
+    if is_valid_number(previous_close) and float(previous_close) > 0:
+        ticker_data["previous_close"] = float(previous_close)
+    else:
+        ticker_data["previous_close"] = None
 
     return ticker_data
 

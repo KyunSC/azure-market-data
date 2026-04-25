@@ -22,9 +22,12 @@ public class MarketDataService {
 
     private static final Logger logger = LoggerFactory.getLogger(MarketDataService.class);
     private final SupabaseMarketDataRepository localRepository;
+    private final LiveMarketDataService liveMarketDataService;
 
-    public MarketDataService(SupabaseMarketDataRepository localRepository) {
+    public MarketDataService(SupabaseMarketDataRepository localRepository,
+                             LiveMarketDataService liveMarketDataService) {
         this.localRepository = localRepository;
+        this.liveMarketDataService = liveMarketDataService;
     }
 
     @Cacheable(value = "marketData", key = "#tickers.toString()")
@@ -45,16 +48,19 @@ public class MarketDataService {
                 TickerData tickerData = new TickerData();
                 tickerData.setSymbol(symbol.toUpperCase());
 
+                TickerData liveTick = fetchLiveTick(symbol);
                 if (entity != null) {
                     tickerData.setPrice(entity.getPrice());
                     tickerData.setVolume(entity.getVolume());
                     logger.debug("MARKET DATA: {} | Price: {} | Volume: {} | Timestamp: {}",
                             symbol, entity.getPrice(), entity.getVolume(), entity.getTimestamp());
                 } else {
-                    tickerData.setPrice(null);
-                    tickerData.setVolume(null);
-                    logger.debug("MARKET DATA: {} - NO DATA FOUND", symbol);
+                    tickerData.setPrice(liveTick == null ? null : liveTick.getPrice());
+                    tickerData.setVolume(liveTick == null ? null : liveTick.getVolume());
+                    logger.debug("MARKET DATA: {} - DB miss, live fallback price={}",
+                            symbol, tickerData.getPrice());
                 }
+                tickerData.setPreviousClose(liveTick == null ? null : liveTick.getPreviousClose());
 
                 tickerDataList.add(tickerData);
             } catch (Exception e) {
@@ -70,6 +76,19 @@ public class MarketDataService {
         logger.info("Successfully fetched {} tickers from Supabase", tickerDataList.size());
 
         return response;
+    }
+
+    private TickerData fetchLiveTick(String symbol) {
+        try {
+            MarketDataResponse live = liveMarketDataService.getLivePrice(symbol);
+            if (live == null || live.getTickers() == null || live.getTickers().isEmpty()) {
+                return null;
+            }
+            return live.getTickers().get(0);
+        } catch (Exception ex) {
+            logger.warn("Live fallback failed for {}: {}", symbol, ex.getMessage());
+            return null;
+        }
     }
 
     public MarketDataResponse getMarketDataFallback(List<String> tickers, Exception ex) {

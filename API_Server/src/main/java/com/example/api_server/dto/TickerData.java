@@ -4,6 +4,7 @@ public class TickerData {
     private String symbol;
     private Double price;
     private Long volume;
+    private Double previousClose;
 
     public String getSymbol() {
         return symbol;
@@ -27,5 +28,13 @@ public class TickerData {
 
     public void setVolume(Long volume) {
         this.volume = volume;
+    }
+
+    public Double getPreviousClose() {
+        return previousClose;
+    }
+
+    public void setPreviousClose(Double previousClose) {
+        this.previousClose = previousClose;
     }
 }
