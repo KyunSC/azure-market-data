@@ -2,8 +2,9 @@
 
 Walks the table in (symbol, interval_type, date) order, applies the same
 shared.sanitize.sanitize_bar logic the ingestion pipeline uses, and rewrites
-any row whose OHLC changed. Uses the prior row's close as the prev_close
-anchor so legitimate gap-opens are preserved.
+any row whose OHLC changed. Uses a rolling window of recently-cleaned closes
+as the witness — robust against runs of consecutive phantom bars that would
+slip through a single-prev_close witness.
 
 Usage:
     # Dry-run (default) — prints every would-be change, no writes
@@ -25,6 +26,8 @@ import psycopg2
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from shared.sanitize import sanitize_bar
+
+SANITIZE_WINDOW_SIZE = 5
 
 
 def load_db_url():
@@ -73,6 +76,7 @@ def repair_group(conn, symbol, interval_type, apply_changes):
     )
 
     prev_close = None
+    recent_closes = []
     changed = 0
     scanned = 0
 
@@ -87,8 +91,11 @@ def repair_group(conn, symbol, interval_type, apply_changes):
             'low': float(low_p) if low_p is not None else None,
             'close': float(close_p),
         }
-        clean = sanitize_bar(row, prev_close=prev_close)
+        clean = sanitize_bar(row, prev_close=prev_close, recent_closes=recent_closes)
         prev_close = clean['close']
+        recent_closes.append(clean['close'])
+        if len(recent_closes) > SANITIZE_WINDOW_SIZE:
+            recent_closes.pop(0)
 
         if clean is row:
             continue

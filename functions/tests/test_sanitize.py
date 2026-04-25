@@ -204,5 +204,85 @@ class TestInvariantsAlwaysHold(unittest.TestCase):
         self.assertGreaterEqual(result['high'], result['close'])
 
 
+class TestRecentClosesWindow(unittest.TestCase):
+    """The median-window witness fixes the consecutive-bad-bars failure mode.
+
+    With single-prev_close, a phantom bar followed by another phantom bar
+    slips through: bar N's prev_close is bar N-1's bad close, so the witness
+    "agrees" with the new bad value and clears it. A median over a window
+    ignores the one bad neighbor as long as the rest are clean.
+    """
+
+    def test_phantom_bar_following_phantom_bar_is_still_clamped(self):
+        # Prior bar was bad — its close ended up at 26730 instead of ~26840.
+        # Without the window, prev_close=26730 would whitelist this bar's
+        # phantom low of 26730. With the window, the median of clean prior
+        # bars (~26840) overrides the one bad neighbor.
+        row = {
+            'open': 26840.0,
+            'high': 26845.0,
+            'low': 26730.0,  # phantom — 0.4% below close
+            'close': 26840.0,
+        }
+        clean_window = [26838.0, 26841.0, 26839.0, 26842.0, 26730.0]  # last is dirty
+        result = sanitize_bar(row, prev_close=26730.0, recent_closes=clean_window)
+        self.assertGreaterEqual(result['low'], 26840.0 - 1)
+        self.assertLessEqual(result['low'], result['close'])
+
+    def test_median_window_preserves_legitimate_move(self):
+        # All recent closes agree the price moved to ~25900 territory; the
+        # bar itself is a clean directional bar with open=prev high. The
+        # window's median agrees with open, so don't clamp.
+        row = {
+            'open': 26000.0,
+            'high': 26010.0,
+            'low': 25890.0,
+            'close': 25900.0,
+        }
+        # Half the window in the old level, half in the new — the move just
+        # happened. Median of [26000, 26000, 25950, 25900, 25900] = 25950,
+        # within 0.3% of close=25900, so close-anchor and window agree.
+        result = sanitize_bar(row, recent_closes=[26000.0, 26000.0, 25950.0, 25900.0, 25900.0])
+        self.assertEqual(result['open'], 26000.0)
+        self.assertEqual(result['low'], 25890.0)
+
+    def test_empty_window_falls_back_to_prev_close(self):
+        row = {
+            'open': 26748.75,
+            'high': 26849.25,
+            'low': 26748.75,
+            'close': 26848.5,
+        }
+        result = sanitize_bar(row, prev_close=26848.0, recent_closes=[])
+        self.assertAlmostEqual(result['open'], 26848.0)
+
+    def test_window_with_only_invalid_values_falls_back_to_prev_close(self):
+        row = {
+            'open': 26748.75,
+            'high': 26849.25,
+            'low': 26748.75,
+            'close': 26848.5,
+        }
+        result = sanitize_bar(row, prev_close=26848.0,
+                              recent_closes=[None, 0, -5.0])
+        self.assertAlmostEqual(result['open'], 26848.0)
+
+    def test_window_alone_clamps_without_prev_close(self):
+        row = {
+            'open': 26748.75,
+            'high': 26849.25,
+            'low': 26748.75,
+            'close': 26848.5,
+        }
+        result = sanitize_bar(row, prev_close=None,
+                              recent_closes=[26848.0, 26849.0, 26847.5])
+        self.assertAlmostEqual(result['open'], _approx_median([26848.0, 26849.0, 26847.5]))
+
+
+def _approx_median(vals):
+    s = sorted(vals)
+    return s[len(s) // 2] if len(s) % 2 else (s[len(s)//2 - 1] + s[len(s)//2]) / 2
+
+
 if __name__ == '__main__':
     unittest.main()

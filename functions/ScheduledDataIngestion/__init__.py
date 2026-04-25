@@ -69,7 +69,7 @@ def fetch_historical_data(symbol, period='5d', interval='1d'):
             'high': round(float(row['High']), 2),
             'low': round(float(row['Low']), 2),
             'close': round(float(row['Close']), 2),
-            'volume': int(row['Volume'])
+            'volume': int(row['Volume']) if is_valid_number(row['Volume']) else 0
         })
 
     return data
@@ -108,16 +108,24 @@ def insert_market_data(cursor, symbol, price, volume, timestamp):
         VALUES (%s, %s, %s, %s)
     """, (symbol, price, volume, timestamp))
 
+SANITIZE_WINDOW_SIZE = 5  # bars of recent cleaned closes used as the median
+                          # witness. Big enough that one phantom doesn't tip
+                          # the median; small enough to follow real moves.
+
+
 def upsert_historical_data(cursor, symbol, data):
     """Upsert historical OHLC data.
 
-    Each row is sanitized against the previous row's close to clamp yfinance
-    phantom ticks (see shared.sanitize). Without this, re-ingestion would
-    stamp the same bad OHLC back into Supabase every 5 min.
+    Each row is sanitized against a rolling window of recent CLEANED closes
+    (see shared.sanitize). The window's median is used as the witness, so a
+    single dirty neighbor can't poison the check the way a single prev_close
+    can. Without this, re-ingestion would stamp the same bad OHLC back into
+    Supabase every 5 min.
     """
+    recent_closes = []
     prev_close = None
     for row in data:
-        clean = sanitize_bar(row, prev_close=prev_close)
+        clean = sanitize_bar(row, prev_close=prev_close, recent_closes=recent_closes)
         if clean is not row and (
             clean['open'] != row['open']
             or clean['high'] != row['high']
@@ -154,6 +162,9 @@ def upsert_historical_data(cursor, symbol, data):
             datetime.utcnow()
         ))
         prev_close = clean['close']
+        recent_closes.append(clean['close'])
+        if len(recent_closes) > SANITIZE_WINDOW_SIZE:
+            recent_closes.pop(0)
 
 def main(mytimer: func.TimerRequest) -> None:
     utc_timestamp = datetime.utcnow()

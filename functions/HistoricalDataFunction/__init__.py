@@ -3,6 +3,7 @@ import yfinance as yf
 import time
 import json
 import logging
+import math
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 TICKER_TIMEOUT_SECONDS = 15
@@ -31,13 +32,14 @@ def fetch_historical_data(symbol, period, interval):
         else:
             time_val = int(date.timestamp())
 
+        vol = row['Volume']
         data.append({
             'time': time_val,
             'open': round(float(row['Open']), 2),
             'high': round(float(row['High']), 2),
             'low': round(float(row['Low']), 2),
             'close': round(float(row['Close']), 2),
-            'volume': int(row['Volume'])
+            'volume': int(vol) if (vol is not None and not (isinstance(vol, float) and math.isnan(vol))) else 0
         })
 
     return data
