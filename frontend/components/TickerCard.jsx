@@ -8,10 +8,15 @@ const DISPLAY_NAMES = {
   '^VIX': 'VIX',
 }
 
+const PRICE_PREFIX = {
+  '^VIX': '',
+}
+
 export default function TickerCard({ ticker }) {
   const router = useRouter()
   const hasError = ticker.error || ticker.price_error
   const displayName = DISPLAY_NAMES[ticker.symbol] || ticker.symbol
+  const pricePrefix = ticker.symbol in PRICE_PREFIX ? PRICE_PREFIX[ticker.symbol] : '$'
 
   const handleClick = () => {
     router.push(`/ticker/${ticker.symbol}`)
@@ -30,7 +35,7 @@ export default function TickerCard({ ticker }) {
       <h2 className="symbol">{displayName}</h2>
 
       {ticker.price !== null ? (
-        <p className="price">${ticker.price.toFixed(2)}</p>
+        <p className="price">{pricePrefix}{ticker.price.toFixed(2)}</p>
       ) : (
         <p className="price unavailable">--</p>
       )}
