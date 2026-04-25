@@ -112,20 +112,31 @@ SANITIZE_WINDOW_SIZE = 5  # bars of recent cleaned closes used as the median
                           # witness. Big enough that one phantom doesn't tip
                           # the median; small enough to follow real moves.
 
+SANITIZE_INTERVALS = {'1m', '2m', '5m'}  # phantom ticks are an intraday-feed
+                                          # problem; the 0.3% threshold is too
+                                          # tight for ≥15m bars where real
+                                          # moves routinely exceed it.
+
 
 def upsert_historical_data(cursor, symbol, data):
     """Upsert historical OHLC data.
 
-    Each row is sanitized against a rolling window of recent CLEANED closes
-    (see shared.sanitize). The window's median is used as the witness, so a
-    single dirty neighbor can't poison the check the way a single prev_close
-    can. Without this, re-ingestion would stamp the same bad OHLC back into
-    Supabase every 5 min.
+    For ≤5m bars, each row is sanitized against a rolling window of recent
+    CLEANED closes (see shared.sanitize). The window's median is used as the
+    witness, so a single dirty neighbor can't poison the check. Without this,
+    re-ingestion would stamp the same bad OHLC back into Supabase every 5 min.
+
+    For higher timeframes, sanitize is skipped — the 0.3% threshold flagged
+    almost every legitimate daily/weekly bar as a phantom.
     """
+    interval_type = data[0].get('interval_type') if data else None
+    sanitize_enabled = interval_type in SANITIZE_INTERVALS
+
     recent_closes = []
     prev_close = None
     for row in data:
-        clean = sanitize_bar(row, prev_close=prev_close, recent_closes=recent_closes)
+        clean = (sanitize_bar(row, prev_close=prev_close, recent_closes=recent_closes)
+                 if sanitize_enabled else row)
         if clean is not row and (
             clean['open'] != row['open']
             or clean['high'] != row['high']
