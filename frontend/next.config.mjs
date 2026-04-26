@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const apiUrl = process.env.API_URL || 'http://localhost:8080'
+const apiUrl = process.env.API_URL || 'https://azure-market-data-1.onrender.com'
 
 const nextConfig = {
   async rewrites() {
