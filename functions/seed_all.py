@@ -1,4 +1,13 @@
-"""Seed maximum historical data for all timeframes."""
+"""Seed maximum historical data for all timeframes.
+
+Reads connection strings from env vars so credentials stay out of source:
+  - LOCAL_DATABASE_URL  (optional; skips local seeding if unset)
+  - SUPABASE_DATABASE_URL  (optional; skips supabase seeding if unset)
+
+Set these before running, e.g.:
+  export SUPABASE_DATABASE_URL='postgresql://...'
+  python seed_all.py
+"""
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -9,8 +18,8 @@ from psycopg2.extras import execute_values
 from datetime import datetime, timezone
 from GEXCalculator.gex_calculator import fetch_prices_and_compute_gex, GEX_PAIRS
 
-LOCAL_DB = "dbname=marketmonitor user=sunny host=localhost port=5432"
-SUPABASE_DB = "postgresql://postgres.latqdamkyjttyleplqzj:wr%25QN5G8w4U%40nC%25%25@aws-0-us-west-2.pooler.supabase.com:6543/postgres"
+LOCAL_DB = os.environ.get('LOCAL_DATABASE_URL')
+SUPABASE_DB = os.environ.get('SUPABASE_DATABASE_URL')
 TICKERS = ['ES=F', 'NQ=F', '^VIX']
 
 # Max periods per yfinance limits
@@ -135,7 +144,11 @@ def seed_gex(conn_str, label):
             log(f"[{label}] GEX seed failed for {etf_symbol}: {e}")
 
 if __name__ == '__main__':
-    seed_db(LOCAL_DB, "local")
-    seed_gex(LOCAL_DB, "local")
-    seed_db(SUPABASE_DB, "supabase")
-    seed_gex(SUPABASE_DB, "supabase")
+    if not LOCAL_DB and not SUPABASE_DB:
+        sys.exit('Set LOCAL_DATABASE_URL and/or SUPABASE_DATABASE_URL before running.')
+    if LOCAL_DB:
+        seed_db(LOCAL_DB, "local")
+        seed_gex(LOCAL_DB, "local")
+    if SUPABASE_DB:
+        seed_db(SUPABASE_DB, "supabase")
+        seed_gex(SUPABASE_DB, "supabase")
