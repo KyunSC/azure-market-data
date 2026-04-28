@@ -256,11 +256,13 @@ def main(mytimer: func.TimerRequest) -> None:
 
         if intraday_symbols and now_et.weekday() < 5:
             logging.info(f'Fetching intraday data for {intraday_symbols}')
+            # Only ingest the intervals we can't derive: 1m (lookback-limited),
+            # 5m (covers up to 3mo windows), and 1h (covers 1y/2y windows).
+            # 15m, 30m, and 4h are aggregated from these on read in
+            # HistoricalDataService.storedIntervalFor / aggregate.
             intraday_intervals = [
                 ('1m', '1d'),
                 ('5m', '5d'),
-                ('15m', '5d'),
-                ('30m', '5d'),
                 ('1h', '1mo'),
             ]
             for interval, period in intraday_intervals:

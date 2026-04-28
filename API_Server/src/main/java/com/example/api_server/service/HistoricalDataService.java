@@ -187,8 +187,8 @@ public class HistoricalDataService {
         return switch (requested) {
             case "1m" -> "1m";
             case "5m" -> "5m";
-            case "15m" -> "15m";
-            case "30m" -> "15m";
+            case "15m" -> "5m";
+            case "30m" -> "5m";
             case "1h" -> "1h";
             case "4h" -> "1h";
             case "1d" -> "1d";
@@ -202,6 +202,7 @@ public class HistoricalDataService {
                                                   String stored, String requested) {
         if (stored.equals(requested)) return data;
         return switch (requested) {
+            case "15m" -> aggregateToNMinutes(data, 15);
             case "30m" -> aggregateToNMinutes(data, 30);
             case "4h" -> aggregateToNMinutes(data, 240);
             case "1wk" -> aggregateToWeekly(data);
