@@ -17,19 +17,23 @@ Real-time market data visualization platform with gamma exposure (GEX) tracking 
 API_Server/                        # Spring Boot REST API
   src/main/java/com/example/api_server/
     controller/                    # REST endpoints
-      MarketDataController.java    # GET /api/market?tickers=ES=F,NQ=F
-      HistoricalDataController.java # GET /api/historical?symbol=&period=&interval=
+      HomeController.java          # GET / (redirect), GET /health
+      MarketDataController.java    # GET /api/market, GET /api/market/live
+      HistoricalDataController.java # GET /api/historical, GET /api/historical/since
       GammaExposureController.java # GET /api/gamma?symbol=QQQ
     service/                       # Business logic
+      LiveMarketDataService.java   # Cached live price fetch (bypasses DB)
     repository/local/              # Local PostgreSQL repos
     repository/supabase/           # Supabase cloud repos (fallback)
     entity/                        # JPA entities
     dto/                           # Request/response DTOs
-    config/                        # DB + WebClient config
+    config/                        # DB + WebClient + cache config
+    exception/                     # GlobalExceptionHandler, custom exceptions
   pom.xml                         # Maven config
 
 frontend/                          # Next.js React app
   app/
+    layout.jsx                     # Root layout (Vercel analytics + speed insights)
     page.jsx                       # Dashboard homepage (ticker cards)
     ticker/[symbol]/page.jsx       # Chart detail page (main view)
     globals.css                    # Dark theme styling
@@ -50,8 +54,13 @@ functions/                         # Azure Functions (Python)
   MarketDataFunction/              # HTTP: fetch current prices via yfinance
   HistoricalDataFunction/          # HTTP: fetch OHLC data
   GammaExposureFunction/           # HTTP: compute GEX on demand
-  ScheduledDataIngestion/          # Timer: periodic data collection + GEX computation
-  shared/gex_calculator.py         # Black-Scholes gamma exposure calculator
+  ScheduledDataIngestion/          # Timer (weekdays every 5m): data collection
+  ScheduledDataIngestionGlobex/    # Timer (Sunday evenings every 5m): Globex session ingestion
+  ScheduledGammaExposure/          # Timer (weekdays every 5m): GEX computation
+  GEXCalculator/gex_calculator.py  # Black-Scholes gamma exposure calculator
+  shared/
+    sanitize.py                    # yfinance OHLC price sanitization (phantom tick removal)
+    volume_profile.py              # Volume profile approximation from 1m OHLCV bars
   seed_all.py                      # DB seeding script
   requirements.txt                 # Python deps (yfinance, psycopg2, azure-functions)
 ```
@@ -73,8 +82,12 @@ functions/                         # Azure Functions (Python)
 
 | Endpoint | Params | Returns |
 |----------|--------|---------|
-| `GET /api/market` | `tickers` (comma-sep) | Latest prices/volumes |
-| `GET /api/historical` | `symbol`, `period`, `interval` | OHLC array |
+| `GET /` | — | Redirect / health info |
+| `GET /health` | — | Health check |
+| `GET /api/market` | `tickers` (comma-sep) | Latest prices/volumes from DB |
+| `GET /api/market/live` | `symbol` | Live price via LiveMarketDataService (cached) |
+| `GET /api/historical` | `symbol`, `period`, `interval` | Full OHLC array |
+| `GET /api/historical/since` | `symbol`, `interval`, `since` (epoch ms), `lastFetched` (opt) | Incremental OHLC since timestamp |
 | `GET /api/gamma` | `symbol` (default QQQ) | GEX levels with labels |
 
 ## Running Locally
@@ -87,6 +100,8 @@ functions/                         # Azure Functions (Python)
 
 - GEX is computed for QQQ options but displayed on NQ chart via conversion ratio
 - 4h candles are aggregated from 1h data in HistoricalDataService
+- `GET /api/historical/since` enables incremental polling: first returned bar may still be developing and should replace the client's last bar
 - Drawing tools use a canvas overlay on top of lightweight-charts
 - Frontend stores user preferences (colors, indicators) in localStorage
 - Circuit breaker falls back to empty data on backend failures
+- `ScheduledDataIngestionGlobex` re-uses `ScheduledDataIngestion.main` to cover Sunday Globex hours (0 */5 22,23 * * 0 UTC)
