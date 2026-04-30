@@ -15,8 +15,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Serves the latest tick for a symbol by calling the yfinance-backed Azure
- * Function directly — never reads from Supabase. Results are cached briefly so
+ * Serves the latest tick for a symbol by calling Yahoo Finance's public chart
+ * endpoint directly — never reads from Supabase. Results are cached briefly so
  * a tight client poll cycle shares a single upstream call.
  */
 @Service
@@ -33,18 +33,22 @@ public class LiveMarketDataService {
     /**
      * Cached per symbol — see the {@code liveMarketData} bucket in
      * {@link com.example.api_server.config.CacheConfig} for the TTL. The TTL
-     * bounds the rate of outgoing Azure Function calls regardless of how many
-     * clients are polling.
+     * bounds the rate of outgoing Yahoo calls regardless of how many clients
+     * are polling.
      */
     @Cacheable(value = "liveMarketData", key = "#symbol")
     public MarketDataResponse getLivePrice(String symbol) {
         String normalized = symbol.toUpperCase();
-        logger.debug("Live price cache miss for {} — calling Azure Function", normalized);
+        logger.debug("Live price cache miss for {} — calling Yahoo Finance", normalized);
 
         Map<String, Object> body;
         try {
             body = webClient.get()
-                    .uri(uri -> uri.queryParam("tickers", normalized).build())
+                    .uri(uri -> uri
+                            .path("/v8/finance/chart/{symbol}")
+                            .queryParam("interval", "1d")
+                            .queryParam("range", "1d")
+                            .build(normalized))
                     .retrieve()
                     .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
                     .timeout(Duration.ofSeconds(6))
@@ -54,20 +58,42 @@ public class LiveMarketDataService {
             return buildResponse(normalized, null, null, null);
         }
 
-        Double price = null;
-        Long volume = null;
-        Double previousClose = null;
-        Object tickersObj = body == null ? null : body.get("tickers");
-        if (tickersObj instanceof List<?> tickers && !tickers.isEmpty() && tickers.get(0) instanceof Map<?, ?> first) {
-            Object p = first.get("price");
-            Object v = first.get("volume");
-            Object pc = first.get("previous_close");
-            if (p instanceof Number) price = ((Number) p).doubleValue();
-            if (v instanceof Number) volume = ((Number) v).longValue();
-            if (pc instanceof Number) previousClose = ((Number) pc).doubleValue();
+        Map<String, Object> meta = extractMeta(body);
+        Double price = readDouble(meta, "regularMarketPrice");
+        Long volume = readLong(meta, "regularMarketVolume");
+        // Stocks expose previousClose; futures expose chartPreviousClose.
+        Double previousClose = readDouble(meta, "previousClose");
+        if (previousClose == null) {
+            previousClose = readDouble(meta, "chartPreviousClose");
         }
 
         return buildResponse(normalized, price, volume, previousClose);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractMeta(Map<String, Object> body) {
+        if (body == null) return null;
+        Object chart = body.get("chart");
+        if (!(chart instanceof Map<?, ?> chartMap)) return null;
+        Object result = chartMap.get("result");
+        if (!(result instanceof List<?> results) || results.isEmpty()) return null;
+        Object first = results.get(0);
+        if (!(first instanceof Map<?, ?> firstMap)) return null;
+        Object meta = firstMap.get("meta");
+        if (!(meta instanceof Map<?, ?> metaMap)) return null;
+        return (Map<String, Object>) metaMap;
+    }
+
+    private static Double readDouble(Map<String, Object> map, String key) {
+        if (map == null) return null;
+        Object v = map.get(key);
+        return v instanceof Number n ? n.doubleValue() : null;
+    }
+
+    private static Long readLong(Map<String, Object> map, String key) {
+        if (map == null) return null;
+        Object v = map.get(key);
+        return v instanceof Number n ? n.longValue() : null;
     }
 
     private MarketDataResponse buildResponse(String symbol, Double price, Long volume, Double previousClose) {

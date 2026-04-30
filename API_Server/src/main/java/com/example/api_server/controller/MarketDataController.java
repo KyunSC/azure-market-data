@@ -34,9 +34,9 @@ public class MarketDataController {
     }
 
     /**
-     * Live tick for the developing bar. Hits the yfinance-backed Azure Function
-     * directly (no Supabase read) and is cached in-memory so many clients share
-     * one upstream call per TTL.
+     * Live tick for the developing bar. Hits Yahoo Finance directly (no
+     * Supabase read) and is cached in-memory so many clients share one
+     * upstream call per TTL.
      */
     @GetMapping("/live")
     @RateLimiter(name = "marketDataApi")
