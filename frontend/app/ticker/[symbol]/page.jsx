@@ -41,6 +41,7 @@ export default function TickerDetail({ params }) {
   const [drawings, setDrawings] = useState([])
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE)
   const [livePrice, setLivePrice] = useState(null)
+  const [warmingUp, setWarmingUp] = useState(false)
 
   // Hydrate from localStorage after mount to avoid SSR/client mismatch
   useEffect(() => {
@@ -147,8 +148,11 @@ export default function TickerDetail({ params }) {
     }
   }, [symbol])
 
+  const RETRY_DELAYS = [5000, 10000, 20000]
+
   useEffect(() => {
     let isInitial = true
+    let cancelled = false
     let lastBars = []
     // Echoed back to the server on each /since poll so it can short-circuit
     // when ingestion hasn't written anything new — that turns a fast poll
@@ -173,15 +177,39 @@ export default function TickerDetail({ params }) {
       return errorMessage
     }
 
-    const fetchFull = async () => {
-      const response = await fetch(
+    const fetchFull = async (isInitialLoad = false) => {
+      const doFetch = () => fetch(
         `/api/historical?symbol=${symbol}&period=${period}&interval=${fetchInterval}`
       )
+
+      let response
+      let lastErr
+
+      if (isInitialLoad) {
+        for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+          try {
+            response = await doFetch()
+            if (response.ok || response.status < 500) break
+          } catch (e) {
+            lastErr = e
+            response = undefined
+          }
+          if (attempt < RETRY_DELAYS.length && !cancelled) {
+            setWarmingUp(true)
+            await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]))
+          }
+        }
+        if (!response) throw lastErr || new Error('Network error')
+      } else {
+        response = await doFetch()
+      }
+
       if (!response.ok) throw new Error(await parseError(response))
       const result = await response.json()
       lastBars = result.data
       lastFetched = result.lastFetched ?? lastFetched
       setOhlcData(result.data)
+      if (isInitialLoad) setWarmingUp(false)
     }
 
     const fetchIncremental = async () => {
@@ -224,7 +252,7 @@ export default function TickerDetail({ params }) {
       }
       try {
         if (isInitial || !canIncremental) {
-          await fetchFull()
+          await fetchFull(isInitial)
         } else {
           await fetchIncremental()
         }
@@ -262,6 +290,8 @@ export default function TickerDetail({ params }) {
     const onVisible = () => { if (!document.hidden) fetchOHLCData() }
     document.addEventListener('visibilitychange', onVisible)
     return () => {
+      cancelled = true
+      setWarmingUp(false)
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
@@ -349,12 +379,23 @@ export default function TickerDetail({ params }) {
           <p className="status" style={{ color: '#ffeb3b', fontSize: '0.85rem' }}>GEX data from last close</p>
         )}
 
-        {loading && <p className="status">Loading chart...</p>}
-        {error && <p className="status error">Error: {error}</p>}
-        {!loading && !error && ohlcData.length > 0 && (
+        {(loading || warmingUp) && (
+          <>
+            {warmingUp && <p className="warming-up">Warming up server...</p>}
+            <div className="skeleton skeleton-chart-shell" />
+          </>
+        )}
+        {!loading && !warmingUp && error && (
+          <p className="status error">
+            {error.includes('(API)')
+              ? 'Server is warming up — retrying automatically...'
+              : `Error: ${error}`}
+          </p>
+        )}
+        {!loading && !warmingUp && !error && ohlcData.length > 0 && (
           <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} borderUpColor={borderUpColor} borderDownColor={borderDownColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} timezone={timezone} livePrice={livePrice} />
         )}
-        {!loading && !error && ohlcData.length === 0 && (
+        {!loading && !warmingUp && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>
         )}
       </div>
