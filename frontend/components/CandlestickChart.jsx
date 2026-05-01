@@ -365,6 +365,7 @@ export default function CandlestickChart({
   borderDownColor = DEFAULT_CHART_COLORS.borderDownColor,
   activeIndicators = [],
   gexLevels = null,
+  gexUseEtfStrike = false,
   chartType = 'candlestick',
   drawingTool = null,
   drawings = [],
@@ -829,13 +830,20 @@ export default function CandlestickChart({
 
     if (gexLevels && gexLevels.levels && activeIndicators.includes('gex')) {
       for (const level of gexLevels.levels) {
-        // strikeFutures is nullable; Number(null)===0 passes isFinite so check explicitly.
-        // Fall back to strikeEtf * conversionRatio when strikeFutures is missing.
-        const price = level.strikeFutures != null
-          ? Number(level.strikeFutures)
-          : (level.strikeEtf != null && gexLevels.conversionRatio != null)
-            ? Number(level.strikeEtf) * Number(gexLevels.conversionRatio)
-            : NaN
+        // ETF charts (SPY/QQQ) plot at strikeEtf directly; futures charts use
+        // strikeFutures, falling back to strikeEtf * conversionRatio when the
+        // futures-side strike wasn't persisted. Number(null)===0 passes
+        // isFinite, so check for null explicitly.
+        let price
+        if (gexUseEtfStrike) {
+          price = level.strikeEtf != null ? Number(level.strikeEtf) : NaN
+        } else {
+          price = level.strikeFutures != null
+            ? Number(level.strikeFutures)
+            : (level.strikeEtf != null && gexLevels.conversionRatio != null)
+              ? Number(level.strikeEtf) * Number(gexLevels.conversionRatio)
+              : NaN
+        }
         if (!Number.isFinite(price) || price === 0) continue
         const color = GEX_COLORS[level.label] || '#ffffff'
         const isKey = level.label === 'call_wall' || level.label === 'put_wall'
@@ -862,7 +870,7 @@ export default function CandlestickChart({
         chart.timeScale().fitContent()
       }
     }
-  }, [data, activeIndicators, gexLevels, chartType, timezone, upColor, downColor, borderUpColor, borderDownColor])
+  }, [data, activeIndicators, gexLevels, gexUseEtfStrike, chartType, timezone, upColor, downColor, borderUpColor, borderDownColor])
 
   // Merge the live tick into the developing bar via mainSeries.update().
   // Deliberately depends ONLY on livePrice so a tick doesn't re-run setData

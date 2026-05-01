@@ -63,16 +63,25 @@ export default function TickerDetail({ params }) {
     } catch { /* ignore */ }
   }, [])
 
-  // Fetch GEX data for futures charts (NQ=F uses QQQ, ES=F uses SPY)
-  const GEX_ETF_MAP = { 'NQ=F': 'QQQ', 'ES=F': 'SPY' }
+  // Futures charts render GEX at futures-converted strikes; ETF charts render
+  // at the ETF strike directly.
+  const GEX_SOURCES = {
+    'NQ=F': { gexSymbol: 'QQQ', useEtfStrike: false },
+    'ES=F': { gexSymbol: 'SPY', useEtfStrike: false },
+    'QQQ':  { gexSymbol: 'QQQ', useEtfStrike: true },
+    'SPY':  { gexSymbol: 'SPY', useEtfStrike: true },
+  }
+  const gexSource = GEX_SOURCES[symbol]
   useEffect(() => {
-    const etfSymbol = GEX_ETF_MAP[symbol]
-    if (!etfSymbol) return
+    if (!gexSource) {
+      setGexLevels(null)
+      return
+    }
 
     const fetchGex = async ({ skipIfHidden = true } = {}) => {
       if (skipIfHidden && document.hidden) return
       try {
-        const res = await fetch(`/api/gamma?symbol=${etfSymbol}`)
+        const res = await fetch(`/api/gamma?symbol=${gexSource.gexSymbol}`)
         if (res.ok) {
           const data = await res.json()
           console.log('GEX Levels:', data)
@@ -393,7 +402,7 @@ export default function TickerDetail({ params }) {
           </p>
         )}
         {!loading && !warmingUp && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} borderUpColor={borderUpColor} borderDownColor={borderDownColor} activeIndicators={activeIndicators} gexLevels={gexLevels} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} timezone={timezone} livePrice={livePrice} />
+          <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} borderUpColor={borderUpColor} borderDownColor={borderDownColor} activeIndicators={activeIndicators} gexLevels={gexLevels} gexUseEtfStrike={!!gexSource?.useEtfStrike} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} timezone={timezone} livePrice={livePrice} />
         )}
         {!loading && !warmingUp && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>
