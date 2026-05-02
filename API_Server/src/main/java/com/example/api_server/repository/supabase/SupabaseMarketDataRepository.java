@@ -16,4 +16,7 @@ public interface SupabaseMarketDataRepository extends JpaRepository<MarketDataEn
             String symbol, LocalDateTime start, LocalDateTime end);
 
     MarketDataEntity findFirstBySymbolOrderByTimestampDesc(String symbol);
+
+    MarketDataEntity findFirstBySymbolAndTimestampBeforeOrderByTimestampDesc(
+            String symbol, LocalDateTime before);
 }
