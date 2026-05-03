@@ -8,6 +8,31 @@ const REFRESH_INTERVAL = 15000
 // Retry delays on 5xx (covers Render free-tier cold boots ~30-60s)
 const RETRY_DELAYS = [5000, 10000, 20000]
 
+const MARKET_CACHE_PREFIX = 'marketDataCache:'
+// Prices older than this are too stale to flash on screen; better to show the
+// skeleton and wait for fresh data.
+const MARKET_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+const readMarketCache = (key) => {
+  try {
+    const raw = localStorage.getItem(MARKET_CACHE_PREFIX + key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || !parsed.payload) return null
+    if (Date.now() - (parsed.savedAt || 0) > MARKET_CACHE_MAX_AGE_MS) return null
+    return parsed
+  } catch { return null }
+}
+
+const writeMarketCache = (key, payload) => {
+  try {
+    localStorage.setItem(MARKET_CACHE_PREFIX + key, JSON.stringify({
+      payload,
+      savedAt: Date.now(),
+    }))
+  } catch { /* quota exceeded — ignore */ }
+}
+
 function SkeletonCard() {
   return (
     <div className="skeleton-card-shell">
@@ -69,6 +94,7 @@ export default function Home() {
       setLastUpdated(new Date())
       setError(null)
       setWarmingUp(false)
+      writeMarketCache(tickerParam, result)
     } catch (err) {
       if (isInitial) setError(err.message)
       // subsequent poll failures are silent — keep showing last known data
@@ -83,6 +109,18 @@ export default function Home() {
   }
 
   useEffect(() => {
+    // Seed from localStorage so cards render instantly on a fresh visit while
+    // the background fetch refreshes them. Treats the next fetch as a quiet
+    // background refresh rather than an initial load.
+    const tickerParam = DEFAULT_TICKERS.join(',')
+    const cached = readMarketCache(tickerParam)
+    if (cached) {
+      setData(cached.payload)
+      setLastUpdated(new Date(cached.savedAt))
+      setLoading(false)
+      isInitialRef.current = false
+    }
+
     fetchData({ skipIfHidden: false })
     const interval = setInterval(fetchData, REFRESH_INTERVAL)
     const onVisible = () => { if (!document.hidden) fetchData({ skipIfHidden: false }) }

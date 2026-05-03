@@ -11,6 +11,32 @@ import ChartTypeSelector from '../../../components/ChartTypeSelector'
 import { DEFAULT_CHART_COLORS, CHART_COLORS_STORAGE_KEY, DEFAULT_TIMEZONE, TIMEZONE_STORAGE_KEY } from '../../../components/chartDefaults'
 import { INDICATORS_STORAGE_KEY } from '../../../components/indicators'
 
+const HISTORICAL_CACHE_PREFIX = 'historicalDataCache:'
+// Older than this and we treat the cache as too stale to seed — saves a flash
+// of week-old bars if someone returns after a long gap.
+const HISTORICAL_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+const readHistoricalCache = (key) => {
+  try {
+    const raw = localStorage.getItem(HISTORICAL_CACHE_PREFIX + key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || !Array.isArray(parsed.data) || parsed.data.length === 0) return null
+    if (Date.now() - (parsed.savedAt || 0) > HISTORICAL_CACHE_MAX_AGE_MS) return null
+    return parsed
+  } catch { return null }
+}
+
+const writeHistoricalCache = (key, data, lastFetched) => {
+  try {
+    localStorage.setItem(HISTORICAL_CACHE_PREFIX + key, JSON.stringify({
+      data,
+      lastFetched: lastFetched ?? null,
+      savedAt: Date.now(),
+    }))
+  } catch { /* quota exceeded — ignore */ }
+}
+
 export default function TickerDetail({ params }) {
   const { symbol: rawSymbol } = use(params)
   const symbol = decodeURIComponent(rawSymbol)
@@ -175,6 +201,23 @@ export default function TickerDetail({ params }) {
     const INCREMENTAL_INTERVALS = new Set(['1m', '5m', '15m', '30m', '1h', '4h'])
     const fetchInterval = tickBars ? '1m' : interval
     const canIncremental = INCREMENTAL_INTERVALS.has(fetchInterval)
+    // tickBars is a client-side aggregation of the raw fetchInterval bars, so
+    // it doesn't need its own cache key.
+    const cacheKey = `${symbol}|${period}|${fetchInterval}`
+
+    // Seed from localStorage so the chart renders instantly on a fresh visit
+    // while the background fetch refreshes it. On a cold backend (Render free
+    // tier ~30-60s) this is the difference between "blank skeleton for a
+    // minute" and "see your last view immediately."
+    const cached = readHistoricalCache(cacheKey)
+    if (cached) {
+      lastBars = cached.data
+      lastFetched = cached.lastFetched ?? null
+      setOhlcData(cached.data)
+      setLoading(false)
+      setError(null)
+      isInitial = false
+    }
 
     const parseError = async (response) => {
       const suffix = response.status >= 500 ? ' (API)' : ''
@@ -218,6 +261,7 @@ export default function TickerDetail({ params }) {
       lastBars = result.data
       lastFetched = result.lastFetched ?? lastFetched
       setOhlcData(result.data)
+      writeHistoricalCache(cacheKey, lastBars, lastFetched)
       if (isInitialLoad) setWarmingUp(false)
     }
 
@@ -248,6 +292,7 @@ export default function TickerDetail({ params }) {
       const merged = lastBars.filter(b => Number(b.time) < firstNew).concat(newBars)
       lastBars = merged
       setOhlcData(merged)
+      writeHistoricalCache(cacheKey, merged, lastFetched)
     }
 
     const fetchOHLCData = async () => {

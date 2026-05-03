@@ -8,7 +8,8 @@ Real-time market data visualization platform with gamma exposure (GEX) tracking 
 - **Backend API**: Spring Boot 4 (Java 21, Maven) on port 8080
 - **Data Ingestion**: Azure Functions (Python) on port 7071
 - **Database**: PostgreSQL (Supabase cloud or local)
-- **Caching**: Caffeine (backend), localStorage (frontend preferences)
+- **Caching**: Caffeine (backend), localStorage (frontend preferences + stale-while-revalidate response cache)
+- **Hosting**: Backend on Render free tier; UptimeRobot pings `/health` to keep the dyno warm during market hours
 - **Resilience**: Resilience4j circuit breaker + rate limiter
 
 ## Directory Layout
