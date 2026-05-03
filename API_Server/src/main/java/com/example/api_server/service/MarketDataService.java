@@ -63,10 +63,9 @@ public class MarketDataService {
                     logger.debug("MARKET DATA: {} - DB miss, live fallback price={}",
                             symbol, tickerData.getPrice());
                 }
-                Double previousClose = liveTick == null ? null : liveTick.getPreviousClose();
-                if (previousClose == null && isWeekend() && entity != null) {
-                    previousClose = fetchPreviousTradingDayClose(symbol.toUpperCase(), entity);
-                }
+                Double previousClose = (isWeekend() && entity != null)
+                        ? fetchPreviousTradingDayClose(symbol.toUpperCase(), entity)
+                        : (liveTick == null ? null : liveTick.getPreviousClose());
                 tickerData.setPreviousClose(previousClose);
 
                 tickerDataList.add(tickerData);
