@@ -9,7 +9,7 @@ Real-time market data visualization platform with gamma exposure (GEX) tracking 
 - **Data Ingestion**: Azure Functions (Python) on port 7071
 - **Database**: PostgreSQL (Supabase cloud or local)
 - **Caching**: Caffeine (backend), localStorage (frontend preferences + stale-while-revalidate response cache)
-- **Hosting**: Backend on Render free tier; UptimeRobot pings `/health` to keep the dyno warm during market hours
+- **Hosting**: Backend on Render free tier; UptimeRobot pings `/health` to keep the instance warm during market hours
 - **Resilience**: Resilience4j circuit breaker + rate limiter
 
 ## Directory Layout
@@ -110,4 +110,4 @@ functions/                         # Azure Functions (Python)
   - Both have a 24h max-age and seed state synchronously on mount, marking the next fetch as a background refresh (no warming-up UI)
 - Circuit breaker falls back to empty data on backend failures
 - `ScheduledDataIngestionGlobex` re-uses `ScheduledDataIngestion.main` to cover Sunday Globex hours (0 */5 22,23 * * 0 UTC)
-- Render free-tier dyno is kept warm via an UptimeRobot HTTP monitor on `/health` (avoids 30–60s cold boots between viewer sessions)
+- Render free-tier instance is kept warm via an UptimeRobot HTTP monitor on `/health` (avoids 30–60s cold boots between viewer sessions)
