@@ -1,6 +1,6 @@
 # Project: Azure Market Data
 
-Real-time market data visualization platform with gamma exposure (GEX) tracking for futures trading (ES/NQ).
+Real-time market data visualization platform with gamma exposure (GEX) tracking for index futures trading (ES/NQ).
 
 ## Tech Stack
 
