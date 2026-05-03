@@ -104,5 +104,10 @@ functions/                         # Azure Functions (Python)
 - `GET /api/historical/since` enables incremental polling: first returned bar may still be developing and should replace the client's last bar
 - Drawing tools use a canvas overlay on top of lightweight-charts
 - Frontend stores user preferences (colors, indicators) in localStorage
+- Frontend also caches API responses in localStorage as a stale-while-revalidate layer to mask backend cold-start latency:
+  - Dashboard `/api/market` payload under `marketDataCache:<tickers>` ([app/page.jsx](frontend/app/page.jsx))
+  - Ticker chart `/api/historical` payload under `historicalDataCache:<symbol>|<period>|<fetchInterval>` ([app/ticker/[symbol]/page.jsx](frontend/app/ticker/[symbol]/page.jsx))
+  - Both have a 24h max-age and seed state synchronously on mount, marking the next fetch as a background refresh (no warming-up UI)
 - Circuit breaker falls back to empty data on backend failures
 - `ScheduledDataIngestionGlobex` re-uses `ScheduledDataIngestion.main` to cover Sunday Globex hours (0 */5 22,23 * * 0 UTC)
+- Render free-tier dyno is kept warm via an UptimeRobot HTTP monitor on `/health` (avoids 30–60s cold boots between viewer sessions)
