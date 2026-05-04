@@ -231,7 +231,7 @@ export default function TickerDetail({ params }) {
 
     const fetchFull = async (isInitialLoad = false) => {
       const doFetch = () => fetch(
-        `/api/historical?symbol=${symbol}&period=${period}&interval=${fetchInterval}`
+        `/api/historical?symbol=${encodeURIComponent(symbol)}&period=${period}&interval=${fetchInterval}`
       )
 
       let response
