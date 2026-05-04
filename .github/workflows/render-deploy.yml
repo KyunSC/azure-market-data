@@ -1,0 +1,15 @@
+name: Trigger Render Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'API_Server/**'
+      - '.github/workflows/render-deploy.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Render Deploy Hook
+        run: curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
