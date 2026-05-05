@@ -589,6 +589,7 @@ export default function CandlestickChart({
       timeScale: {
         borderColor: '#2a2a4e',
         timeVisible: true,
+        secondsVisible: false,
       },
       width: getInnerWidth(),
       height: Math.max(450, window.innerHeight - 360),
