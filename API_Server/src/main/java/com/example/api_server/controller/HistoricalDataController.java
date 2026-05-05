@@ -2,6 +2,7 @@ package com.example.api_server.controller;
 
 import com.example.api_server.dto.HistoricalDataResponse;
 import com.example.api_server.service.HistoricalDataService;
+import com.example.api_server.service.LiveHistoricalService;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.web.bind.annotation.*;
 
@@ -11,9 +12,12 @@ import org.springframework.web.bind.annotation.*;
 public class HistoricalDataController {
 
     private final HistoricalDataService historicalDataService;
+    private final LiveHistoricalService liveHistoricalService;
 
-    public HistoricalDataController(HistoricalDataService historicalDataService) {
+    public HistoricalDataController(HistoricalDataService historicalDataService,
+                                    LiveHistoricalService liveHistoricalService) {
         this.historicalDataService = historicalDataService;
+        this.liveHistoricalService = liveHistoricalService;
     }
 
     @GetMapping
@@ -44,5 +48,17 @@ public class HistoricalDataController {
             @RequestParam long since,
             @RequestParam(required = false) Long lastFetched) {
         return historicalDataService.getHistoricalDataSince(symbol, interval, since, lastFetched);
+    }
+
+    /**
+     * Recent 1m bars fetched live from Yahoo, bypassing Supabase and the
+     * Azure Function ingestion path. Lets the chart roll its developing
+     * candle over at minute boundaries between 5-minute ingestion runs
+     * without burning DB egress.
+     */
+    @GetMapping("/recent")
+    @RateLimiter(name = "marketDataApi")
+    public HistoricalDataResponse getRecent1mBars(@RequestParam String symbol) {
+        return liveHistoricalService.getRecent1mBars(symbol);
     }
 }

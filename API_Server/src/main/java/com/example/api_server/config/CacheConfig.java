@@ -36,7 +36,12 @@ public class CacheConfig {
                 // Live tick endpoint — cached briefly so a tight client poll
                 // cycle fans out to a single Yahoo call per TTL across all
                 // viewers. Keep short enough to feel live.
-                buildCache("liveMarketData", Duration.ofSeconds(5), 50)
+                buildCache("liveMarketData", Duration.ofSeconds(5), 50),
+                // Live 1m bars fetched directly from Yahoo (bypasses Supabase
+                // entirely). Sized to roll the developing bar over at minute
+                // boundaries without burning DB egress between 5-minute
+                // ingestion runs.
+                buildCache("liveHistoricalData", Duration.ofSeconds(30), 50)
         ));
         return manager;
     }

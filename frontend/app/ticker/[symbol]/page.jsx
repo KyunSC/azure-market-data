@@ -323,6 +323,34 @@ export default function TickerDetail({ params }) {
       }
     }
 
+    // 1m-only side channel: pulls recent bars straight from Yahoo (via
+    // /api/historical/recent → LiveHistoricalService), bypassing Supabase
+    // and the 5-minute Azure Function timer. Lets the developing candle
+    // roll over at every minute boundary without increasing DB egress or
+    // function invocations. Merges with the same replace-from-firstNew
+    // policy as /since; when ingestion eventually catches up, /since's
+    // authoritative bars overwrite anything we filled in here.
+    const fetchRecent = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (!lastBars.length) return
+      try {
+        const url = new URL('/api/historical/recent', window.location.origin)
+        url.searchParams.set('symbol', symbol)
+        const response = await fetch(url.toString())
+        if (!response.ok) return
+        const result = await response.json()
+        const newBars = result.data || []
+        if (!newBars.length) return
+
+        const firstNew = Number(newBars[0].time)
+        if (!Number.isFinite(firstNew)) return
+        const merged = lastBars.filter(b => Number(b.time) < firstNew).concat(newBars)
+        lastBars = merged
+        setOhlcData(merged)
+        writeHistoricalCache(cacheKey, merged, lastFetched)
+      } catch { /* network hiccup — next tick will retry */ }
+    }
+
     // The /since endpoint echoes back the server's latest ingestion timestamp
     // as `lastFetched`; subsequent polls send it back, and the server returns
     // an empty body without touching Supabase whenever ingestion hasn't moved
@@ -340,13 +368,32 @@ export default function TickerDetail({ params }) {
 
     fetchOHLCData()
     const timer = window.setInterval(fetchOHLCData, pollInterval)
+
+    // Spin up the 1m-bar side poller only when the chart is on 1m. The
+    // 30s cadence matches the backend cache TTL, so each poll is at most
+    // one Yahoo call shared across all viewers of this symbol. The
+    // initial kick is delayed so the main /historical fetch can populate
+    // lastBars first — fetchRecent is a no-op while lastBars is empty.
+    let recentTimer = null
+    let recentInitialKick = null
+    if (fetchInterval === '1m') {
+      recentInitialKick = window.setTimeout(fetchRecent, 3_000)
+      recentTimer = window.setInterval(fetchRecent, 30_000)
+    }
+
     // Refresh immediately on tab re-focus so users see fresh data without waiting a full poll cycle.
-    const onVisible = () => { if (!document.hidden) fetchOHLCData() }
+    const onVisible = () => {
+      if (document.hidden) return
+      fetchOHLCData()
+      if (fetchInterval === '1m') fetchRecent()
+    }
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       cancelled = true
       setWarmingUp(false)
       window.clearInterval(timer)
+      if (recentTimer) window.clearInterval(recentTimer)
+      if (recentInitialKick) window.clearTimeout(recentInitialKick)
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [symbol, period, interval, tickBars])
