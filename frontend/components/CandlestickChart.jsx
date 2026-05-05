@@ -591,6 +591,27 @@ export default function CandlestickChart({
         timeVisible: true,
         secondsVisible: false,
       },
+      // Crosshair / right-edge label is shown as the bar's CLOSE time
+      // (next bucket boundary), not its open time. So the developing 1m
+      // bar at 13:34:00 reads "13:35", matching how traders refer to a
+      // bar by the minute it's about to close on. Bar interval is
+      // detected from the data so this works for any intraday timeframe.
+      localization: {
+        timeFormatter: (time) => {
+          if (typeof time !== 'number') return ''
+          const bars = dataRef.current
+          let intervalSec = 60
+          if (bars && bars.length >= 2) {
+            const a = Number(bars[0].time)
+            const b = Number(bars[1].time)
+            if (Number.isFinite(a) && Number.isFinite(b) && b > a) intervalSec = b - a
+          }
+          const d = new Date((time + intervalSec) * 1000)
+          const hh = String(d.getUTCHours()).padStart(2, '0')
+          const mm = String(d.getUTCMinutes()).padStart(2, '0')
+          return `${hh}:${mm}`
+        },
+      },
       width: getInnerWidth(),
       height: Math.max(450, window.innerHeight - 360),
     })

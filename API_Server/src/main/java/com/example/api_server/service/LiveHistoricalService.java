@@ -90,6 +90,12 @@ public class LiveHistoricalService {
         List<?> closes = asList(quote.get("close"));
         List<?> volumes = asList(quote.get("volume"));
 
+        // Yahoo's last 1m entry has a non-aligned timestamp (the latest
+        // tick's wall-clock time) for the developing bar — and sometimes
+        // it also returns a separate aligned bucket for the same minute
+        // with stale OHLC. Snap every timestamp to the floor minute and
+        // merge duplicates: keep the earliest open, widest high/low,
+        // latest close, summed volume.
         int n = timestamps.size();
         for (int i = 0; i < n; i++) {
             Long ts = readLong(timestamps.get(i));
@@ -99,7 +105,23 @@ public class LiveHistoricalService {
             Double close = readDouble(get(closes, i));
             Long volume = readLong(get(volumes, i));
             if (ts == null || open == null || high == null || low == null || close == null) continue;
-            bars.add(new OhlcData(String.valueOf(ts), open, high, low, close, volume == null ? 0L : volume));
+
+            long aligned = ts - (ts % 60);
+            String alignedTime = String.valueOf(aligned);
+            long vol = volume == null ? 0L : volume;
+
+            if (!bars.isEmpty() && bars.get(bars.size() - 1).getTime().equals(alignedTime)) {
+                OhlcData prev = bars.get(bars.size() - 1);
+                bars.set(bars.size() - 1, new OhlcData(
+                        alignedTime,
+                        prev.getOpen(),
+                        Math.max(prev.getHigh(), high),
+                        Math.min(prev.getLow(), low),
+                        close,
+                        prev.getVolume() + vol));
+            } else {
+                bars.add(new OhlcData(alignedTime, open, high, low, close, vol));
+            }
         }
         return wrap(symbol, bars);
     }
