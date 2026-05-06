@@ -20,7 +20,7 @@ from GEXCalculator.gex_calculator import fetch_prices_and_compute_gex, GEX_PAIRS
 
 LOCAL_DB = os.environ.get('LOCAL_DATABASE_URL')
 SUPABASE_DB = os.environ.get('SUPABASE_DATABASE_URL')
-TICKERS = ['ES=F', 'NQ=F', '^VIX']
+TICKERS = ['ES=F', 'NQ=F', '^VIX', 'XEQT.TO']
 
 # Max periods per yfinance limits
 INTERVALS = [

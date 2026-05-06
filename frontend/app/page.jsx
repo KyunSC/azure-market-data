@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Dashboard from '../components/Dashboard'
 
-const DEFAULT_TICKERS = ['ES=F', 'NQ=F', 'SPY', 'QQQ', '^VIX']
+const DEFAULT_TICKERS = ['ES=F', 'NQ=F', 'SPY', 'QQQ', '^VIX', 'XEQT.TO']
 const REFRESH_INTERVAL = 15000
 // Retry delays on 5xx (covers Render free-tier cold boots ~30-60s)
 const RETRY_DELAYS = [5000, 10000, 20000]
