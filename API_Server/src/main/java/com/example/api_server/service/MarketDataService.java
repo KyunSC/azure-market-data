@@ -52,16 +52,16 @@ public class MarketDataService {
                 tickerData.setSymbol(symbol.toUpperCase());
 
                 TickerData liveTick = fetchLiveTick(symbol);
-                if (entity != null) {
+                Double livePrice = liveTick == null ? null : liveTick.getPrice();
+                if (livePrice != null) {
+                    tickerData.setPrice(livePrice);
+                    tickerData.setVolume(liveTick.getVolume());
+                } else if (entity != null) {
                     tickerData.setPrice(entity.getPrice());
                     tickerData.setVolume(entity.getVolume());
-                    logger.debug("MARKET DATA: {} | Price: {} | Volume: {} | Timestamp: {}",
-                            symbol, entity.getPrice(), entity.getVolume(), entity.getTimestamp());
                 } else {
-                    tickerData.setPrice(liveTick == null ? null : liveTick.getPrice());
-                    tickerData.setVolume(liveTick == null ? null : liveTick.getVolume());
-                    logger.debug("MARKET DATA: {} - DB miss, live fallback price={}",
-                            symbol, tickerData.getPrice());
+                    tickerData.setPrice(null);
+                    tickerData.setVolume(null);
                 }
                 Double previousClose = (isWeekend() && entity != null)
                         ? fetchPreviousTradingDayClose(symbol.toUpperCase(), entity)
