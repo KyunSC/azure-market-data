@@ -3,7 +3,10 @@
 import { useState, useEffect, useRef } from 'react'
 import Dashboard from '../components/Dashboard'
 
-const DEFAULT_TICKERS = ['ES=F', 'NQ=F', 'SPY', 'QQQ', '^VIX', 'XEQT.TO']
+const EQUITIES_TICKERS = ['ES=F', 'NQ=F', 'SPY', 'QQQ', '^VIX', 'XEQT.TO']
+const CRYPTO_TICKERS = ['BTC-USD', 'ETH-USD', 'SOL-USD']
+const DEFAULT_TICKERS = [...EQUITIES_TICKERS, ...CRYPTO_TICKERS]
+const CRYPTO_SET = new Set(CRYPTO_TICKERS)
 const REFRESH_INTERVAL = 15000
 // Retry delays on 5xx (covers Render free-tier cold boots ~30-60s)
 const RETRY_DELAYS = [5000, 10000, 20000]
@@ -146,9 +149,20 @@ export default function Home() {
       </header>
 
       {showSkeleton && (
-        <div className="dashboard">
-          {DEFAULT_TICKERS.map(t => <SkeletonCard key={t} />)}
-        </div>
+        <>
+          <section className="dashboard-section">
+            <h2 className="dashboard-section-title">Stocks & Equities</h2>
+            <div className="dashboard">
+              {EQUITIES_TICKERS.map(t => <SkeletonCard key={t} />)}
+            </div>
+          </section>
+          <section className="dashboard-section">
+            <h2 className="dashboard-section-title">Crypto</h2>
+            <div className="dashboard">
+              {CRYPTO_TICKERS.map(t => <SkeletonCard key={t} />)}
+            </div>
+          </section>
+        </>
       )}
       {!showSkeleton && error && !data && (
         <p className="status error">
@@ -157,7 +171,20 @@ export default function Home() {
             : `Error: ${error}`}
         </p>
       )}
-      {!showSkeleton && data && <Dashboard tickers={data.tickers} />}
+      {!showSkeleton && data && (
+        <Dashboard
+          groups={[
+            {
+              title: 'Stocks & Equities',
+              tickers: data.tickers.filter(t => !CRYPTO_SET.has(t.symbol)),
+            },
+            {
+              title: 'Crypto',
+              tickers: data.tickers.filter(t => CRYPTO_SET.has(t.symbol)),
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }

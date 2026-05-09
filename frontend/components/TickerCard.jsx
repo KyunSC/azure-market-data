@@ -15,7 +15,7 @@ const PRICE_PREFIX = {
 export default function TickerCard({ ticker }) {
   const router = useRouter()
   const hasError = ticker.error || ticker.price_error
-  const displayName = DISPLAY_NAMES[ticker.symbol] || ticker.symbol
+  const displayName = DISPLAY_NAMES[ticker.symbol] || ticker.symbol.replace(/-USD$/, '')
   const pricePrefix = ticker.symbol in PRICE_PREFIX ? PRICE_PREFIX[ticker.symbol] : '$'
 
   const handleClick = () => {

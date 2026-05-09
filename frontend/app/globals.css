@@ -54,6 +54,25 @@ body {
   gap: 1.5rem;
 }
 
+.dashboard-section {
+  margin-bottom: 2.5rem;
+}
+
+.dashboard-section:last-child {
+  margin-bottom: 0;
+}
+
+.dashboard-section-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #888;
+  margin: 0 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #2a2a2c;
+}
+
 .ticker-card {
   background: #252526;
   border-radius: 12px;
