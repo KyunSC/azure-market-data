@@ -45,37 +45,43 @@ public class MarketDataService {
         List<TickerData> tickerDataList = new ArrayList<>();
 
         for (String symbol : tickers) {
+            TickerData tickerData = new TickerData();
+            tickerData.setSymbol(symbol.toUpperCase());
+
+            MarketDataEntity entity = null;
             try {
-                MarketDataEntity entity = localRepository.findFirstBySymbolOrderByTimestampDesc(symbol.toUpperCase());
-
-                TickerData tickerData = new TickerData();
-                tickerData.setSymbol(symbol.toUpperCase());
-
-                TickerData liveTick = fetchLiveTick(symbol);
-                Double livePrice = liveTick == null ? null : liveTick.getPrice();
-                if (livePrice != null) {
-                    tickerData.setPrice(livePrice);
-                    tickerData.setVolume(liveTick.getVolume());
-                } else if (entity != null) {
-                    tickerData.setPrice(entity.getPrice());
-                    tickerData.setVolume(entity.getVolume());
-                } else {
-                    tickerData.setPrice(null);
-                    tickerData.setVolume(null);
-                }
-                Double previousClose = (isWeekend() && entity != null)
-                        ? fetchPreviousTradingDayClose(symbol.toUpperCase(), entity)
-                        : (liveTick == null ? null : liveTick.getPreviousClose());
-                tickerData.setPreviousClose(previousClose);
-
-                tickerDataList.add(tickerData);
+                entity = localRepository.findFirstBySymbolOrderByTimestampDesc(symbol.toUpperCase());
             } catch (Exception e) {
-                logger.error("Error fetching {} from Supabase: {}", symbol, e.getMessage());
-                TickerData tickerData = new TickerData();
-                tickerData.setSymbol(symbol.toUpperCase());
-                tickerData.setPrice(null);
-                tickerDataList.add(tickerData);
+                logger.warn("DB lookup failed for {}: {} — falling back to live tick", symbol, e.getMessage());
             }
+
+            TickerData liveTick = fetchLiveTick(symbol);
+            Double livePrice = liveTick == null ? null : liveTick.getPrice();
+            if (livePrice != null) {
+                tickerData.setPrice(livePrice);
+                tickerData.setVolume(liveTick.getVolume());
+            } else if (entity != null) {
+                tickerData.setPrice(entity.getPrice());
+                tickerData.setVolume(entity.getVolume());
+            } else {
+                tickerData.setPrice(null);
+                tickerData.setVolume(null);
+            }
+
+            Double previousClose;
+            if (isWeekend() && entity != null) {
+                try {
+                    previousClose = fetchPreviousTradingDayClose(symbol.toUpperCase(), entity);
+                } catch (Exception e) {
+                    logger.warn("Previous-close lookup failed for {}: {}", symbol, e.getMessage());
+                    previousClose = liveTick == null ? null : liveTick.getPreviousClose();
+                }
+            } else {
+                previousClose = liveTick == null ? null : liveTick.getPreviousClose();
+            }
+            tickerData.setPreviousClose(previousClose);
+
+            tickerDataList.add(tickerData);
         }
 
         response.setTickers(tickerDataList);
