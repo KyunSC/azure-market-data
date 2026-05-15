@@ -188,6 +188,15 @@ def main(mytimer: func.TimerRequest) -> None:
     tickers = get_ticker_list()
     logging.info(f'Fetching data for tickers: {tickers}')
 
+    # Equity tickers (^VIX, XEQT.TO, etc.) only quote during regular session,
+    # so polling them every 5 min around the clock just burns Azure credits.
+    # Futures (=F suffix) trade nearly 23/5 on Globex and stay in the loop.
+    is_market_hours = should_fetch_intraday()
+    price_fetch_symbols = [s for s in tickers if s.endswith('=F') or is_market_hours]
+    skipped_equity = [s for s in tickers if s not in price_fetch_symbols]
+    if skipped_equity:
+        logging.info(f'Equity session closed — skipping price fetch for {skipped_equity}')
+
     conn = None
     try:
         conn = get_db_connection()
@@ -195,7 +204,7 @@ def main(mytimer: func.TimerRequest) -> None:
 
         # Fetch and persist current market data
         success_count = 0
-        for symbol in tickers:
+        for symbol in price_fetch_symbols:
             try:
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(fetch_ticker_data, symbol)
@@ -220,7 +229,7 @@ def main(mytimer: func.TimerRequest) -> None:
                 logging.error(f'Error fetching {symbol}: {e}')
 
         conn.commit()
-        logging.info(f'Market data: {success_count}/{len(tickers)} tickers saved')
+        logging.info(f'Market data: {success_count}/{len(price_fetch_symbols)} tickers saved')
 
         # Fetch historical data once daily
         if should_fetch_historical():
@@ -248,7 +257,6 @@ def main(mytimer: func.TimerRequest) -> None:
         # Fetch intraday data — futures always, equities only during market hours
         et_tz = pytz.timezone('US/Eastern')
         now_et = datetime.now(et_tz)
-        is_market_hours = should_fetch_intraday()
         futures_symbols = [s for s in tickers if s.endswith('=F')]
         equity_symbols = [s for s in tickers if not s.endswith('=F')]
         intraday_symbols = futures_symbols + (equity_symbols if is_market_hours else [])

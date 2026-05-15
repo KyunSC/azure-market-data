@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 import pytz
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from GEXCalculator.gex_calculator import fetch_prices_and_compute_gex, GEX_PAIRS
+from GEXCalculator.gex_calculator import fetch_prices_and_compute_gex, GEX_PAIRS, is_market_open
 
 
 def get_db_connection():
@@ -122,6 +122,12 @@ def main(mytimer: func.TimerRequest) -> None:
         logging.warning('ScheduledGammaExposure timer trigger is past due!')
 
     logging.info(f'ScheduledGammaExposure started at {utc_timestamp}')
+
+    # QQQ/SPY option chains don't change while CBOE is closed; skipping closed
+    # sessions avoids ~70% of upstream calls and credit burn.
+    if not is_market_open():
+        logging.info('Equity market closed — skipping GEX computation.')
+        return
 
     conn = None
     try:
