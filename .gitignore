@@ -8,6 +8,10 @@ __pycache__/
 .venv/
 venv/
 
+# ML pipeline artifacts (reproducible from DB)
+functions/ml/data/
+functions/ml/notebooks/.ipynb_checkpoints/
+
 # macOS
 .DS_Store
 

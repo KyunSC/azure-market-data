@@ -1,0 +1,12 @@
+psycopg2-binary
+pandas
+numpy
+pyarrow
+python-dotenv
+scikit-learn
+torch
+rtdl-revisiting-models
+matplotlib
+seaborn
+shap
+jupyter
