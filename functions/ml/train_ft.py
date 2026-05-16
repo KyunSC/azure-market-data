@@ -8,6 +8,7 @@ Run: python functions/ml/train_ft.py
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -30,8 +31,7 @@ from eval import (  # noqa: E402
     FEATURES_BASELINE, FEATURES_BASELINE_PLUS_GEX, TARGET,
 )
 
-DATA_PATH = Path(__file__).resolve().parent / "data" / "qqq_5m_features_h3.parquet"
-OOS_OUT  = Path(__file__).resolve().parent / "data" / "ft_oos_predictions.parquet"
+DATA_DIR = Path(__file__).resolve().parent / "data"
 
 SEED = 42
 
@@ -172,12 +172,20 @@ class FTTRegressor:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--horizon-bars", type=int, default=3,
+                        help="Forward-return horizon in 5-min bars (default 3 = 15min).")
+    args = parser.parse_args()
+    h = args.horizon_bars
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     device = get_device()
-    logging.info("Device: %s", device)
+    logging.info("Device: %s  Horizon: h=%d bars (%d min)", device, h, 5 * h)
 
-    df = pd.read_parquet(DATA_PATH)
-    logging.info("Loaded %d rows", len(df))
+    data_path = DATA_DIR / f"qqq_5m_features_h{h}.parquet"
+    oos_out = DATA_DIR / f"ft_oos_predictions_h{h}.parquet"
+    df = pd.read_parquet(data_path)
+    logging.info("Loaded %d rows from %s", len(df), data_path.name)
 
     print("\n[1/2] FT-T-base — %d features" % len(FEATURES_BASELINE))
     res_base = walk_forward(
@@ -207,9 +215,9 @@ def main() -> None:
         "ft_base_pred": res_base.oos_pred,
         "ft_gex_pred":  res_gex.oos_pred,
     })
-    OOS_OUT.parent.mkdir(parents=True, exist_ok=True)
-    oos.to_parquet(OOS_OUT, index=False)
-    print(f"\nSaved OOS predictions: {OOS_OUT}")
+    oos_out.parent.mkdir(parents=True, exist_ok=True)
+    oos.to_parquet(oos_out, index=False)
+    print(f"\nSaved OOS predictions: {oos_out}")
 
 
 if __name__ == "__main__":
