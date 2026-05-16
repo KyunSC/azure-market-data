@@ -2,6 +2,13 @@
 
 An Azure Function that fetches real-time stock prices using the yfinance API.
 
+## ML experiment writeup
+
+For an analysis of whether dealer-hedging flows (gamma exposure features) improve
+short-horizon QQQ return prediction — including walk-forward evaluation across 5
+horizons, RF vs. FT-Transformer, SHAP attribution, and a 65.8% directional-accuracy
+result at the 120-min horizon — see [**functions/ml/README.md**](functions/ml/README.md).
+
 ## Endpoint
 
 ```
