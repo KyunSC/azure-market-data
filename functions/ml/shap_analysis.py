@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval import FEATURES_BASELINE, FEATURES_BASELINE_PLUS_GEX, FEATURES_GEX, TARGET  # noqa: E402
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
-PLOTS_DIR = DATA_DIR / "plots"
+PLOTS_DIR = Path(__file__).resolve().parent / "plots"
 
 
 def make_rf() -> RandomForestRegressor:

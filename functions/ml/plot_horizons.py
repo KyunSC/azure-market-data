@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
-PLOTS_DIR = DATA_DIR / "plots"
+PLOTS_DIR = Path(__file__).resolve().parent / "plots"
 
 
 def main() -> None:
