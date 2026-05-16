@@ -2,12 +2,44 @@
 
 An Azure Function that fetches real-time stock prices using the yfinance API.
 
-## ML experiment writeup
+## ML experiment: Do dealer-hedging flows improve QQQ return prediction?
 
-For an analysis of whether dealer-hedging flows (gamma exposure features) improve
-short-horizon QQQ return prediction — including walk-forward evaluation across 5
-horizons, RF vs. FT-Transformer, SHAP attribution, and a 65.8% directional-accuracy
-result at the 120-min horizon — see [**functions/ml/README.md**](functions/ml/README.md).
+A walk-forward study testing whether gamma exposure (GEX) features extracted from
+real-time QQQ options data improve forward-return prediction over a price-and-volume
+baseline. Five horizons (5–120 min) × two architectures (Random Forest,
+FT-Transformer) × with/without GEX features, on ~3 weeks of 5-min bars joined to
+24/7 GEX snapshots computed in-house from yfinance option chains.
+
+**Headline finding (primary, a null):** adding 8 GEX features **did not improve**
+out-of-sample IC over the price/volume baseline at *any* horizon, with either
+architecture. SHAP attribution shows the Random Forest *did* prioritize GEX features
+(`net_gex` and `dist_put_wall_atr` rank #1 and #2 by mean |SHAP|), so this is a
+sample-efficiency null — the signal exists but is below the noise floor at n≈600
+training rows per fold — not "GEX is uninformative."
+
+**Headline finding (secondary, positive):** the baseline RF reaches
+**IC = +0.137 (95% block-bootstrap CI [+0.005, +0.361])** and
+**65.8% directional accuracy** on **120-minute** QQQ returns — driven by ATR,
+RSI, 60-min returns, and intraday seasonality (per SHAP).
+
+![IC vs horizon](functions/ml/plots/ic_vs_horizon.png)
+
+| Horizon | RF-base IC | RF-GEX IC | Δ(IC) | RF-base dir-acc |
+|---|---|---|---|---|
+| 5 min   | +0.081 | +0.029 | −0.052 | 50.5% |
+| 15 min  | +0.041 | +0.034 | −0.007 | 56.6% |
+| 30 min  | −0.018 | −0.066 | −0.049 | 53.7% |
+| 60 min  | +0.140 | +0.114 | −0.026 | 59.8% |
+| **120 min** | **+0.137** | +0.018 | −0.119 | **65.8%** |
+
+**Methodology highlights:** expanding-window walk-forward CV (5 folds × 100 OOS
+predictions each); block bootstrap (block=73 ≈ 1 trading day) for IC 95% CIs;
+triple-asserted leakage controls in the data builder; ~72 total model fits across
+all experiments.
+
+Full paper-style writeup with methodology, SHAP plots, limitations, and
+reproducibility instructions:
+[**functions/ml/README.md**](functions/ml/README.md).
 
 ## Endpoint
 
