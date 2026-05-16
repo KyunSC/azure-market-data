@@ -1,16 +1,17 @@
 """Build the feature matrix for the GEX-vs-baseline experiment.
 
-Joins QQQ 5-minute bars with the most recent gamma_exposure snapshot
-(max 15 minutes stale), computes 14 baseline features + 8 GEX features,
-and writes a Parquet file with the 15-minute forward log return target.
+Joins QQQ 5-minute bars with the most recent gamma_exposure snapshot (max 15 min stale),
+computes 14 baseline features + 8 GEX features, and writes a Parquet with a forward
+log return target whose horizon is controlled by --horizon-bars (each bar = 5 min).
 
-Output: functions/ml/data/qqq_5m_features.parquet
+Output: functions/ml/data/qqq_5m_features_h{N}.parquet
 
-Run: python -m functions.ml.build_dataset  (from repo root)
-     or  python functions/ml/build_dataset.py
+Run: python functions/ml/build_dataset.py --horizon-bars 3   # 15-minute target (default)
+     python functions/ml/build_dataset.py --horizon-bars 12  # 60-minute target
 """
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
@@ -26,7 +27,6 @@ import psycopg2
 
 SYMBOL = "QQQ"
 INTERVAL = "5m"
-HORIZON_BARS = 3
 BAR_GRID_MINUTES = 5
 GEX_MAX_STALENESS_MINUTES = 15
 ROLLING_WINDOW = 20
@@ -48,9 +48,9 @@ FEATURE_COLS_GEX = [
     "net_gex", "abs_gex_total", "gex_concentration", "gex_age_minutes",
 ]
 META_COLS = ["date", "computed_at", "target_time"]
-TARGET_COL = "target_15m_return"
+TARGET_COL = "target_return"
 
-OUTPUT_PATH = Path(__file__).resolve().parent / "data" / "qqq_5m_features.parquet"
+OUTPUT_DIR = Path(__file__).resolve().parent / "data"
 
 
 def load_supabase_rest_creds() -> Optional[tuple[str, str]]:
@@ -312,7 +312,15 @@ def compute_target(df: pd.DataFrame, horizon_bars: int) -> pd.DataFrame:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--horizon-bars", type=int, default=3,
+                        help="Forward-return horizon in 5-min bars (default 3 = 15min).")
+    args = parser.parse_args()
+    horizon_bars = args.horizon_bars
+    horizon_min = BAR_GRID_MINUTES * horizon_bars
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.info("Building dataset with horizon = %d bars = %d minutes", horizon_bars, horizon_min)
 
     rest = load_supabase_rest_creds()
     if rest is not None:
@@ -334,7 +342,7 @@ def main() -> None:
 
     joined = compute_baseline_features(joined)
     joined = compute_gex_features(joined)
-    joined = compute_target(joined, HORIZON_BARS)
+    joined = compute_target(joined, horizon_bars)
 
     all_features = FEATURE_COLS_BASELINE + FEATURE_COLS_GEX
     keep_cols = META_COLS + [TARGET_COL] + all_features
@@ -347,8 +355,8 @@ def main() -> None:
 
     assert (final["computed_at"] <= final["date"]).all(), "LEAK: GEX after bar.date"
     assert (final["target_time"] > final["date"]).all(), "LEAK: target before bar.date"
-    assert (final["target_time"] - final["date"] == pd.Timedelta(minutes=BAR_GRID_MINUTES * HORIZON_BARS)).all(), \
-        "Target gap is not exactly 15 minutes"
+    assert (final["target_time"] - final["date"] == pd.Timedelta(minutes=horizon_min)).all(), \
+        f"Target gap is not exactly {horizon_min} minutes"
 
     logging.info("Final dataset: %d rows, %d feature cols", len(final), len(all_features))
     logging.info("Date range: %s -> %s", final["date"].min(), final["date"].max())
@@ -356,9 +364,10 @@ def main() -> None:
                  final[TARGET_COL].mean(), final[TARGET_COL].std(),
                  final[TARGET_COL].min(), final[TARGET_COL].max())
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    final.to_parquet(OUTPUT_PATH, index=False)
-    logging.info("Wrote %s (%d rows, %d cols)", OUTPUT_PATH, len(final), len(final.columns))
+    output_path = OUTPUT_DIR / f"qqq_5m_features_h{horizon_bars}.parquet"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    final.to_parquet(output_path, index=False)
+    logging.info("Wrote %s (%d rows, %d cols)", output_path, len(final), len(final.columns))
 
 
 if __name__ == "__main__":
