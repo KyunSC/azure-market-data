@@ -15,7 +15,10 @@ import json
 import logging
 import os
 import sys
+import urllib.parse
+import urllib.request
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -50,16 +53,123 @@ TARGET_COL = "target_15m_return"
 OUTPUT_PATH = Path(__file__).resolve().parent / "data" / "qqq_5m_features.parquet"
 
 
+def load_supabase_rest_creds() -> Optional[tuple[str, str]]:
+    """Read (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) from env or local.settings.json.
+    Returns None if not configured. When present, takes precedence over DB connection.
+    """
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not (url and key):
+        settings = Path(__file__).resolve().parent.parent / "local.settings.json"
+        if settings.exists():
+            vals = json.loads(settings.read_text()).get("Values", {})
+            url = url or vals.get("SUPABASE_URL")
+            key = key or vals.get("SUPABASE_SERVICE_ROLE_KEY")
+    if url and key:
+        return url.rstrip("/"), key
+    return None
+
+
+def _rest_get(base: str, key: str, table: str, params: dict, page_size: int = 1000) -> list:
+    rows: list = []
+    offset = 0
+    while True:
+        q = dict(params)
+        q["limit"] = page_size
+        q["offset"] = offset
+        full_url = f"{base}/rest/v1/{table}?{urllib.parse.urlencode(q)}"
+        req = urllib.request.Request(full_url, headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            page = json.loads(resp.read())
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+        offset += page_size
+
+
+def fetch_bars_rest(base: str, key: str, symbol: str, interval: str) -> pd.DataFrame:
+    rows = _rest_get(base, key, "historical_data", {
+        "symbol": f"eq.{symbol}",
+        "interval_type": f"eq.{interval}",
+        "select": "date,open,high,low,close_price,volume",
+        "order": "date.asc",
+    })
+    df = pd.DataFrame(rows).rename(columns={"close_price": "close"})
+    df["date"] = pd.to_datetime(df["date"], utc=True)
+    for col in ("open", "high", "low", "close", "volume"):
+        df[col] = df[col].astype(float)
+    return df
+
+
+def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
+    # Fetch exposures and levels in separate paginated calls, then join in Python.
+    # Embedded nested fetch hit Supabase's payload limits at scale.
+    ge_rows = _rest_get(base, key, "gamma_exposure", {
+        "symbol": f"eq.{symbol}",
+        "select": "id,computed_at",
+        "order": "computed_at.asc",
+    })
+    if not ge_rows:
+        return pd.DataFrame()
+
+    gl_rows = _rest_get(base, key, "gamma_levels", {
+        "select": "gamma_exposure_id,label,strike_etf,gex,gamma_exposure!inner(symbol)",
+        "gamma_exposure.symbol": f"eq.{symbol}",
+    })
+    logging.info("REST: fetched %d exposures, %d levels", len(ge_rows), len(gl_rows))
+
+    levels_by_id: dict = {}
+    for lvl in gl_rows:
+        levels_by_id.setdefault(lvl["gamma_exposure_id"], []).append(lvl)
+
+    out = []
+    for ge in ge_rows:
+        levels = levels_by_id.get(ge["id"], [])
+        if not levels:
+            continue
+        agg = {"computed_at": ge["computed_at"],
+               "call_wall": None, "put_wall": None, "zero_gamma": None,
+               "net_gex": 0.0, "abs_gex_total": 0.0, "sum_gex_squared": 0.0}
+        for lvl in levels:
+            label = lvl["label"]
+            if label == "call_wall":
+                agg["call_wall"] = lvl["strike_etf"]
+            elif label == "put_wall":
+                agg["put_wall"] = lvl["strike_etf"]
+            elif label == "zero_gamma":
+                agg["zero_gamma"] = lvl["strike_etf"]
+            g = float(lvl["gex"])
+            agg["net_gex"] += g
+            agg["abs_gex_total"] += abs(g)
+            agg["sum_gex_squared"] += g * g
+        out.append(agg)
+
+    df = pd.DataFrame(out)
+    df["computed_at"] = pd.to_datetime(df["computed_at"], utc=True)
+    for col in ("call_wall", "put_wall", "zero_gamma", "net_gex", "abs_gex_total", "sum_gex_squared"):
+        df[col] = df[col].astype(float)
+    df["gex_concentration"] = df["sum_gex_squared"] / (df["abs_gex_total"] ** 2)
+    return df.drop(columns=["sum_gex_squared"])
+
+
 def load_database_url() -> str:
-    if "DATABASE_URL" in os.environ:
-        return os.environ["DATABASE_URL"]
+    # Prefer the direct (port-5432) URL when present — bypasses the Supavisor
+    # pooler's circuit breaker, which trips on shared-pool auth failures.
+    for key in ("DATABASE_URL_DIRECT", "DATABASE_URL"):
+        if os.environ.get(key):
+            return os.environ[key]
     settings = Path(__file__).resolve().parent.parent / "local.settings.json"
     if settings.exists():
         cfg = json.loads(settings.read_text())
-        url = cfg.get("Values", {}).get("DATABASE_URL")
-        if url:
-            return url
-    raise RuntimeError("DATABASE_URL not found in env or functions/local.settings.json")
+        for key in ("DATABASE_URL_DIRECT", "DATABASE_URL"):
+            url = cfg.get("Values", {}).get(key)
+            if url:
+                return url
+    raise RuntimeError("DATABASE_URL[_DIRECT] not found in env or functions/local.settings.json")
 
 
 def _query_df(conn, sql: str, params: tuple) -> pd.DataFrame:
@@ -204,10 +314,18 @@ def compute_target(df: pd.DataFrame, horizon_bars: int) -> pd.DataFrame:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-    db_url = load_database_url()
-    with psycopg2.connect(db_url) as conn:
-        bars = fetch_bars(conn, SYMBOL, INTERVAL)
-        gex  = fetch_gex_snapshots(conn, SYMBOL)
+    rest = load_supabase_rest_creds()
+    if rest is not None:
+        base, key = rest
+        logging.info("Using Supabase REST API (bypasses Supavisor pooler)")
+        bars = fetch_bars_rest(base, key, SYMBOL, INTERVAL)
+        gex  = fetch_gex_snapshots_rest(base, key, SYMBOL)
+    else:
+        db_url = load_database_url()
+        logging.info("Using direct Postgres connection")
+        with psycopg2.connect(db_url) as conn:
+            bars = fetch_bars(conn, SYMBOL, INTERVAL)
+            gex  = fetch_gex_snapshots(conn, SYMBOL)
 
     logging.info("Loaded %d bars, %d gex snapshots", len(bars), len(gex))
 
