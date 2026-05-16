@@ -14,8 +14,10 @@ the GEX-vs-baseline question has a **mixed answer that depends on horizon and ar
 - **At long horizons (60–120 min)**, GEX features *hurt* both architectures on both
   underlyings. The baseline alone achieves **IC = +0.137 (QQQ) / +0.160 (SPY) at 120-min**,
   with **65.8% / 62.1% directional accuracy** — and adding GEX strictly degrades it.
-- **Cross-architecture asymmetry**: weighting walls by their relative GEX strength flips
-  FT-T's GEX effect from −0.123 to **+0.019** on SPY @ 60-min — but worsens it on QQQ.
+- **FT-Transformer uniformly degrades with GEX** across all four tested configurations
+  (QQQ and SPY × 15-min and 60-min): ΔIC ranges from −0.044 to −0.177, with extreme
+  fold-level variance. An earlier single run showed a spurious +0.019 on SPY @ 60-min
+  that did not replicate — consistent with FT-T's instability on ~450-row training folds.
 
 SHAP shows wall-strength features (added after the original 8 GEX features) **rank #2 and
 #3 in importance**, validating that the model treats wall importance as central. SHAP
@@ -136,13 +138,13 @@ interval.
 
 ### 6.1 Headline grid (15-minute horizon, QQQ)
 
-|                  | Without GEX (12 feat) | With GEX (22 feat) | Δ            |
+|                  | Without GEX (12 feat) | With GEX (23 feat) | Δ            |
 |------------------|-----------------------|---------------------|--------------|
 | **Random Forest** | IC = +0.041 / dir 56.6% | IC = **+0.062** / dir 54.8% | ΔIC = **+0.021** |
-| **FT-Transformer** | IC = +0.022 / dir 55.4% | IC = −0.109 / dir 53.0% | ΔIC = −0.130 |
+| **FT-Transformer** | IC = +0.022 CI[−0.086,+0.187] / dir 55.4% | IC = −0.060 / dir 52.4% | ΔIC = −0.082 |
 
 The RF flips to a *marginally positive* GEX effect when wall-strength features are
-included (was −0.007 with the 8-feature GEX set). FT-T is hurt more by the larger feature
+included (was −0.007 with the 8-feature GEX set). FT-T is hurt by the larger feature
 count — consistent with neural architectures' steeper per-feature data cost. All IC 95%
 CIs straddle zero, so claims of significance are not made.
 
@@ -194,23 +196,43 @@ Three observations on the cross-symbol comparison:
    hints at underlying-specific microstructure that would warrant follow-up at larger
    sample sizes.
 
-### 6.4 FT-Transformer at 60-min, both underlyings
+### 6.4 FT-Transformer results — QQQ and SPY × 15-min and 60-min
 
-|       | QQQ                |             | SPY                |             |
-|-------|--------------------|-------------|--------------------|-------------|
-|       | base               | + GEX       | base               | + GEX       |
-| **RF**   | +0.140           | +0.089      | −0.018           | −0.061      |
-| **FT-T** | +0.061           | **−0.092**  | +0.027           | **+0.046**  |
-| Δ(GEX) on FT-T | —  | −0.153    | —                | **+0.019**  |
+| Symbol | Horizon | FT-T-base IC | 95% CI | FT-T-GEX IC | ΔIC |
+|--------|---------|-------------|--------|------------|-----|
+| QQQ | 15 min | +0.022 | [−0.086, +0.187] | −0.060 | −0.082 |
+| QQQ | 60 min | +0.061 | [−0.094, +0.260] | −0.116 | −0.177 |
+| SPY | 15 min | −0.020 | [−0.073, +0.095] | −0.101 | −0.081 |
+| SPY | 60 min | +0.027 | [−0.099, +0.153] | −0.017 | −0.044 |
 
-**Major cross-architecture asymmetry, only visible with wall-strength features.** Adding
-the same GEX block hurts FT-T on QQQ (−0.153, worsening from the 8-feature run's −0.128)
-but *helps* FT-T on SPY (**+0.019**, vs the 8-feature run's −0.123 — a full +0.142 swing in
-the direction predicted by the dealer-hedging theory). This is the only positive GEX effect
-observed for any FT-T variant in the study, and it surfaces only on SPY and only after the
-wall-strength refinement. The result hints that attention-based models can extract value
-from properly weighted GEX features on the more liquid SPY chain, while still struggling on
-QQQ — left as an open question for larger-sample follow-up.
+**GEX hurts FT-T uniformly across all four configurations.** ΔIC is negative in every
+cell, ranging from −0.044 (SPY 60-min, smallest) to −0.177 (QQQ 60-min, largest). The
+fold-level variance for FT-T-GEX is extreme throughout — e.g., SPY 60-min folds: +0.125,
+**+0.567**, −0.246, −0.226, +0.210 — showing that a single favorable fold can dominate
+the aggregate IC at this sample size.
+
+An earlier run produced FT-T-GEX IC = +0.046 on SPY 60-min (ΔIC = +0.019), appearing to
+be "the only positive GEX effect for any FT-T variant." That result did not replicate on
+re-run (−0.017); it was within the expected variance of a model that swings ±0.5 IC
+across folds on ~450-row training sets. The conclusion stands: **FT-T does not extract
+reliable signal from GEX features at this data scale.** The instability is the finding —
+it is consistent with the known property that attention-based models have steeper
+per-feature data cost than tree ensembles, requiring substantially more training rows
+before attention patterns can stabilize.
+
+For reference, the RF results at the same two horizons:
+
+| Symbol | Horizon | RF-base IC | RF-GEX IC | ΔIC |
+|--------|---------|-----------|----------|-----|
+| QQQ | 15 min | +0.041 | +0.062 | +0.021 |
+| QQQ | 60 min | +0.140 | +0.089 | −0.050 |
+| SPY | 15 min | −0.038 | −0.030 | +0.008 |
+| SPY | 60 min | −0.018 | −0.061 | −0.043 |
+
+The RF shows marginally positive ΔIC at 15-min on both symbols — the only horizon where
+GEX adds value on the tree model — while FT-T is negative at 15-min too. This suggests
+the short-horizon GEX signal (if real) requires implicit regularization to surface: the
+RF's bagging + min-leaf constraint filters noise that FT-T's attention overfits.
 
 ### 6.5 SHAP attribution (QQQ)
 
@@ -312,25 +334,26 @@ But this signal is too small relative to test-set noise at n ≈ 600 to translat
 consistent held-out IC improvements, especially at long horizons where the baseline
 already has good predictability and added features primarily contribute noise.
 
-**(3) Cross-architecture asymmetry is the most surprising result.** At 60-min on SPY,
-adding the wall-strength-weighted GEX block *helps* FT-T (ΔIC = +0.019) but *hurts* RF
-(−0.043). This is the only positive GEX effect for any FT-T variant in the study, and it
-emerges only on SPY (not QQQ), and only after wall-strength refinement. The pattern points
-to a real, model- and underlying-specific GEX signal that the standard 8-feature
-parameterization fails to surface.
+**(3) FT-Transformer is uniformly hurt by GEX at this data scale.** Across all four
+tested configurations (QQQ and SPY × 15-min and 60-min), adding GEX degrades FT-T
+(ΔIC from −0.044 to −0.177). The fold-level IC swings up to ±0.5 across training
+folds of ~350–900 rows, making single-run aggregate ICs unreliable — an earlier run
+produced a spurious +0.019 on SPY 60-min that did not hold on re-run (−0.017). The
+architecture finding is therefore: **tree ensembles can extract short-horizon GEX signal
+via implicit regularization; transformers cannot at this scale.** This is not surprising
+in retrospect — FT-T's per-feature data cost is well documented in the tabular-DL
+literature, and GEX features (with their high noise floor and nonlinear interactions)
+are exactly the type that benefit more from bagging than attention.
 
-This framing makes three predictions:
+This framing makes two predictions:
 
 1. **The long-horizon GEX null should weaken with more data.** With 6× more training rows
    per fold, the noise floor falls by ~√6 ≈ 2.4×, potentially exposing the ~0.05-effective-
    IC signal that SHAP suggests the model is already detecting.
-2. **The neural model should benefit *more* from data scaling than the tree.** This is
-   already partially observed: on SPY the FT-T gets the only positive GEX effect, while RF
-   does not — opposite to the QQQ pattern, where RF outperforms.
-3. **Feature parameterization matters as much as feature inclusion.** The +0.142 IC swing
-   from the 8-feature to 10-feature variant of FT-T-GEX on SPY (−0.123 → +0.019) suggests
-   future work should test richer GEX parameterizations: per-expiry decomposition,
-   term-structure ratios, charm/vanna exposures — features the current minimal set ignores.
+2. **Feature parameterization matters as much as feature inclusion.** The partial SHAP
+   evidence for wall-strength weighting suggests future work should test richer GEX
+   parameterizations: per-expiry decomposition, term-structure ratios, charm/vanna
+   exposures, and option-flow metrics (PCR, IV skew) once post-migration data accumulates.
 
 ## 8. Limitations
 
@@ -371,6 +394,7 @@ done
 .venv/bin/python train_rf_horizons.py --symbol SPY          # RF SPY sweep
 .venv/bin/python train_ft.py --symbol QQQ --horizon-bars 3  # FT-T QQQ at 15-min
 .venv/bin/python train_ft.py --symbol QQQ --horizon-bars 12 # FT-T QQQ at 60-min
+.venv/bin/python train_ft.py --symbol SPY --horizon-bars 3  # FT-T SPY at 15-min
 .venv/bin/python train_ft.py --symbol SPY --horizon-bars 12 # FT-T SPY at 60-min
 
 # 5. SHAP + horizon plots (per-symbol + cross-symbol)

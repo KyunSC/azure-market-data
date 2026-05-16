@@ -42,12 +42,16 @@ def main() -> None:
     label_to_min = {"5min": 5, "15min": 15, "30min": 30, "60min": 60, "120min": 120}
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
+    all_symbols = ("qqq", "spy", "iwm", "dia")
+
     # Per-symbol plots
-    for symbol in ("qqq", "spy"):
+    available = []
+    for symbol in all_symbols:
         path = DATA_DIR / f"horizons_summary_{symbol}.csv"
         if not path.exists():
             print(f"(skip {symbol}: {path.name} not found)")
             continue
+        available.append(symbol)
         df = pd.read_csv(path)
         fig, ax = plt.subplots(figsize=(8, 5))
         _plot_single(ax, df, label_to_min,
@@ -59,16 +63,16 @@ def main() -> None:
         plt.close()
         print(f"Saved: {out}")
 
-    # Side-by-side QQQ vs SPY
-    qqq_path = DATA_DIR / "horizons_summary_qqq.csv"
-    spy_path = DATA_DIR / "horizons_summary_spy.csv"
-    if qqq_path.exists() and spy_path.exists():
-        qqq = pd.read_csv(qqq_path)
-        spy = pd.read_csv(spy_path)
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
-        _plot_single(ax1, qqq, label_to_min, "QQQ")
-        _plot_single(ax2, spy, label_to_min, "SPY")
-        fig.suptitle("RF — IC vs horizon, cross-symbol replication\n(QQQ vs SPY, both with 95% block-bootstrap CIs)",
+    # Cross-symbol panel (all available symbols)
+    if len(available) >= 2:
+        dfs = {s: pd.read_csv(DATA_DIR / f"horizons_summary_{s}.csv") for s in available}
+        fig, axes = plt.subplots(1, len(available), figsize=(7 * len(available), 5), sharey=True)
+        if len(available) == 1:
+            axes = [axes]
+        for ax, symbol in zip(axes, available):
+            _plot_single(ax, dfs[symbol], label_to_min, symbol.upper())
+        symbols_label = " vs ".join(s.upper() for s in available)
+        fig.suptitle(f"RF — IC vs horizon, cross-symbol replication\n({symbols_label}, 95% block-bootstrap CIs)",
                      fontsize=12, y=1.02)
         plt.tight_layout()
         out = PLOTS_DIR / "ic_vs_horizon_cross_symbol.png"

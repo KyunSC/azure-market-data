@@ -48,6 +48,11 @@ FEATURE_COLS_GEX = [
     "net_gex", "abs_gex_total", "gex_concentration", "gex_age_minutes",
     "call_wall_strength", "put_wall_strength",
 ]
+# Option-flow features — available only in post-migration snapshots.
+# Include in the parquet but NOT in training feature sets until enough
+# post-migration rows accumulate (pre-migration rows will have NaN).
+FEATURE_COLS_FLOW = ["pcr_volume", "pcr_oi", "iv_atm", "iv_skew"]
+
 META_COLS = ["date", "computed_at", "target_time"]
 TARGET_COL = "target_return"
 
@@ -111,7 +116,7 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
     # Embedded nested fetch hit Supabase's payload limits at scale.
     ge_rows = _rest_get(base, key, "gamma_exposure", {
         "symbol": f"eq.{symbol}",
-        "select": "id,computed_at",
+        "select": "id,computed_at,pcr_volume,pcr_oi,iv_atm,iv_skew",
         "order": "computed_at.asc",
     })
     if not ge_rows:
@@ -135,7 +140,13 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
         agg = {"computed_at": ge["computed_at"],
                "call_wall": None, "put_wall": None, "zero_gamma": None,
                "call_wall_gex": None, "put_wall_gex": None,
-               "net_gex": 0.0, "abs_gex_total": 0.0, "sum_gex_squared": 0.0}
+               "net_gex": 0.0, "abs_gex_total": 0.0, "sum_gex_squared": 0.0,
+               # Option-flow fields (NULL on pre-migration snapshots)
+               "pcr_volume": ge.get("pcr_volume"),
+               "pcr_oi":     ge.get("pcr_oi"),
+               "iv_atm":     ge.get("iv_atm"),
+               "iv_skew":    ge.get("iv_skew"),
+               }
         for lvl in levels:
             label = lvl["label"]
             g = float(lvl["gex"])
@@ -158,6 +169,9 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
                 "call_wall_gex", "put_wall_gex",
                 "net_gex", "abs_gex_total", "sum_gex_squared"):
         df[col] = df[col].astype(float)
+    # Flow cols: None for pre-migration rows → NaN (errors='coerce' handles None/str gracefully)
+    for col in ("pcr_volume", "pcr_oi", "iv_atm", "iv_skew"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
     df["gex_concentration"] = df["sum_gex_squared"] / (df["abs_gex_total"] ** 2)
     df["call_wall_strength"] = df["call_wall_gex"].abs() / df["abs_gex_total"]
     df["put_wall_strength"]  = df["put_wall_gex"].abs()  / df["abs_gex_total"]
@@ -366,7 +380,9 @@ def main() -> None:
     joined = compute_target(joined, horizon_bars)
 
     all_features = FEATURE_COLS_BASELINE + FEATURE_COLS_GEX
-    keep_cols = META_COLS + [TARGET_COL] + all_features
+    # Include flow cols in parquet (with NaN for pre-migration rows) but
+    # exclude them from the dropna guard — they'll be NaN until data accumulates.
+    keep_cols = META_COLS + [TARGET_COL] + all_features + FEATURE_COLS_FLOW
     final = joined[keep_cols].copy()
 
     before = len(final)

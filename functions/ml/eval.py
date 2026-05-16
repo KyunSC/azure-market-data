@@ -34,7 +34,12 @@ FEATURES_GEX = [
     "net_gex", "abs_gex_total", "gex_concentration", "gex_age_minutes",
     "call_wall_strength", "put_wall_strength",
 ]
+# Option-flow features — populated only in post-migration snapshots.
+# Use FEATURES_BASELINE_PLUS_GEX_PLUS_FLOW once parquets are rebuilt
+# after ~2 months of post-migration data.
+FEATURES_FLOW = ["pcr_volume", "pcr_oi", "iv_atm", "iv_skew"]
 FEATURES_BASELINE_PLUS_GEX = FEATURES_BASELINE + FEATURES_GEX
+FEATURES_BASELINE_PLUS_GEX_PLUS_FLOW = FEATURES_BASELINE + FEATURES_GEX + FEATURES_FLOW
 
 TARGET = "target_return"
 # Annualization factor depends on horizon — callers should override via summarize().

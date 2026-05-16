@@ -80,20 +80,27 @@ def shap_analyze(parquet_name: str, features: list[str], plot_stem: str, title: 
 
 
 def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--symbol", type=str, default="QQQ",
+                        help="Symbol to analyze (default QQQ). Must have parquets built first.")
+    args = parser.parse_args()
+    sym = args.symbol.lower()
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
     shap_analyze(
-        parquet_name="qqq_5m_features_h3.parquet",
+        parquet_name=f"{sym}_5m_features_h3.parquet",
         features=FEATURES_BASELINE_PLUS_GEX,
-        plot_stem="rf_gex_h3",
-        title="RF-GEX, 15-min horizon — did the model use GEX features?",
+        plot_stem=f"rf_gex_{sym}_h3",
+        title=f"RF-GEX, 15-min horizon ({sym.upper()}) — did the model use GEX features?",
     )
 
     shap_analyze(
-        parquet_name="qqq_5m_features_h24.parquet",
+        parquet_name=f"{sym}_5m_features_h24.parquet",
         features=FEATURES_BASELINE,
-        plot_stem="rf_base_h24",
-        title="RF-base, 120-min horizon — what drives the long-horizon signal?",
+        plot_stem=f"rf_base_{sym}_h24",
+        title=f"RF-base, 120-min horizon ({sym.upper()}) — what drives the long-horizon signal?",
     )
 
     print(f"\nPlots saved to: {PLOTS_DIR}")

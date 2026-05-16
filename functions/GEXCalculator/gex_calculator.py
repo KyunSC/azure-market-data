@@ -74,8 +74,14 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
 
     conversion_ratio = futures_price / etf_price
 
-    # Aggregate GEX across expirations
+    # Aggregate GEX + option-flow metrics across expirations
     gex_by_strike = {}
+    iv_by_strike_call = {}   # strike -> [iv, ...] across expirations
+    iv_by_strike_put  = {}
+    total_call_volume = 0.0
+    total_put_volume  = 0.0
+    total_call_oi     = 0.0
+    total_put_oi      = 0.0
 
     for exp_str in valid_expirations:
         exp_date = datetime.strptime(exp_str, '%Y-%m-%d').date()
@@ -90,6 +96,12 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
         calls = chain.calls
         puts = chain.puts
 
+        # Accumulate volume / OI for PCR
+        total_call_volume += float(calls['volume'].fillna(0).sum())
+        total_put_volume  += float(puts['volume'].fillna(0).sum())
+        total_call_oi     += float(calls['openInterest'].fillna(0).sum())
+        total_put_oi      += float(puts['openInterest'].fillna(0).sum())
+
         # Process calls
         for _, row in calls.iterrows():
             strike = float(row['strike'])
@@ -97,6 +109,9 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
             raw_iv = row.get('impliedVolatility', 0)
             oi = 0 if (raw_oi is None or (isinstance(raw_oi, float) and math.isnan(raw_oi))) else int(raw_oi)
             iv = 0.0 if (raw_iv is None or (isinstance(raw_iv, float) and math.isnan(raw_iv))) else float(raw_iv)
+
+            if iv >= MIN_IV:
+                iv_by_strike_call.setdefault(strike, []).append(iv)
 
             if oi <= 0 or iv < MIN_IV:
                 continue
@@ -116,6 +131,9 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
             oi = 0 if (raw_oi is None or (isinstance(raw_oi, float) and math.isnan(raw_oi))) else int(raw_oi)
             iv = 0.0 if (raw_iv is None or (isinstance(raw_iv, float) and math.isnan(raw_iv))) else float(raw_iv)
 
+            if iv >= MIN_IV:
+                iv_by_strike_put.setdefault(strike, []).append(iv)
+
             if oi <= 0 or iv < MIN_IV:
                 continue
 
@@ -128,6 +146,36 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
 
     if not gex_by_strike:
         raise ValueError("No valid option data found")
+
+    # --- Option-flow metrics ---
+
+    # Put/call ratios
+    pcr_volume = round(total_put_volume / max(total_call_volume, 1.0), 4)
+    pcr_oi     = round(total_put_oi    / max(total_call_oi,     1.0), 4)
+
+    # ATM implied vol: mean of call IV and put IV at the strike nearest to spot
+    strikes_with_both = [s for s in iv_by_strike_call if s in iv_by_strike_put]
+    if strikes_with_both:
+        atm = min(strikes_with_both, key=lambda s: abs(s - etf_price))
+        call_iv_atm = sum(iv_by_strike_call[atm]) / len(iv_by_strike_call[atm])
+        put_iv_atm  = sum(iv_by_strike_put[atm])  / len(iv_by_strike_put[atm])
+        iv_atm = round((call_iv_atm + put_iv_atm) / 2, 4)
+    else:
+        iv_atm = None
+
+    # IV skew: mean OTM-put IV (90–97% of spot) minus mean OTM-call IV (103–110% of spot)
+    otm_put_ivs  = [iv for s, ivs in iv_by_strike_put.items()
+                    if 0.90 * etf_price <= s <= 0.97 * etf_price for iv in ivs]
+    otm_call_ivs = [iv for s, ivs in iv_by_strike_call.items()
+                    if 1.03 * etf_price <= s <= 1.10 * etf_price for iv in ivs]
+    if otm_put_ivs and otm_call_ivs:
+        iv_skew = round(
+            sum(otm_put_ivs)  / len(otm_put_ivs) -
+            sum(otm_call_ivs) / len(otm_call_ivs),
+            4
+        )
+    else:
+        iv_skew = None
 
     # Compute total GEX per strike
     strikes_data = []
@@ -153,6 +201,11 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
         'expirations_used': valid_expirations,
         'levels': levels,
         'all_strikes': strikes_data,
+        # Option-flow features (None if chain data insufficient)
+        'pcr_volume': pcr_volume,
+        'pcr_oi': pcr_oi,
+        'iv_atm': iv_atm,
+        'iv_skew': iv_skew,
     }
 
 
@@ -227,6 +280,8 @@ def _identify_key_levels(strikes_data):
 GEX_PAIRS = {
     'QQQ': {'etf': 'QQQ', 'futures': 'NQ=F'},
     'SPY': {'etf': 'SPY', 'futures': 'ES=F'},
+    'IWM': {'etf': 'IWM', 'futures': 'RTY=F'},
+    'DIA': {'etf': 'DIA', 'futures': 'YM=F'},
 }
 
 

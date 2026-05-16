@@ -18,8 +18,10 @@ def get_db_connection():
 def insert_gex_data(cursor, etf_symbol, gex_result):
     cursor.execute("""
         INSERT INTO gamma_exposure
-            (symbol, computed_at, etf_price, futures_price, conversion_ratio, expirations_used, market_open)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+            (symbol, computed_at, etf_price, futures_price, conversion_ratio,
+             expirations_used, market_open,
+             pcr_volume, pcr_oi, iv_atm, iv_skew)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     """, (
         etf_symbol,
@@ -29,6 +31,10 @@ def insert_gex_data(cursor, etf_symbol, gex_result):
         gex_result['conversion_ratio'],
         ','.join(gex_result['expirations_used']),
         gex_result['market_open'],
+        gex_result.get('pcr_volume'),
+        gex_result.get('pcr_oi'),
+        gex_result.get('iv_atm'),
+        gex_result.get('iv_skew'),
     ))
     exposure_id = cursor.fetchone()[0]
 

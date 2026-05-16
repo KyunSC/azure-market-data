@@ -114,8 +114,12 @@ def run_for(parquet_name: str, label: str) -> None:
 def main() -> None:
     logging.basicConfig(level=logging.WARNING)
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    run_for("qqq_5m_features_h3.parquet", "QQQ")
-    run_for("spy_5m_features_h3.parquet", "SPY")
+    for sym in ("qqq", "spy", "iwm", "dia"):
+        parquet = f"{sym}_5m_features_h3.parquet"
+        if not (DATA_DIR / parquet).exists():
+            print(f"(skip {sym.upper()}: {parquet} not found)")
+            continue
+        run_for(parquet, sym.upper())
 
 
 if __name__ == "__main__":
