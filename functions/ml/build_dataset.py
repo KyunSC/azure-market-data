@@ -44,7 +44,7 @@ FEATURE_COLS_BASELINE = [
 ]
 FEATURE_COLS_GEX = [
     "dist_call_wall_atr", "dist_put_wall_atr", "dist_zero_gamma_atr",
-    "above_zero_gamma",
+    "above_zero_gamma", "gamma_regime_strength",
     "net_gex", "abs_gex_total", "gex_concentration", "gex_age_minutes",
     "call_wall_strength", "put_wall_strength",
 ]
@@ -306,6 +306,9 @@ def compute_gex_features(df: pd.DataFrame) -> pd.DataFrame:
     df["dist_put_wall_atr"]   = (df["close"] - df["put_wall"])   / atr
     df["dist_zero_gamma_atr"] = (df["close"] - df["zero_gamma"]) / atr
     df["above_zero_gamma"]    = np.sign(df["close"] - df["zero_gamma"])
+    # Normalized regime polarity: +1 = deep positive gamma (suppression),
+    # -1 = deep negative gamma (amplification), ~0 = near the flip.
+    df["gamma_regime_strength"] = df["net_gex"] / (df["abs_gex_total"] + 1e-8)
     return df
 
 
