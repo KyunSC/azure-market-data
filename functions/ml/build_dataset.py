@@ -1,13 +1,14 @@
 """Build the feature matrix for the GEX-vs-baseline experiment.
 
-Joins QQQ 5-minute bars with the most recent gamma_exposure snapshot (max 15 min stale),
-computes 14 baseline features + 8 GEX features, and writes a Parquet with a forward
-log return target whose horizon is controlled by --horizon-bars (each bar = 5 min).
+Joins 5-minute bars for the chosen symbol with the most recent gamma_exposure snapshot
+(max 15 min stale), computes 14 baseline features + 8 GEX features, and writes a Parquet
+with a forward log return target whose horizon is controlled by --horizon-bars (each bar
+= 5 min).
 
-Output: functions/ml/data/qqq_5m_features_h{N}.parquet
+Output: functions/ml/data/{symbol_lower}_5m_features_h{N}.parquet
 
-Run: python functions/ml/build_dataset.py --horizon-bars 3   # 15-minute target (default)
-     python functions/ml/build_dataset.py --horizon-bars 12  # 60-minute target
+Run: python functions/ml/build_dataset.py --symbol QQQ --horizon-bars 3
+     python functions/ml/build_dataset.py --symbol SPY --horizon-bars 12
 """
 from __future__ import annotations
 
@@ -25,7 +26,6 @@ import numpy as np
 import pandas as pd
 import psycopg2
 
-SYMBOL = "QQQ"
 INTERVAL = "5m"
 BAR_GRID_MINUTES = 5
 GEX_MAX_STALENESS_MINUTES = 15
@@ -313,27 +313,31 @@ def compute_target(df: pd.DataFrame, horizon_bars: int) -> pd.DataFrame:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--symbol", type=str, default="QQQ",
+                        help="Ticker symbol present in both historical_data and gamma_exposure tables (default QQQ).")
     parser.add_argument("--horizon-bars", type=int, default=3,
                         help="Forward-return horizon in 5-min bars (default 3 = 15min).")
     args = parser.parse_args()
+    symbol = args.symbol.upper()
     horizon_bars = args.horizon_bars
     horizon_min = BAR_GRID_MINUTES * horizon_bars
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    logging.info("Building dataset with horizon = %d bars = %d minutes", horizon_bars, horizon_min)
+    logging.info("Building dataset for symbol=%s, horizon = %d bars = %d minutes",
+                 symbol, horizon_bars, horizon_min)
 
     rest = load_supabase_rest_creds()
     if rest is not None:
         base, key = rest
         logging.info("Using Supabase REST API (bypasses Supavisor pooler)")
-        bars = fetch_bars_rest(base, key, SYMBOL, INTERVAL)
-        gex  = fetch_gex_snapshots_rest(base, key, SYMBOL)
+        bars = fetch_bars_rest(base, key, symbol, INTERVAL)
+        gex  = fetch_gex_snapshots_rest(base, key, symbol)
     else:
         db_url = load_database_url()
         logging.info("Using direct Postgres connection")
         with psycopg2.connect(db_url) as conn:
-            bars = fetch_bars(conn, SYMBOL, INTERVAL)
-            gex  = fetch_gex_snapshots(conn, SYMBOL)
+            bars = fetch_bars(conn, symbol, INTERVAL)
+            gex  = fetch_gex_snapshots(conn, symbol)
 
     logging.info("Loaded %d bars, %d gex snapshots", len(bars), len(gex))
 
@@ -364,7 +368,7 @@ def main() -> None:
                  final[TARGET_COL].mean(), final[TARGET_COL].std(),
                  final[TARGET_COL].min(), final[TARGET_COL].max())
 
-    output_path = OUTPUT_DIR / f"qqq_5m_features_h{horizon_bars}.parquet"
+    output_path = OUTPUT_DIR / f"{symbol.lower()}_5m_features_h{horizon_bars}.parquet"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     final.to_parquet(output_path, index=False)
     logging.info("Wrote %s (%d rows, %d cols)", output_path, len(final), len(final.columns))

@@ -11,6 +11,7 @@ Output:
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from pathlib import Path
@@ -22,7 +23,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval import walk_forward, FEATURES_BASELINE, FEATURES_BASELINE_PLUS_GEX  # noqa: E402
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
-OUT_CSV = DATA_DIR / "horizons_summary.csv"
 
 HORIZONS = [
     (1, "5min"),
@@ -41,13 +41,19 @@ def rf_factory():
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--symbol", type=str, default="QQQ",
+                        help="Symbol prefix for the input parquet files (default QQQ).")
+    args = parser.parse_args()
+    symbol = args.symbol.lower()
+
     logging.basicConfig(level=logging.WARNING)
 
     rows = []
     for h_bars, h_label in HORIZONS:
-        path = DATA_DIR / f"qqq_5m_features_h{h_bars}.parquet"
+        path = DATA_DIR / f"{symbol}_5m_features_h{h_bars}.parquet"
         df = pd.read_parquet(path)
-        print(f"\n=== Horizon {h_label}  (h={h_bars} bars,  n={len(df)}) ===")
+        print(f"\n=== {symbol.upper()}  Horizon {h_label}  (h={h_bars} bars,  n={len(df)}) ===")
 
         for variant, features in [
             ("RF-base", FEATURES_BASELINE),
@@ -70,7 +76,8 @@ def main() -> None:
                   f"dir_acc={m['directional_acc']:.3f}")
 
     out = pd.DataFrame(rows)
-    out.to_csv(OUT_CSV, index=False)
+    out_csv = DATA_DIR / f"horizons_summary_{symbol}.csv"
+    out.to_csv(out_csv, index=False)
 
     print("\n\n========== Horizon-by-horizon DELTA (GEX minus base) ==========")
     print(f"{'horizon':<10}{'n_oos':<8}{'IC base':<12}{'IC gex':<12}{'d(IC)':<11}{'d(dir)':<10}{'CI overlaps 0?':<15}")
@@ -82,7 +89,7 @@ def main() -> None:
         ci_msg = "yes" if (g["ic_ci_lo"] < 0 < g["ic_ci_hi"]) else "NO"
         print(f"{h_label:<10}{b['n_oos']:<8}{b['ic']:<+12.4f}{g['ic']:<+12.4f}{d_ic:<+11.4f}{d_dir:<+10.4f}{ci_msg:<15}")
 
-    print(f"\nSaved: {OUT_CSV}")
+    print(f"\nSaved: {out_csv}")
 
 
 if __name__ == "__main__":

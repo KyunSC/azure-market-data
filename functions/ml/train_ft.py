@@ -173,17 +173,21 @@ class FTTRegressor:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--symbol", type=str, default="QQQ",
+                        help="Symbol prefix for the input parquet (default QQQ).")
     parser.add_argument("--horizon-bars", type=int, default=3,
                         help="Forward-return horizon in 5-min bars (default 3 = 15min).")
     args = parser.parse_args()
+    symbol = args.symbol.lower()
     h = args.horizon_bars
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     device = get_device()
-    logging.info("Device: %s  Horizon: h=%d bars (%d min)", device, h, 5 * h)
+    logging.info("Device: %s  Symbol: %s  Horizon: h=%d bars (%d min)",
+                 device, symbol.upper(), h, 5 * h)
 
-    data_path = DATA_DIR / f"qqq_5m_features_h{h}.parquet"
-    oos_out = DATA_DIR / f"ft_oos_predictions_h{h}.parquet"
+    data_path = DATA_DIR / f"{symbol}_5m_features_h{h}.parquet"
+    oos_out = DATA_DIR / f"ft_oos_predictions_{symbol}_h{h}.parquet"
     df = pd.read_parquet(data_path)
     logging.info("Loaded %d rows from %s", len(df), data_path.name)
 
