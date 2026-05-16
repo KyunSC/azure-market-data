@@ -1,6 +1,7 @@
 import azure.functions as func
 import yfinance as yf
 import psycopg2
+from psycopg2.extras import execute_values
 import os
 import sys
 import math
@@ -129,11 +130,16 @@ def upsert_historical_data(cursor, symbol, data):
     For higher timeframes, sanitize is skipped — the 0.3% threshold flagged
     almost every legitimate daily/weekly bar as a phantom.
     """
-    interval_type = data[0].get('interval_type') if data else None
+    if not data:
+        return
+
+    interval_type = data[0].get('interval_type')
     sanitize_enabled = interval_type in SANITIZE_INTERVALS
 
     recent_closes = []
     prev_close = None
+    fetched_at = datetime.utcnow()
+    rows = []
     for row in data:
         clean = (sanitize_bar(row, prev_close=prev_close, recent_closes=recent_closes)
                  if sanitize_enabled else row)
@@ -149,19 +155,7 @@ def upsert_historical_data(cursor, symbol, data):
                 row['high'], clean['high'],
                 row['low'], clean['low'],
             )
-        cursor.execute("""
-            INSERT INTO historical_data
-                (symbol, date, interval_type, open, high, low, close_price, volume, fetched_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (symbol, date, interval_type)
-            DO UPDATE SET
-                open = EXCLUDED.open,
-                high = EXCLUDED.high,
-                low = EXCLUDED.low,
-                close_price = EXCLUDED.close_price,
-                volume = EXCLUDED.volume,
-                fetched_at = EXCLUDED.fetched_at
-        """, (
+        rows.append((
             symbol,
             clean['date'],
             clean['interval_type'],
@@ -170,12 +164,31 @@ def upsert_historical_data(cursor, symbol, data):
             clean['low'],
             clean['close'],
             clean['volume'],
-            datetime.utcnow()
+            fetched_at,
         ))
         prev_close = clean['close']
         recent_closes.append(clean['close'])
         if len(recent_closes) > SANITIZE_WINDOW_SIZE:
             recent_closes.pop(0)
+
+    execute_values(
+        cursor,
+        """
+        INSERT INTO historical_data
+            (symbol, date, interval_type, open, high, low, close_price, volume, fetched_at)
+        VALUES %s
+        ON CONFLICT (symbol, date, interval_type)
+        DO UPDATE SET
+            open = EXCLUDED.open,
+            high = EXCLUDED.high,
+            low = EXCLUDED.low,
+            close_price = EXCLUDED.close_price,
+            volume = EXCLUDED.volume,
+            fetched_at = EXCLUDED.fetched_at
+        """,
+        rows,
+        page_size=500,
+    )
 
 def main(mytimer: func.TimerRequest) -> None:
     utc_timestamp = datetime.utcnow()
@@ -268,10 +281,17 @@ def main(mytimer: func.TimerRequest) -> None:
             # 5m (covers up to 3mo windows), and 1h (covers 1y/2y windows).
             # 15m, 30m, and 4h are aggregated from these on read in
             # HistoricalDataService.storedIntervalFor / aggregate.
+            #
+            # Windows are sized to "smallest period that covers a normal
+            # multi-tick gap" — not the maximum yfinance allows. Each tick
+            # only needs to land the last 1–2 bars; re-pulling 5d of 5m every
+            # 5 min was paying for ~1,500 unchanged rows per symbol per tick.
+            # If the function is offline longer than the window below, use
+            # repair_historical.py to backfill.
             intraday_intervals = [
                 ('1m', '1d'),
-                ('5m', '5d'),
-                ('1h', '1mo'),
+                ('5m', '1d'),
+                ('1h', '5d'),
             ]
             for interval, period in intraday_intervals:
                 for symbol in intraday_symbols:
