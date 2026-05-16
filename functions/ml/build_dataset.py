@@ -46,6 +46,7 @@ FEATURE_COLS_GEX = [
     "dist_call_wall_atr", "dist_put_wall_atr", "dist_zero_gamma_atr",
     "above_zero_gamma",
     "net_gex", "abs_gex_total", "gex_concentration", "gex_age_minutes",
+    "call_wall_strength", "put_wall_strength",
 ]
 META_COLS = ["date", "computed_at", "target_time"]
 TARGET_COL = "target_return"
@@ -133,16 +134,19 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
             continue
         agg = {"computed_at": ge["computed_at"],
                "call_wall": None, "put_wall": None, "zero_gamma": None,
+               "call_wall_gex": None, "put_wall_gex": None,
                "net_gex": 0.0, "abs_gex_total": 0.0, "sum_gex_squared": 0.0}
         for lvl in levels:
             label = lvl["label"]
+            g = float(lvl["gex"])
             if label == "call_wall":
                 agg["call_wall"] = lvl["strike_etf"]
+                agg["call_wall_gex"] = g
             elif label == "put_wall":
                 agg["put_wall"] = lvl["strike_etf"]
+                agg["put_wall_gex"] = g
             elif label == "zero_gamma":
                 agg["zero_gamma"] = lvl["strike_etf"]
-            g = float(lvl["gex"])
             agg["net_gex"] += g
             agg["abs_gex_total"] += abs(g)
             agg["sum_gex_squared"] += g * g
@@ -150,10 +154,14 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
 
     df = pd.DataFrame(out)
     df["computed_at"] = pd.to_datetime(df["computed_at"], utc=True)
-    for col in ("call_wall", "put_wall", "zero_gamma", "net_gex", "abs_gex_total", "sum_gex_squared"):
+    for col in ("call_wall", "put_wall", "zero_gamma",
+                "call_wall_gex", "put_wall_gex",
+                "net_gex", "abs_gex_total", "sum_gex_squared"):
         df[col] = df[col].astype(float)
     df["gex_concentration"] = df["sum_gex_squared"] / (df["abs_gex_total"] ** 2)
-    return df.drop(columns=["sum_gex_squared"])
+    df["call_wall_strength"] = df["call_wall_gex"].abs() / df["abs_gex_total"]
+    df["put_wall_strength"]  = df["put_wall_gex"].abs()  / df["abs_gex_total"]
+    return df.drop(columns=["sum_gex_squared", "call_wall_gex", "put_wall_gex"])
 
 
 def load_database_url() -> str:
@@ -202,6 +210,8 @@ def fetch_gex_snapshots(conn, symbol: str) -> pd.DataFrame:
             MAX(CASE WHEN gl.label = 'call_wall'  THEN gl.strike_etf END) AS call_wall,
             MAX(CASE WHEN gl.label = 'put_wall'   THEN gl.strike_etf END) AS put_wall,
             MAX(CASE WHEN gl.label = 'zero_gamma' THEN gl.strike_etf END) AS zero_gamma,
+            MAX(CASE WHEN gl.label = 'call_wall'  THEN gl.gex END)        AS call_wall_gex,
+            MAX(CASE WHEN gl.label = 'put_wall'   THEN gl.gex END)        AS put_wall_gex,
             SUM(gl.gex)                  AS net_gex,
             SUM(ABS(gl.gex))             AS abs_gex_total,
             SUM(POWER(gl.gex, 2))        AS sum_gex_squared
@@ -213,10 +223,14 @@ def fetch_gex_snapshots(conn, symbol: str) -> pd.DataFrame:
     """
     df = _query_df(conn, sql, (symbol,))
     df["computed_at"] = pd.to_datetime(df["computed_at"], utc=True)
-    for col in ("call_wall", "put_wall", "zero_gamma", "net_gex", "abs_gex_total", "sum_gex_squared"):
+    for col in ("call_wall", "put_wall", "zero_gamma",
+                "call_wall_gex", "put_wall_gex",
+                "net_gex", "abs_gex_total", "sum_gex_squared"):
         df[col] = df[col].astype(float)
     df["gex_concentration"] = df["sum_gex_squared"] / (df["abs_gex_total"] ** 2)
-    return df.drop(columns=["sum_gex_squared"])
+    df["call_wall_strength"] = df["call_wall_gex"].abs() / df["abs_gex_total"]
+    df["put_wall_strength"]  = df["put_wall_gex"].abs()  / df["abs_gex_total"]
+    return df.drop(columns=["sum_gex_squared", "call_wall_gex", "put_wall_gex"])
 
 
 def asof_join_gex(bars: pd.DataFrame, gex: pd.DataFrame) -> pd.DataFrame:

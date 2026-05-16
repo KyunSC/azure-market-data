@@ -32,6 +32,7 @@ FEATURES_GEX = [
     "dist_call_wall_atr", "dist_put_wall_atr", "dist_zero_gamma_atr",
     "above_zero_gamma",
     "net_gex", "abs_gex_total", "gex_concentration", "gex_age_minutes",
+    "call_wall_strength", "put_wall_strength",
 ]
 FEATURES_BASELINE_PLUS_GEX = FEATURES_BASELINE + FEATURES_GEX
 
