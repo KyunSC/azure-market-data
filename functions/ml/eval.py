@@ -38,8 +38,16 @@ FEATURES_GEX = [
 # Use FEATURES_BASELINE_PLUS_GEX_PLUS_FLOW once parquets are rebuilt
 # after ~2 months of post-migration data.
 FEATURES_FLOW = ["pcr_volume", "pcr_oi", "iv_atm", "iv_skew"]
+# 0DTE features — populated only after the gex_0dte schema migration.
+# Use FEATURES_BASELINE_PLUS_GEX_PLUS_0DTE once enough post-migration rows
+# accumulate. Rows missing any 0DTE feature must be dropped before fitting.
+FEATURES_0DTE = [
+    "gex_0dte_fraction", "gex_0dte_polarity",
+    "call_wall_0dte_share", "put_wall_0dte_share",
+]
 FEATURES_BASELINE_PLUS_GEX = FEATURES_BASELINE + FEATURES_GEX
 FEATURES_BASELINE_PLUS_GEX_PLUS_FLOW = FEATURES_BASELINE + FEATURES_GEX + FEATURES_FLOW
+FEATURES_BASELINE_PLUS_GEX_PLUS_0DTE = FEATURES_BASELINE + FEATURES_GEX + FEATURES_0DTE
 
 TARGET = "target_return"
 # Annualization factor depends on horizon — callers should override via summarize().

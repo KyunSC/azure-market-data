@@ -52,6 +52,13 @@ FEATURE_COLS_GEX = [
 # Include in the parquet but NOT in training feature sets until enough
 # post-migration rows accumulate (pre-migration rows will have NaN).
 FEATURE_COLS_FLOW = ["pcr_volume", "pcr_oi", "iv_atm", "iv_skew"]
+# 0DTE features — populated only after the gex_0dte schema migration.
+# Per-DTE buckets let the model see 0DTE-driven concentration separately
+# from longer-dated flow (~50% of options volume is 0DTE).
+FEATURE_COLS_0DTE = [
+    "gex_0dte_fraction", "gex_0dte_polarity",
+    "call_wall_0dte_share", "put_wall_0dte_share",
+]
 
 META_COLS = ["date", "computed_at", "target_time"]
 TARGET_COL = "target_return"
@@ -123,7 +130,7 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     gl_rows = _rest_get(base, key, "gamma_levels", {
-        "select": "gamma_exposure_id,label,strike_etf,gex,gamma_exposure!inner(symbol)",
+        "select": "gamma_exposure_id,label,strike_etf,gex,gex_0dte,gamma_exposure!inner(symbol)",
         "gamma_exposure.symbol": f"eq.{symbol}",
     })
     logging.info("REST: fetched %d exposures, %d levels", len(ge_rows), len(gl_rows))
@@ -137,10 +144,16 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
         levels = levels_by_id.get(ge["id"], [])
         if not levels:
             continue
+        # Pre-migration snapshots have gex_0dte = NULL on every level;
+        # leave the 0DTE aggregates as None so downstream features become NaN.
+        has_0dte = any(lvl.get("gex_0dte") is not None for lvl in levels)
         agg = {"computed_at": ge["computed_at"],
                "call_wall": None, "put_wall": None, "zero_gamma": None,
                "call_wall_gex": None, "put_wall_gex": None,
+               "call_wall_0dte_gex": None, "put_wall_0dte_gex": None,
                "net_gex": 0.0, "abs_gex_total": 0.0, "sum_gex_squared": 0.0,
+               "net_gex_0dte_raw":  0.0 if has_0dte else None,
+               "abs_gex_0dte_total": 0.0 if has_0dte else None,
                # Option-flow fields (NULL on pre-migration snapshots)
                "pcr_volume": ge.get("pcr_volume"),
                "pcr_oi":     ge.get("pcr_oi"),
@@ -150,32 +163,50 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
         for lvl in levels:
             label = lvl["label"]
             g = float(lvl["gex"])
+            g_0dte_raw = lvl.get("gex_0dte")
+            g_0dte = float(g_0dte_raw) if g_0dte_raw is not None else 0.0
             if label == "call_wall":
                 agg["call_wall"] = lvl["strike_etf"]
                 agg["call_wall_gex"] = g
+                if has_0dte:
+                    agg["call_wall_0dte_gex"] = g_0dte
             elif label == "put_wall":
                 agg["put_wall"] = lvl["strike_etf"]
                 agg["put_wall_gex"] = g
+                if has_0dte:
+                    agg["put_wall_0dte_gex"] = g_0dte
             elif label == "zero_gamma":
                 agg["zero_gamma"] = lvl["strike_etf"]
             agg["net_gex"] += g
             agg["abs_gex_total"] += abs(g)
             agg["sum_gex_squared"] += g * g
+            if has_0dte:
+                agg["net_gex_0dte_raw"] += g_0dte
+                agg["abs_gex_0dte_total"] += abs(g_0dte)
         out.append(agg)
 
     df = pd.DataFrame(out)
     df["computed_at"] = pd.to_datetime(df["computed_at"], utc=True)
     for col in ("call_wall", "put_wall", "zero_gamma",
                 "call_wall_gex", "put_wall_gex",
-                "net_gex", "abs_gex_total", "sum_gex_squared"):
-        df[col] = df[col].astype(float)
+                "call_wall_0dte_gex", "put_wall_0dte_gex",
+                "net_gex", "abs_gex_total", "sum_gex_squared",
+                "net_gex_0dte_raw", "abs_gex_0dte_total"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
     # Flow cols: None for pre-migration rows → NaN (errors='coerce' handles None/str gracefully)
     for col in ("pcr_volume", "pcr_oi", "iv_atm", "iv_skew"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df["gex_concentration"] = df["sum_gex_squared"] / (df["abs_gex_total"] ** 2)
     df["call_wall_strength"] = df["call_wall_gex"].abs() / df["abs_gex_total"]
     df["put_wall_strength"]  = df["put_wall_gex"].abs()  / df["abs_gex_total"]
-    return df.drop(columns=["sum_gex_squared", "call_wall_gex", "put_wall_gex"])
+    # 0DTE-aware features. NaN on pre-migration rows (abs_gex_0dte_total = NaN).
+    df["gex_0dte_fraction"]    = df["abs_gex_0dte_total"] / df["abs_gex_total"]
+    df["gex_0dte_polarity"]    = df["net_gex_0dte_raw"]   / df["abs_gex_0dte_total"]
+    df["call_wall_0dte_share"] = df["call_wall_0dte_gex"] / df["abs_gex_total"]
+    df["put_wall_0dte_share"]  = df["put_wall_0dte_gex"]  / df["abs_gex_total"]
+    return df.drop(columns=["sum_gex_squared", "call_wall_gex", "put_wall_gex",
+                            "call_wall_0dte_gex", "put_wall_0dte_gex",
+                            "net_gex_0dte_raw", "abs_gex_0dte_total"])
 
 
 def load_database_url() -> str:
@@ -226,9 +257,14 @@ def fetch_gex_snapshots(conn, symbol: str) -> pd.DataFrame:
             MAX(CASE WHEN gl.label = 'zero_gamma' THEN gl.strike_etf END) AS zero_gamma,
             MAX(CASE WHEN gl.label = 'call_wall'  THEN gl.gex END)        AS call_wall_gex,
             MAX(CASE WHEN gl.label = 'put_wall'   THEN gl.gex END)        AS put_wall_gex,
+            MAX(CASE WHEN gl.label = 'call_wall'  THEN gl.gex_0dte END)   AS call_wall_0dte_gex,
+            MAX(CASE WHEN gl.label = 'put_wall'   THEN gl.gex_0dte END)   AS put_wall_0dte_gex,
             SUM(gl.gex)                  AS net_gex,
             SUM(ABS(gl.gex))             AS abs_gex_total,
-            SUM(POWER(gl.gex, 2))        AS sum_gex_squared
+            SUM(POWER(gl.gex, 2))        AS sum_gex_squared,
+            -- SUM returns NULL when every row is NULL, which is the pre-migration case.
+            SUM(gl.gex_0dte)             AS net_gex_0dte_raw,
+            SUM(ABS(gl.gex_0dte))        AS abs_gex_0dte_total
         FROM gamma_exposure ge
         JOIN gamma_levels gl ON gl.gamma_exposure_id = ge.id
         WHERE ge.symbol = %s
@@ -239,12 +275,21 @@ def fetch_gex_snapshots(conn, symbol: str) -> pd.DataFrame:
     df["computed_at"] = pd.to_datetime(df["computed_at"], utc=True)
     for col in ("call_wall", "put_wall", "zero_gamma",
                 "call_wall_gex", "put_wall_gex",
-                "net_gex", "abs_gex_total", "sum_gex_squared"):
-        df[col] = df[col].astype(float)
+                "call_wall_0dte_gex", "put_wall_0dte_gex",
+                "net_gex", "abs_gex_total", "sum_gex_squared",
+                "net_gex_0dte_raw", "abs_gex_0dte_total"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
     df["gex_concentration"] = df["sum_gex_squared"] / (df["abs_gex_total"] ** 2)
     df["call_wall_strength"] = df["call_wall_gex"].abs() / df["abs_gex_total"]
     df["put_wall_strength"]  = df["put_wall_gex"].abs()  / df["abs_gex_total"]
-    return df.drop(columns=["sum_gex_squared", "call_wall_gex", "put_wall_gex"])
+    # 0DTE-aware features. NaN on pre-migration rows.
+    df["gex_0dte_fraction"]    = df["abs_gex_0dte_total"] / df["abs_gex_total"]
+    df["gex_0dte_polarity"]    = df["net_gex_0dte_raw"]   / df["abs_gex_0dte_total"]
+    df["call_wall_0dte_share"] = df["call_wall_0dte_gex"] / df["abs_gex_total"]
+    df["put_wall_0dte_share"]  = df["put_wall_0dte_gex"]  / df["abs_gex_total"]
+    return df.drop(columns=["sum_gex_squared", "call_wall_gex", "put_wall_gex",
+                            "call_wall_0dte_gex", "put_wall_0dte_gex",
+                            "net_gex_0dte_raw", "abs_gex_0dte_total"])
 
 
 def asof_join_gex(bars: pd.DataFrame, gex: pd.DataFrame) -> pd.DataFrame:
@@ -380,15 +425,19 @@ def main() -> None:
     joined = compute_target(joined, horizon_bars)
 
     all_features = FEATURE_COLS_BASELINE + FEATURE_COLS_GEX
-    # Include flow cols in parquet (with NaN for pre-migration rows) but
+    # Include flow + 0DTE cols in parquet (with NaN for pre-migration rows) but
     # exclude them from the dropna guard — they'll be NaN until data accumulates.
-    keep_cols = META_COLS + [TARGET_COL] + all_features + FEATURE_COLS_FLOW
+    keep_cols = META_COLS + [TARGET_COL] + all_features + FEATURE_COLS_FLOW + FEATURE_COLS_0DTE
     final = joined[keep_cols].copy()
 
     before = len(final)
     final = final.dropna(subset=all_features + [TARGET_COL]).reset_index(drop=True)
     logging.info("After dropping NaNs (rolling warmup + session-end targets): %d rows (%d dropped)",
                  len(final), before - len(final))
+    n_with_0dte = final[FEATURE_COLS_0DTE].notna().all(axis=1).sum()
+    logging.info("Rows with all 0DTE features populated: %d / %d (%.1f%%)",
+                 n_with_0dte, len(final),
+                 100.0 * n_with_0dte / max(len(final), 1))
 
     assert (final["computed_at"] <= final["date"]).all(), "LEAK: GEX after bar.date"
     assert (final["target_time"] > final["date"]).all(), "LEAK: target before bar.date"

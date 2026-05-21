@@ -125,8 +125,9 @@ def seed_gex(conn_str, label):
             for level in gex_result['levels']:
                 cursor.execute("""
                     INSERT INTO gamma_levels
-                        (gamma_exposure_id, strike_etf, strike_futures, gex, gex_call, gex_put, label)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        (gamma_exposure_id, strike_etf, strike_futures, gex, gex_call, gex_put,
+                         gex_0dte, gex_1dte, gex_weekly, gex_monthly, label)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     exposure_id,
                     level['strike_etf'],
@@ -134,6 +135,10 @@ def seed_gex(conn_str, label):
                     level['gex'],
                     level.get('gex_call'),
                     level.get('gex_put'),
+                    level.get('gex_0dte'),
+                    level.get('gex_1dte'),
+                    level.get('gex_weekly'),
+                    level.get('gex_monthly'),
                     level['label'],
                 ))
 

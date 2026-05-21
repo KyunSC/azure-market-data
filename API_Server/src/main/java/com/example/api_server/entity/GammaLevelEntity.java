@@ -28,6 +28,18 @@ public class GammaLevelEntity {
     @Column(name = "gex_put")
     private Double gexPut;
 
+    @Column(name = "gex_0dte")
+    private Double gex0dte;
+
+    @Column(name = "gex_1dte")
+    private Double gex1dte;
+
+    @Column(name = "gex_weekly")
+    private Double gexWeekly;
+
+    @Column(name = "gex_monthly")
+    private Double gexMonthly;
+
     private String label;
 
     public GammaLevelEntity() {
@@ -87,6 +99,38 @@ public class GammaLevelEntity {
 
     public void setGexPut(Double gexPut) {
         this.gexPut = gexPut;
+    }
+
+    public Double getGex0dte() {
+        return gex0dte;
+    }
+
+    public void setGex0dte(Double gex0dte) {
+        this.gex0dte = gex0dte;
+    }
+
+    public Double getGex1dte() {
+        return gex1dte;
+    }
+
+    public void setGex1dte(Double gex1dte) {
+        this.gex1dte = gex1dte;
+    }
+
+    public Double getGexWeekly() {
+        return gexWeekly;
+    }
+
+    public void setGexWeekly(Double gexWeekly) {
+        this.gexWeekly = gexWeekly;
+    }
+
+    public Double getGexMonthly() {
+        return gexMonthly;
+    }
+
+    public void setGexMonthly(Double gexMonthly) {
+        this.gexMonthly = gexMonthly;
     }
 
     public String getLabel() {

@@ -41,8 +41,9 @@ def insert_gex_data(cursor, etf_symbol, gex_result):
     for level in gex_result['levels']:
         cursor.execute("""
             INSERT INTO gamma_levels
-                (gamma_exposure_id, strike_etf, strike_futures, gex, gex_call, gex_put, label)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                (gamma_exposure_id, strike_etf, strike_futures, gex, gex_call, gex_put,
+                 gex_0dte, gex_1dte, gex_weekly, gex_monthly, label)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             exposure_id,
             level['strike_etf'],
@@ -50,6 +51,10 @@ def insert_gex_data(cursor, etf_symbol, gex_result):
             level['gex'],
             level.get('gex_call'),
             level.get('gex_put'),
+            level.get('gex_0dte'),
+            level.get('gex_1dte'),
+            level.get('gex_weekly'),
+            level.get('gex_monthly'),
             level['label'],
         ))
 
@@ -85,7 +90,8 @@ def fallback_gex_from_previous(cursor, etf_symbol):
     prev_id, etf_price, futures_price, conversion_ratio, expirations_used = row
 
     cursor.execute("""
-        SELECT strike_etf, strike_futures, gex, gex_call, gex_put, label
+        SELECT strike_etf, strike_futures, gex, gex_call, gex_put,
+               gex_0dte, gex_1dte, gex_weekly, gex_monthly, label
         FROM gamma_levels
         WHERE gamma_exposure_id = %s
           AND strike_etf IS NOT NULL
@@ -111,12 +117,15 @@ def fallback_gex_from_previous(cursor, etf_symbol):
     ))
     new_id = cursor.fetchone()[0]
 
-    for strike_etf, strike_futures, gex, gex_call, gex_put, label in levels:
+    for (strike_etf, strike_futures, gex, gex_call, gex_put,
+         gex_0dte, gex_1dte, gex_weekly, gex_monthly, label) in levels:
         cursor.execute("""
             INSERT INTO gamma_levels
-                (gamma_exposure_id, strike_etf, strike_futures, gex, gex_call, gex_put, label)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (new_id, strike_etf, strike_futures, gex, gex_call, gex_put, label))
+                (gamma_exposure_id, strike_etf, strike_futures, gex, gex_call, gex_put,
+                 gex_0dte, gex_1dte, gex_weekly, gex_monthly, label)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (new_id, strike_etf, strike_futures, gex, gex_call, gex_put,
+              gex_0dte, gex_1dte, gex_weekly, gex_monthly, label))
 
     return new_id
 

@@ -74,7 +74,10 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
 
     conversion_ratio = futures_price / etf_price
 
-    # Aggregate GEX + option-flow metrics across expirations
+    # Aggregate GEX + option-flow metrics across expirations.
+    # Per-strike buckets break GEX out by days-to-expiry so the ML pipeline can
+    # weight 0DTE (which is ~50% of daily options volume) separately from
+    # weekly/monthly contributions.
     gex_by_strike = {}
     iv_by_strike_call = {}   # strike -> [iv, ...] across expirations
     iv_by_strike_put  = {}
@@ -83,9 +86,25 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
     total_call_oi     = 0.0
     total_put_oi      = 0.0
 
+    def _new_strike_record():
+        return {'gex_call': 0.0, 'gex_put': 0.0,
+                'gex_0dte': 0.0, 'gex_1dte': 0.0,
+                'gex_weekly': 0.0, 'gex_monthly': 0.0}
+
+    def _dte_key(days_out: int) -> str:
+        if days_out <= 0:
+            return 'gex_0dte'
+        if days_out == 1:
+            return 'gex_1dte'
+        if days_out <= 7:
+            return 'gex_weekly'
+        return 'gex_monthly'
+
     for exp_str in valid_expirations:
         exp_date = datetime.strptime(exp_str, '%Y-%m-%d').date()
-        T = max((exp_date - today).days / 365.0, MIN_T_YEARS)
+        days_out = (exp_date - today).days
+        T = max(days_out / 365.0, MIN_T_YEARS)
+        dte_bucket = _dte_key(days_out)
 
         try:
             chain = fetch_option_chain(etf_symbol, exp_str)
@@ -119,9 +138,9 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
             gamma = black_scholes_gamma(etf_price, strike, T, RISK_FREE_RATE, iv)
             gex_call = gamma * oi * 100 * etf_price
 
-            if strike not in gex_by_strike:
-                gex_by_strike[strike] = {'gex_call': 0, 'gex_put': 0}
-            gex_by_strike[strike]['gex_call'] += gex_call
+            rec = gex_by_strike.setdefault(strike, _new_strike_record())
+            rec['gex_call'] += gex_call
+            rec[dte_bucket] += gex_call
 
         # Process puts (negative gamma effect on dealers)
         for _, row in puts.iterrows():
@@ -140,9 +159,9 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
             gamma = black_scholes_gamma(etf_price, strike, T, RISK_FREE_RATE, iv)
             gex_put = gamma * oi * 100 * etf_price * (-1)
 
-            if strike not in gex_by_strike:
-                gex_by_strike[strike] = {'gex_call': 0, 'gex_put': 0}
-            gex_by_strike[strike]['gex_put'] += gex_put
+            rec = gex_by_strike.setdefault(strike, _new_strike_record())
+            rec['gex_put'] += gex_put
+            rec[dte_bucket] += gex_put
 
     if not gex_by_strike:
         raise ValueError("No valid option data found")
@@ -187,6 +206,10 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
             'gex': round(total_gex, 2),
             'gex_call': round(gex_vals['gex_call'], 2),
             'gex_put': round(gex_vals['gex_put'], 2),
+            'gex_0dte':    round(gex_vals['gex_0dte'], 2),
+            'gex_1dte':    round(gex_vals['gex_1dte'], 2),
+            'gex_weekly':  round(gex_vals['gex_weekly'], 2),
+            'gex_monthly': round(gex_vals['gex_monthly'], 2),
         })
 
     # Identify key levels
@@ -245,6 +268,10 @@ def _identify_key_levels(strikes_data):
                 'gex': 0,
                 'gex_call': 0,
                 'gex_put': 0,
+                'gex_0dte': 0,
+                'gex_1dte': 0,
+                'gex_weekly': 0,
+                'gex_monthly': 0,
                 'label': 'zero_gamma',
             })
             break
