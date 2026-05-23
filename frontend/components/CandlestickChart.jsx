@@ -779,8 +779,45 @@ export default function CandlestickChart({
     const isLineType = ['line', 'square-line', 'line-shaded', 'line-gradient', 'square-line-shaded', 'square-line-gradient'].includes(chartType)
     const isTrend = chartType === 'candlestick-trend'
 
+    // Trend-logic states are computed up-front so the candle setData below can
+    // override per-bar colors before the chart paints. The EMA lines and the
+    // last-bar EMA snapshot used by the live-tick path are produced as a side
+    // effect of the same indicator computation in the loop below.
+    const trendIndicator = activeIndicators.includes('trend-logic')
+      ? AVAILABLE_INDICATORS.find(i => i.id === 'trend-logic')
+      : null
+    const trendResult = trendIndicator ? computeIndicator(trendIndicator, parsedData) : null
+    const trendStates = trendResult?.states || null
+    if (trendResult) {
+      const fastArr = trendResult.fast.data
+      const slowArr = trendResult.slow.data
+      const lastFast = fastArr.length ? fastArr[fastArr.length - 1].value : null
+      const lastSlow = slowArr.length ? slowArr[slowArr.length - 1].value : null
+      trendLatestRef.current = (lastFast != null && lastSlow != null)
+        ? { fast: lastFast, slow: lastSlow }
+        : null
+    } else {
+      trendLatestRef.current = null
+    }
+
+    const colorForState = (state) => {
+      if (state === 'bullish') return TREND_COLORS.bullish
+      if (state === 'bearish') return TREND_COLORS.bearish
+      if (state === 'neutral') return TREND_COLORS.neutral
+      return null
+    }
+
     if (isLineType) {
       mainSeries.setData(parsedData.map(d => ({ time: d.time, value: d.close })))
+    } else if (trendStates) {
+      // Trend-logic coloring takes precedence over candlestick-trend's
+      // close-vs-prev coloring when both would apply.
+      const colored = parsedData.map((d, i) => {
+        const c = colorForState(trendStates[i])
+        if (!c) return d
+        return { ...d, color: c, borderColor: c, wickColor: c }
+      })
+      mainSeries.setData(colored)
     } else if (isTrend) {
       const trendData = parsedData.map((d, i) => {
         const prev = i > 0 ? parsedData[i - 1].close : d.open
@@ -807,7 +844,7 @@ export default function CandlestickChart({
     for (const indId of activeIndicators) {
       const indicator = AVAILABLE_INDICATORS.find(i => i.id === indId)
       if (!indicator) continue
-      const result = computeIndicator(indicator, parsedData)
+      const result = indId === 'trend-logic' ? trendResult : computeIndicator(indicator, parsedData)
       if (!result) continue
 
       if (result.type === 'volume') {
@@ -844,6 +881,18 @@ export default function CandlestickChart({
           })
           series.setData(band.data)
           indicatorSeriesRef.current.push({ series, data: band.data })
+        }
+      } else if (result.type === 'trend-logic') {
+        for (const line of [result.fast, result.slow]) {
+          const series = chart.addSeries(LineSeries, {
+            color: line.color,
+            lineWidth: 1.5,
+            crosshairMarkerVisible: false,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          })
+          series.setData(line.data)
+          indicatorSeriesRef.current.push({ series, data: line.data })
         }
       }
     }
