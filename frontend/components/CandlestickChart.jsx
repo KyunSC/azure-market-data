@@ -978,7 +978,21 @@ export default function CandlestickChart({
           low: Math.min(last.low, livePrice),
           close: livePrice,
         }
-        if (chartType === 'candlestick-trend') {
+        const trendSnap = trendLatestRef.current
+        if (trendSnap) {
+          // Use the last bar's EMA snapshot — 1 tick of drift on a 200 EMA is
+          // negligible, and recomputing the full pass each tick is wasteful.
+          let state
+          if (trendSnap.fast > trendSnap.slow && livePrice > trendSnap.fast) state = 'bullish'
+          else if (trendSnap.fast < trendSnap.slow && livePrice < trendSnap.fast) state = 'bearish'
+          else state = 'neutral'
+          const c = state === 'bullish' ? TREND_COLORS.bullish
+            : state === 'bearish' ? TREND_COLORS.bearish
+            : TREND_COLORS.neutral
+          merged.color = c
+          merged.borderColor = c
+          merged.wickColor = c
+        } else if (chartType === 'candlestick-trend') {
           const prev = bars.length > 1 ? bars[bars.length - 2].close : last.open
           const isUp = livePrice >= prev
           merged.color = isUp ? upColor : downColor
