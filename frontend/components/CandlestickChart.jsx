@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries, BarSeries, AreaSeries } from 'lightweight-charts'
 import { DEFAULT_CHART_COLORS } from './chartDefaults'
-import { AVAILABLE_INDICATORS, computeIndicator } from './indicators'
+import { AVAILABLE_INDICATORS, computeIndicator, TREND_COLORS } from './indicators'
 
 const GEX_COLORS = {
   call_wall: '#00e676',

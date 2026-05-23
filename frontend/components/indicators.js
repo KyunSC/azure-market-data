@@ -11,7 +11,14 @@ export const AVAILABLE_INDICATORS = [
   { id: 'vpro', label: 'Volume Profile', type: 'vpro', color: '#5c6bc0' },
   { id: 'volume', label: 'Volume', type: 'volume', color: '#5c6bc0' },
   { id: 'gex', label: 'GEX Levels', type: 'gex', color: '#ffff00' },
+  { id: 'trend-logic', label: 'Trend Logic (21/200 EMA)', type: 'trend-logic', fastPeriod: 21, slowPeriod: 200, color: '#4fc3f7' },
 ]
+
+export const TREND_COLORS = {
+  bullish: '#4fc3f7',
+  bearish: '#ef5350',
+  neutral: '#9e9e9e',
+}
 
 export const INDICATORS_STORAGE_KEY = 'chart-active-indicators'
 
@@ -89,6 +96,42 @@ function calcVWAP(data) {
   return result
 }
 
+// Returns a state array aligned to `data` (same length). Each entry is one of
+// 'bullish' | 'bearish' | 'neutral' | null (null = before EMAs are warmed up).
+export function calcTrendLogic(data, fastPeriod = 21, slowPeriod = 200) {
+  const n = data?.length || 0
+  const states = new Array(n).fill(null)
+  if (n < slowPeriod) return states
+
+  const fastEma = calcEMA(data, fastPeriod)
+  const slowEma = calcEMA(data, slowPeriod)
+  // calcEMA aligns its first sample to index `period - 1`. The two series share
+  // the slow-period tail, so we walk by absolute bar index and look each up.
+  const fastByTime = new Map(fastEma.map(p => [p.time, p.value]))
+  const slowByTime = new Map(slowEma.map(p => [p.time, p.value]))
+  for (let i = slowPeriod - 1; i < n; i++) {
+    const t = data[i].time
+    const f = fastByTime.get(t)
+    const s = slowByTime.get(t)
+    if (f == null || s == null) continue
+    const close = data[i].close
+    if (f > s && close > f) states[i] = 'bullish'
+    else if (f < s && close < f) states[i] = 'bearish'
+    else states[i] = 'neutral'
+  }
+  return states
+}
+
+// Returns the trend state for the latest bar of `data`. Convenience wrapper
+// for callers (e.g. the multi-TF table) that only care about the current value.
+export function latestTrendState(data, fastPeriod = 21, slowPeriod = 200) {
+  const states = calcTrendLogic(data, fastPeriod, slowPeriod)
+  for (let i = states.length - 1; i >= 0; i--) {
+    if (states[i]) return states[i]
+  }
+  return null
+}
+
 export function computeIndicator(indicator, data) {
   if (!data || data.length === 0) return null
 
@@ -119,6 +162,19 @@ export function computeIndicator(indicator, data) {
         middle: { data: bands.middle, color: indicator.color },
         lower: { data: bands.lower, color: indicator.color },
       }
+    case 'trend-logic': {
+      const fast = indicator.fastPeriod || 21
+      const slow = indicator.slowPeriod || 200
+      if (data.length < slow) return null
+      const fastLine = calcEMA(data, fast)
+      const slowLine = calcEMA(data, slow)
+      return {
+        type: 'trend-logic',
+        states: calcTrendLogic(data, fast, slow),
+        fast: { data: fastLine, color: '#26c6da' },
+        slow: { data: slowLine, color: '#ab47bc' },
+      }
+    }
     default:
       return null
   }
