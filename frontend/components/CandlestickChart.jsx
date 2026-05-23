@@ -439,6 +439,10 @@ export default function CandlestickChart({
   const renderFnRef = useRef(null)
   const isFirstDataRef = useRef(true)
   const gexPriceLinesRef = useRef([])
+  // Latest fast/slow EMA of the trend-logic indicator on the most recent bar.
+  // Lets the live-tick handler recolor the developing candle without rerunning
+  // the full EMA pass on every 3s tick.
+  const trendLatestRef = useRef(null)
 
   // Compute volume profile from current chart data
   useEffect(() => {
