@@ -33,6 +33,18 @@ public class GammaExposureEntity {
     @Column(name = "market_open")
     private Boolean marketOpen;
 
+    @Column(name = "pcr_volume")
+    private Double pcrVolume;
+
+    @Column(name = "pcr_oi")
+    private Double pcrOi;
+
+    @Column(name = "iv_atm")
+    private Double ivAtm;
+
+    @Column(name = "iv_skew")
+    private Double ivSkew;
+
     @OneToMany(mappedBy = "gammaExposure", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<GammaLevelEntity> levels;
 
@@ -101,6 +113,38 @@ public class GammaExposureEntity {
 
     public void setMarketOpen(Boolean marketOpen) {
         this.marketOpen = marketOpen;
+    }
+
+    public Double getPcrVolume() {
+        return pcrVolume;
+    }
+
+    public void setPcrVolume(Double pcrVolume) {
+        this.pcrVolume = pcrVolume;
+    }
+
+    public Double getPcrOi() {
+        return pcrOi;
+    }
+
+    public void setPcrOi(Double pcrOi) {
+        this.pcrOi = pcrOi;
+    }
+
+    public Double getIvAtm() {
+        return ivAtm;
+    }
+
+    public void setIvAtm(Double ivAtm) {
+        this.ivAtm = ivAtm;
+    }
+
+    public Double getIvSkew() {
+        return ivSkew;
+    }
+
+    public void setIvSkew(Double ivSkew) {
+        this.ivSkew = ivSkew;
     }
 
     public List<GammaLevelEntity> getLevels() {

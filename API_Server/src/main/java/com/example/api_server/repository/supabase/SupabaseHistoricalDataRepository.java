@@ -2,9 +2,11 @@ package com.example.api_server.repository.supabase;
 
 import com.example.api_server.entity.HistoricalDataEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -46,4 +48,36 @@ public interface SupabaseHistoricalDataRepository extends JpaRepository<Historic
             String symbol, LocalDate date, String intervalType);
 
     void deleteBySymbolAndIntervalType(String symbol, String intervalType);
+
+    /**
+     * Upsert a single OHLC bar keyed by (symbol, date, interval_type). Matches
+     * the ON CONFLICT semantics in the Python ingestion code so re-ingesting
+     * the developing last bar overwrites it in place. Called in a loop by the
+     * Spring Boot ingestion scheduler — Postgres handles the per-row INSERT
+     * pretty cheaply via the existing unique index.
+     */
+    @Modifying
+    @Transactional("supabaseTransactionManager")
+    @Query(value = """
+            INSERT INTO historical_data
+                (symbol, date, interval_type, open, high, low, close_price, volume, fetched_at)
+            VALUES (:symbol, :date, :intervalType, :open, :high, :low, :close, :volume, :fetchedAt)
+            ON CONFLICT (symbol, date, interval_type)
+            DO UPDATE SET
+                open = EXCLUDED.open,
+                high = EXCLUDED.high,
+                low = EXCLUDED.low,
+                close_price = EXCLUDED.close_price,
+                volume = EXCLUDED.volume,
+                fetched_at = EXCLUDED.fetched_at
+            """, nativeQuery = true)
+    void upsertBar(@Param("symbol") String symbol,
+                   @Param("date") LocalDateTime date,
+                   @Param("intervalType") String intervalType,
+                   @Param("open") Double open,
+                   @Param("high") Double high,
+                   @Param("low") Double low,
+                   @Param("close") Double close,
+                   @Param("volume") Long volume,
+                   @Param("fetchedAt") LocalDateTime fetchedAt);
 }
