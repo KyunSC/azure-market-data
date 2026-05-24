@@ -754,9 +754,14 @@ export default function CandlestickChart({
     }
 
     window.addEventListener('resize', handleResize)
+    // Track container size too — toggling siblings like the Trend Logic table
+    // changes the chart's available width without firing a window resize event.
+    const containerResizeObs = new ResizeObserver(handleResize)
+    containerResizeObs.observe(chartContainerRef.current)
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      containerResizeObs.disconnect()
       const range = chart.timeScale().getVisibleRange()
       savedRangeRef.current = range
       try {

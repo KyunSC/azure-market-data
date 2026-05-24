@@ -11,11 +11,11 @@ export const AVAILABLE_INDICATORS = [
   { id: 'vpro', label: 'Volume Profile', type: 'vpro', color: '#5c6bc0' },
   { id: 'volume', label: 'Volume', type: 'volume', color: '#5c6bc0' },
   { id: 'gex', label: 'GEX Levels', type: 'gex', color: '#ffff00' },
-  { id: 'trend-logic', label: 'Trend Logic (21/200 EMA)', type: 'trend-logic', fastPeriod: 21, slowPeriod: 200, color: '#4fc3f7' },
+  { id: 'trend-logic', label: 'Trend Logic (21/200 EMA)', type: 'trend-logic', fastPeriod: 21, slowPeriod: 200, color: '#4caf50' },
 ]
 
 export const TREND_COLORS = {
-  bullish: '#4fc3f7',
+  bullish: '#4caf50',
   bearish: '#ef5350',
   neutral: '#9e9e9e',
 }

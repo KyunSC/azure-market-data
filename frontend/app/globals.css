@@ -174,6 +174,71 @@ body {
   display: none !important;
 }
 
+/* Chart + Trend Logic table side-by-side. The chart already takes flex: 1 via
+ * inheriting full width; the table sits to the right with a fixed column. */
+.chart-with-trend {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.chart-with-trend .chart-container {
+  flex: 1;
+  min-width: 0;
+}
+
+.trend-logic-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #252526;
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 1rem 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.trend-logic-table th {
+  background: #2a2a4e;
+  color: #cfd8dc;
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  padding: 0.5rem 1rem;
+  text-align: center;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.trend-logic-table td {
+  padding: 0.5rem 1rem;
+  text-align: center;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.trend-logic-table tr:last-child td {
+  border-bottom: none;
+}
+
+.trend-logic-table .trend-tf {
+  background: #2a2a4e;
+  color: #eceff1;
+  font-weight: 600;
+  min-width: 48px;
+}
+
+.trend-logic-table .trend-state {
+  min-width: 90px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.trend-logic-table .trend-state.muted {
+  background: #d4d4d4;
+  color: #5a5a5a;
+}
+
 /* Timeframe Selector */
 .timeframe-selector {
   display: flex;
@@ -630,6 +695,75 @@ body {
 
 .indicator-clear:hover {
   background: rgba(255, 107, 107, 0.1);
+}
+
+/* Drawings Inspector */
+.drawings-inspector {
+  min-width: 280px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.drawings-inspector-empty {
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  color: #888;
+  text-align: center;
+}
+
+.drawings-inspector-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.82rem;
+  color: #ccc;
+  transition: background 0.15s;
+}
+
+.drawings-inspector-row:hover {
+  background: #37373d;
+}
+
+.drawings-inspector-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.drawings-inspector-label {
+  flex-shrink: 0;
+  color: #eee;
+  min-width: 90px;
+}
+
+.drawings-inspector-summary {
+  flex: 1;
+  color: #aaa;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawings-inspector-delete {
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.15s;
+}
+
+.drawings-inspector-delete:hover {
+  background: rgba(255, 107, 107, 0.15);
+  color: #ff6b6b;
 }
 
 /* Drawing Tool Icons */

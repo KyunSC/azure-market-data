@@ -8,6 +8,8 @@ import SettingsPopup from '../../../components/SettingsPopup'
 import IndicatorSelector from '../../../components/IndicatorSelector'
 import DrawingSelector from '../../../components/DrawingSelector'
 import ChartTypeSelector from '../../../components/ChartTypeSelector'
+import TrendLogicTable from '../../../components/TrendLogicTable'
+import DrawingsInspector from '../../../components/DrawingsInspector'
 import { DEFAULT_CHART_COLORS, CHART_COLORS_STORAGE_KEY, DEFAULT_TIMEZONE, TIMEZONE_STORAGE_KEY } from '../../../components/chartDefaults'
 import { INDICATORS_STORAGE_KEY } from '../../../components/indicators'
 
@@ -442,6 +444,11 @@ export default function TickerDetail({ params }) {
             onClearAll={() => setDrawings([])}
             drawingCount={drawings.length}
           />
+          <DrawingsInspector
+            drawings={drawings}
+            onDelete={(idx) => setDrawings(prev => prev.filter((_, i) => i !== idx))}
+            onClearAll={() => setDrawings([])}
+          />
           <ChartTypeSelector chartType={chartType} onSelect={setChartType} />
           <button className="settings-button" onClick={() => setSettingsOpen(prev => !prev)}>
             ⚙
@@ -494,7 +501,12 @@ export default function TickerDetail({ params }) {
           </p>
         )}
         {!loading && !warmingUp && !error && ohlcData.length > 0 && (
-          <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} borderUpColor={borderUpColor} borderDownColor={borderDownColor} activeIndicators={activeIndicators} gexLevels={gexLevels} gexUseEtfStrike={!!gexSource?.useEtfStrike} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} timezone={timezone} livePrice={livePrice} />
+          <div className="chart-with-trend">
+            <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} borderUpColor={borderUpColor} borderDownColor={borderDownColor} activeIndicators={activeIndicators} gexLevels={gexLevels} gexUseEtfStrike={!!gexSource?.useEtfStrike} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} timezone={timezone} livePrice={livePrice} />
+            {activeIndicators.includes('trend-logic') && (
+              <TrendLogicTable symbol={symbol} />
+            )}
+          </div>
         )}
         {!loading && !warmingUp && !error && ohlcData.length === 0 && (
           <p className="status">No data available for this timeframe</p>
