@@ -58,6 +58,7 @@ functions/                         # Azure Functions (Python)
   ScheduledDataIngestion/          # Timer (weekdays every 5m): data collection
   ScheduledDataIngestionGlobex/    # Timer (Sunday evenings every 5m): Globex session ingestion
   ScheduledGammaExposure/          # Timer (weekdays every 5m): GEX computation
+  ScheduledGammaExposurePremarket/ # Timer (weekdays ~9:25 ET): one pre-open GEX run
   GEXCalculator/gex_calculator.py  # Black-Scholes gamma exposure calculator
   shared/
     sanitize.py                    # yfinance OHLC price sanitization (phantom tick removal)
@@ -110,4 +111,5 @@ functions/                         # Azure Functions (Python)
   - Both have a 24h max-age and seed state synchronously on mount, marking the next fetch as a background refresh (no warming-up UI)
 - Circuit breaker falls back to empty data on backend failures
 - `ScheduledDataIngestionGlobex` re-uses `ScheduledDataIngestion.main` to cover Sunday Globex hours (0 */5 22,23 * * 0 UTC)
+- `ScheduledGammaExposurePremarket` calls `ScheduledGammaExposure.run_gex(premarket=True)` to compute one GEX snapshot at ~9:25 ET. Cron `0 25 13,14 * * 1-5` fires at both EDT and EST candidate ticks; `is_premarket_window()` (9:00–9:30 ET) gates so only the DST-correct firing actually runs. QQQ spot is stale (pre-open), but NQ trades overnight so strike labels are usable at the opening bell.
 - Render free-tier instance is kept warm via an UptimeRobot HTTP monitor on `/health` (avoids 30–60s cold boots between viewer sessions)

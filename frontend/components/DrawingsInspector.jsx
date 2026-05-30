@@ -1,6 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import {
+  EDITABLE_FIELDS_BY_TYPE,
+  indicatorDisplayLabel,
+  resolveIndicator,
+} from './indicators'
 
 const TYPE_META = {
   trendline:        { label: 'Trend Line',     icon: '/'   },
@@ -31,8 +36,17 @@ function summarize(d) {
   }
 }
 
-export default function DrawingsInspector({ drawings, onDelete, onClearAll }) {
+export default function DrawingsInspector({
+  drawings,
+  onDelete,
+  onClearAll,
+  activeIndicators = [],
+  onToggleIndicator,
+  indicatorOverrides = {},
+  onUpdateIndicator,
+}) {
   const [open, setOpen] = useState(false)
+  const [editingId, setEditingId] = useState(null)
   const dropdownRef = useRef(null)
 
   useEffect(() => {
@@ -45,45 +59,124 @@ export default function DrawingsInspector({ drawings, onDelete, onClearAll }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open])
 
-  const count = drawings.length
+  const indicatorMetas = activeIndicators
+    .map(id => resolveIndicator(id, indicatorOverrides))
+    .filter(Boolean)
+  const drawingCount = drawings.length
+  const indicatorCount = indicatorMetas.length
+  const totalCount = drawingCount + indicatorCount
 
   return (
     <div className="indicator-selector" ref={dropdownRef}>
       <button
-        className={`indicator-button${count > 0 ? ' has-active' : ''}`}
+        className={`indicator-button${totalCount > 0 ? ' has-active' : ''}`}
         onClick={() => setOpen(prev => !prev)}
-        title="Inspect Drawings"
+        title="Object Viewer"
       >
-        Drawings{count > 0 && ` (${count})`}
+        Object Viewer{totalCount > 0 && ` (${totalCount})`}
       </button>
       {open && (
         <div className="indicator-dropdown drawings-inspector">
-          {count === 0 ? (
-            <div className="drawings-inspector-empty">No drawings on chart</div>
+          {totalCount === 0 ? (
+            <div className="drawings-inspector-empty">No drawings or indicators on chart</div>
           ) : (
-            drawings.map((d, idx) => {
-              const meta = TYPE_META[d.type] || { label: d.type, icon: '?' }
-              return (
-                <div key={idx} className="drawings-inspector-row">
-                  <span className="drawing-icon">{meta.icon}</span>
-                  <span
-                    className="drawings-inspector-swatch"
-                    style={{ background: d.color || '#4A90A4' }}
-                  />
-                  <span className="drawings-inspector-label">{meta.label}</span>
-                  <span className="drawings-inspector-summary">{summarize(d)}</span>
-                  <button
-                    className="drawings-inspector-delete"
-                    onClick={() => onDelete(idx)}
-                    title="Delete"
-                  >
-                    ×
-                  </button>
-                </div>
-              )
-            })
+            <>
+              {indicatorCount > 0 && (
+                <>
+                  <div className="drawings-inspector-section">Indicators</div>
+                  {indicatorMetas.map(ind => {
+                    const fields = EDITABLE_FIELDS_BY_TYPE[ind.type] || []
+                    const isEditing = editingId === ind.id
+                    const isEditable = onUpdateIndicator != null
+                    return (
+                      <div key={ind.id}>
+                        <div
+                          className={`drawings-inspector-row${isEditable ? ' is-clickable' : ''}${isEditing ? ' is-editing' : ''}`}
+                          onClick={isEditable ? () => setEditingId(prev => prev === ind.id ? null : ind.id) : undefined}
+                        >
+                          <span className="drawing-icon">ƒ</span>
+                          <span
+                            className="drawings-inspector-swatch"
+                            style={{ background: ind.color || '#4A90A4' }}
+                          />
+                          <span className="drawings-inspector-label">{indicatorDisplayLabel(ind)}</span>
+                          <span className="drawings-inspector-summary" />
+                          {onToggleIndicator && (
+                            <button
+                              className="drawings-inspector-delete"
+                              onClick={(e) => { e.stopPropagation(); onToggleIndicator(ind.id) }}
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                        {isEditing && isEditable && (
+                          <div className="indicator-editor">
+                            <label className="indicator-editor-field">
+                              <span>Color</span>
+                              <input
+                                type="color"
+                                value={ind.color || '#4A90A4'}
+                                onChange={(e) => onUpdateIndicator(ind.id, { color: e.target.value })}
+                              />
+                            </label>
+                            {fields.map(f => (
+                              <label key={f.key} className="indicator-editor-field">
+                                <span>{f.label}</span>
+                                <input
+                                  type="number"
+                                  min={f.min}
+                                  max={f.max}
+                                  step={f.step || 1}
+                                  value={ind[f.key]}
+                                  onChange={(e) => {
+                                    const raw = e.target.value
+                                    if (raw === '') return
+                                    const num = f.step && f.step < 1 ? parseFloat(raw) : parseInt(raw, 10)
+                                    if (!Number.isFinite(num) || num <= 0) return
+                                    onUpdateIndicator(ind.id, { [f.key]: num })
+                                  }}
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+              {drawingCount > 0 && (
+                <>
+                  {indicatorCount > 0 && <div className="indicator-divider" />}
+                  <div className="drawings-inspector-section">Drawings</div>
+                  {drawings.map((d, idx) => {
+                    const meta = TYPE_META[d.type] || { label: d.type, icon: '?' }
+                    return (
+                      <div key={idx} className="drawings-inspector-row">
+                        <span className="drawing-icon">{meta.icon}</span>
+                        <span
+                          className="drawings-inspector-swatch"
+                          style={{ background: d.color || '#4A90A4' }}
+                        />
+                        <span className="drawings-inspector-label">{meta.label}</span>
+                        <span className="drawings-inspector-summary">{summarize(d)}</span>
+                        <button
+                          className="drawings-inspector-delete"
+                          onClick={() => onDelete(idx)}
+                          title="Delete"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+            </>
           )}
-          {count > 0 && (
+          {drawingCount > 0 && (
             <>
               <div className="indicator-divider" />
               <button

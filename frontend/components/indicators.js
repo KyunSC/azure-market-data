@@ -11,7 +11,7 @@ export const AVAILABLE_INDICATORS = [
   { id: 'vpro', label: 'Volume Profile', type: 'vpro', color: '#5c6bc0' },
   { id: 'volume', label: 'Volume', type: 'volume', color: '#5c6bc0' },
   { id: 'gex', label: 'GEX Levels', type: 'gex', color: '#ffff00' },
-  { id: 'trend-logic', label: 'Trend Logic (21/200 EMA)', type: 'trend-logic', fastPeriod: 21, slowPeriod: 200, color: '#4caf50' },
+  { id: 'trend-logic', label: 'EMA Trend Friend Pro', type: 'trend-logic', fastPeriod: 21, slowPeriod: 200, color: '#4caf50' },
 ]
 
 export const TREND_COLORS = {
@@ -21,6 +21,39 @@ export const TREND_COLORS = {
 }
 
 export const INDICATORS_STORAGE_KEY = 'chart-active-indicators'
+export const INDICATOR_OVERRIDES_STORAGE_KEY = 'chart-indicator-overrides'
+
+// Per-type editable numeric fields. Color is editable on every indicator and
+// handled separately by the UI.
+export const EDITABLE_FIELDS_BY_TYPE = {
+  sma:            [{ key: 'period',     label: 'Period', min: 1, max: 1000 }],
+  ema:            [{ key: 'period',     label: 'Period', min: 1, max: 1000 }],
+  bb:             [
+    { key: 'period', label: 'Period', min: 1,   max: 1000 },
+    { key: 'stdDev', label: 'StdDev', min: 0.1, max: 10, step: 0.1 },
+  ],
+  'trend-logic':  [
+    { key: 'fastPeriod', label: 'Fast', min: 1, max: 1000 },
+    { key: 'slowPeriod', label: 'Slow', min: 1, max: 1000 },
+  ],
+}
+
+export function resolveIndicator(id, overrides) {
+  const base = AVAILABLE_INDICATORS.find(i => i.id === id)
+  if (!base) return null
+  const patch = overrides?.[id]
+  return patch ? { ...base, ...patch } : base
+}
+
+export function indicatorDisplayLabel(ind) {
+  if (!ind) return ''
+  switch (ind.type) {
+    case 'sma':          return `SMA ${ind.period}`
+    case 'ema':          return `EMA ${ind.period}`
+    case 'trend-logic':  return 'EMA Trend Friend Pro'
+    default:             return ind.label
+  }
+}
 
 function calcSMA(data, period) {
   const result = []

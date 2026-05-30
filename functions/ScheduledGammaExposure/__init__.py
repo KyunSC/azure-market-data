@@ -8,7 +8,12 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 import pytz
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from GEXCalculator.gex_calculator import fetch_prices_and_compute_gex, GEX_PAIRS, is_market_open
+from GEXCalculator.gex_calculator import (
+    fetch_prices_and_compute_gex,
+    GEX_PAIRS,
+    is_market_open,
+    is_premarket_window,
+)
 
 
 def get_db_connection():
@@ -130,19 +135,24 @@ def fallback_gex_from_previous(cursor, etf_symbol):
     return new_id
 
 
-def main(mytimer: func.TimerRequest) -> None:
-    utc_timestamp = datetime.utcnow()
+def run_gex(premarket: bool = False) -> None:
+    """Compute and persist GEX for all pairs.
 
-    if mytimer.past_due:
-        logging.warning('ScheduledGammaExposure timer trigger is past due!')
-
-    logging.info(f'ScheduledGammaExposure started at {utc_timestamp}')
-
-    # QQQ/SPY option chains don't change while CBOE is closed; skipping closed
-    # sessions avoids ~70% of upstream calls and credit burn.
-    if not is_market_open():
-        logging.info('Equity market closed — skipping GEX computation.')
-        return
+    premarket=False: gated by is_market_open() (regular 5-min intraday cadence).
+    premarket=True:  gated by is_premarket_window() so the 9:25 ET pre-open run
+    only fires on the DST-correct UTC tick. QQQ price will be a stale close but
+    NQ trades overnight, so strike labels are usable at the opening bell.
+    """
+    if premarket:
+        if not is_premarket_window():
+            logging.info('Outside 9:00-9:30 ET premarket window — skipping.')
+            return
+    else:
+        # QQQ/SPY option chains don't change while CBOE is closed; skipping closed
+        # sessions avoids ~70% of upstream calls and credit burn.
+        if not is_market_open():
+            logging.info('Equity market closed — skipping GEX computation.')
+            return
 
     conn = None
     try:
@@ -184,4 +194,11 @@ def main(mytimer: func.TimerRequest) -> None:
         if conn:
             conn.close()
 
-    logging.info(f'ScheduledGammaExposure completed at {datetime.utcnow()}')
+    logging.info(f'GEX run completed at {datetime.utcnow()} (premarket={premarket})')
+
+
+def main(mytimer: func.TimerRequest) -> None:
+    if mytimer.past_due:
+        logging.warning('ScheduledGammaExposure timer trigger is past due!')
+    logging.info(f'ScheduledGammaExposure started at {datetime.utcnow()}')
+    run_gex(premarket=False)

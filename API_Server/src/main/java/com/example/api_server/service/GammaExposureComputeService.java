@@ -222,7 +222,7 @@ public class GammaExposureComputeService {
             ));
         }
 
-        List<StrikeData> levels = identifyKeyLevels(allStrikes);
+        List<StrikeData> levels = identifyKeyLevels(allStrikes, etfPrice);
 
         return new GexResult(
                 etfSymbol,
@@ -257,7 +257,7 @@ public class GammaExposureComputeService {
         return "gex_monthly";
     }
 
-    private List<StrikeData> identifyKeyLevels(List<StrikeData> strikes) {
+    private List<StrikeData> identifyKeyLevels(List<StrikeData> strikes, double spot) {
         List<StrikeData> levels = new ArrayList<>();
         if (strikes.isEmpty()) return levels;
 
@@ -273,11 +273,15 @@ public class GammaExposureComputeService {
         }
         if (putWall != null) levels.add(putWall.withLabel("put_wall"));
 
-        // Gamma flip: where cumulative GEX crosses zero. Linear-interpolate the
-        // crossing point between the two strikes that straddle it.
+        // Gamma flip: where cumulative GEX crosses zero. Deep-OTM strikes carry
+        // tiny noisy GEX that can flip the cumulative sign well below the real
+        // dealer-positioning crossover, so scan all sign changes and keep the
+        // one whose interpolated strike sits closest to spot.
         double cumulative = 0;
         Double prevCumulative = null;
         StrikeData prevStrike = null;
+        StrikeData bestFlip = null;
+        double bestDist = Double.POSITIVE_INFINITY;
         for (StrikeData s : strikes) {
             cumulative += s.gex();
             if (prevCumulative != null && prevCumulative * cumulative < 0 && prevStrike != null) {
@@ -285,13 +289,17 @@ public class GammaExposureComputeService {
                 double flipEtf = prevStrike.strikeEtf() + weight * (s.strikeEtf() - prevStrike.strikeEtf());
                 double flipFutures = prevStrike.strikeFutures()
                         + weight * (s.strikeFutures() - prevStrike.strikeFutures());
-                levels.add(new StrikeData(round2(flipEtf), round2(flipFutures),
-                        0, 0, 0, 0, 0, 0, 0, "zero_gamma"));
-                break;
+                double dist = Math.abs(flipEtf - spot);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestFlip = new StrikeData(round2(flipEtf), round2(flipFutures),
+                            0, 0, 0, 0, 0, 0, 0, "zero_gamma");
+                }
             }
             prevCumulative = cumulative;
             prevStrike = s;
         }
+        if (bestFlip != null) levels.add(bestFlip);
 
         Double callWallStrike = callWall != null ? callWall.strikeEtf() : null;
         Double putWallStrike = putWall != null ? putWall.strikeEtf() : null;

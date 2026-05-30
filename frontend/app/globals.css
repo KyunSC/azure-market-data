@@ -198,6 +198,8 @@ body {
   font-size: 0.9rem;
   flex-shrink: 0;
   align-self: flex-start;
+  cursor: pointer;
+  user-select: none;
 }
 
 .trend-logic-table th {
@@ -237,6 +239,125 @@ body {
 .trend-logic-table .trend-state.muted {
   background: #d4d4d4;
   color: #5a5a5a;
+}
+
+.trend-logic-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.trend-logic-editor {
+  background: #252526;
+  color: #eceff1;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  min-width: 320px;
+  max-width: 90vw;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+.trend-logic-editor h3 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  color: #cfd8dc;
+}
+
+.trend-logic-editor .editor-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.trend-logic-editor label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  color: #b0bec5;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.trend-logic-editor input[type="number"] {
+  background: #1a1a1a;
+  color: #eceff1;
+  border: 1px solid #3a3a5a;
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.trend-logic-editor .tf-fieldset {
+  border: 1px solid #3a3a5a;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.trend-logic-editor .tf-fieldset legend {
+  padding: 0 0.4rem;
+  color: #b0bec5;
+  font-size: 0.8rem;
+}
+
+.trend-logic-editor .tf-toggles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem 0.75rem;
+}
+
+.trend-logic-editor .tf-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  color: #eceff1;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.trend-logic-editor .tf-toggle input {
+  accent-color: #4caf50;
+}
+
+.trend-logic-editor .editor-error {
+  margin: 0 0 0.75rem;
+  color: #ef5350;
+  font-size: 0.8rem;
+}
+
+.trend-logic-editor .editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.trend-logic-editor .editor-actions button {
+  background: #2a2a4e;
+  color: #eceff1;
+  border: 1px solid #3a3a5a;
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.trend-logic-editor .editor-actions button.primary {
+  background: #4caf50;
+  border-color: #4caf50;
+  color: #0d1b2a;
+  font-weight: 600;
+}
+
+.trend-logic-editor .editor-actions button:hover {
+  filter: brightness(1.15);
 }
 
 /* Timeframe Selector */
@@ -711,6 +832,15 @@ body {
   text-align: center;
 }
 
+.drawings-inspector-section {
+  padding: 0.4rem 0.75rem 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+}
+
 .drawings-inspector-row {
   display: flex;
   align-items: center;
@@ -723,6 +853,53 @@ body {
 
 .drawings-inspector-row:hover {
   background: #37373d;
+}
+
+.drawings-inspector-row.is-clickable {
+  cursor: pointer;
+}
+
+.drawings-inspector-row.is-editing {
+  background: #37373d;
+}
+
+.indicator-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 0.9rem;
+  padding: 0.5rem 0.75rem 0.65rem 1.95rem;
+  background: #2a2a30;
+  border-top: 1px solid #3a3a3f;
+  border-bottom: 1px solid #3a3a3f;
+}
+
+.indicator-editor-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: #bbb;
+}
+
+.indicator-editor-field input[type="number"] {
+  width: 60px;
+  background: #1e1e22;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.indicator-editor-field input[type="color"] {
+  width: 28px;
+  height: 22px;
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 0;
+  cursor: pointer;
 }
 
 .drawings-inspector-swatch {

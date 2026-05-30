@@ -38,6 +38,21 @@ def is_market_open():
     return market_open and market_close
 
 
+def is_premarket_window():
+    """True during the 9:00–9:30 ET weekday window.
+
+    Used to gate a single pre-open GEX run so opening-bell viewers see levels
+    before cash equities open. Bounded tightly so DST-mismatched cron firings
+    (the same UTC tick maps to two different ET hours across the year) only
+    trigger the run on the correct side of the spring/fall transition.
+    """
+    et_tz = pytz.timezone('US/Eastern')
+    now_et = datetime.now(et_tz)
+    if now_et.weekday() >= 5:
+        return False
+    return now_et.hour == 9 and now_et.minute < 30
+
+
 def fetch_option_chain(ticker_symbol, expiration):
     """Fetch option chain for a single expiration."""
     ticker = yf.Ticker(ticker_symbol)
@@ -213,7 +228,7 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
         })
 
     # Identify key levels
-    levels = _identify_key_levels(strikes_data)
+    levels = _identify_key_levels(strikes_data, etf_price)
 
     return {
         'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
@@ -232,7 +247,7 @@ def compute_gex(etf_price, futures_price, etf_symbol='QQQ', max_expirations=MAX_
     }
 
 
-def _identify_key_levels(strikes_data):
+def _identify_key_levels(strikes_data, spot):
     """Identify call wall, put wall, gamma flip, and significant levels."""
     levels = []
 
@@ -251,31 +266,40 @@ def _identify_key_levels(strikes_data):
         put_wall = min(negative_strikes, key=lambda s: s['gex'])
         levels.append({**put_wall, 'label': 'put_wall'})
 
-    # Gamma flip: where cumulative GEX crosses zero
+    # Gamma flip: where cumulative GEX crosses zero. Deep-OTM strikes carry
+    # tiny noisy GEX that can flip the cumulative sign well below the real
+    # dealer-positioning crossover, so scan all sign changes and keep the
+    # one whose interpolated strike sits closest to spot.
     cumulative = 0
     prev_cumulative = None
+    prev_strike = None
+    best_flip = None
+    best_dist = float('inf')
     for s in strikes_data:
         cumulative += s['gex']
-        if prev_cumulative is not None and prev_cumulative * cumulative < 0:
-            # Interpolate
-            prev_strike = strikes_data[strikes_data.index(s) - 1]
+        if prev_cumulative is not None and prev_cumulative * cumulative < 0 and prev_strike is not None:
             weight = abs(prev_cumulative) / (abs(prev_cumulative) + abs(cumulative))
             flip_etf = prev_strike['strike_etf'] + weight * (s['strike_etf'] - prev_strike['strike_etf'])
             flip_futures = prev_strike['strike_futures'] + weight * (s['strike_futures'] - prev_strike['strike_futures'])
-            levels.append({
-                'strike_etf': round(flip_etf, 2),
-                'strike_futures': round(flip_futures, 2),
-                'gex': 0,
-                'gex_call': 0,
-                'gex_put': 0,
-                'gex_0dte': 0,
-                'gex_1dte': 0,
-                'gex_weekly': 0,
-                'gex_monthly': 0,
-                'label': 'zero_gamma',
-            })
-            break
+            dist = abs(flip_etf - spot)
+            if dist < best_dist:
+                best_dist = dist
+                best_flip = {
+                    'strike_etf': round(flip_etf, 2),
+                    'strike_futures': round(flip_futures, 2),
+                    'gex': 0,
+                    'gex_call': 0,
+                    'gex_put': 0,
+                    'gex_0dte': 0,
+                    'gex_1dte': 0,
+                    'gex_weekly': 0,
+                    'gex_monthly': 0,
+                    'label': 'zero_gamma',
+                }
         prev_cumulative = cumulative
+        prev_strike = s
+    if best_flip is not None:
+        levels.append(best_flip)
 
     # Top 3 additional significant positive strikes (excluding call wall)
     call_wall_strike = levels[0]['strike_etf'] if levels and levels[0]['label'] == 'call_wall' else None

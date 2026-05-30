@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries, BarSeries, AreaSeries } from 'lightweight-charts'
 import { DEFAULT_CHART_COLORS } from './chartDefaults'
-import { AVAILABLE_INDICATORS, computeIndicator, TREND_COLORS } from './indicators'
+import { computeIndicator, TREND_COLORS, resolveIndicator } from './indicators'
 
 const GEX_COLORS = {
   call_wall: '#00e676',
@@ -364,6 +364,7 @@ export default function CandlestickChart({
   borderUpColor = DEFAULT_CHART_COLORS.borderUpColor,
   borderDownColor = DEFAULT_CHART_COLORS.borderDownColor,
   activeIndicators = [],
+  indicatorOverrides = {},
   gexLevels = null,
   gexUseEtfStrike = false,
   chartType = 'candlestick',
@@ -443,6 +444,11 @@ export default function CandlestickChart({
   // Lets the live-tick handler recolor the developing candle without rerunning
   // the full EMA pass on every 3s tick.
   const trendLatestRef = useRef(null)
+  const trendStatesRef = useRef(null)
+  const trendColorActiveRef = useRef(false)
+  const [trendColorActive, setTrendColorActive] = useState(false)
+  const drawingToolRef = useRef(drawingTool)
+  drawingToolRef.current = drawingTool
 
   // Compute volume profile from current chart data
   useEffect(() => {
@@ -744,6 +750,11 @@ export default function CandlestickChart({
       }
     })
 
+    chart.subscribeClick((param) => {
+      if (!param.time || !trendStatesRef.current || drawingToolRef.current) return
+      setTrendColorActive(prev => !prev)
+    })
+
     const handleResize = () => {
       if (chartContainerRef.current) {
         chart.applyOptions({
@@ -789,10 +800,11 @@ export default function CandlestickChart({
     // last-bar EMA snapshot used by the live-tick path are produced as a side
     // effect of the same indicator computation in the loop below.
     const trendIndicator = activeIndicators.includes('trend-logic')
-      ? AVAILABLE_INDICATORS.find(i => i.id === 'trend-logic')
+      ? resolveIndicator('trend-logic', indicatorOverrides)
       : null
     const trendResult = trendIndicator ? computeIndicator(trendIndicator, parsedData) : null
     const trendStates = trendResult?.states || null
+    trendStatesRef.current = trendStates
     if (trendResult) {
       const fastArr = trendResult.fast.data
       const slowArr = trendResult.slow.data
@@ -815,14 +827,17 @@ export default function CandlestickChart({
     if (isLineType) {
       mainSeries.setData(parsedData.map(d => ({ time: d.time, value: d.close })))
     } else if (trendStates) {
-      // Trend-logic coloring takes precedence over candlestick-trend's
-      // close-vs-prev coloring when both would apply.
-      const colored = parsedData.map((d, i) => {
-        const c = colorForState(trendStates[i])
-        if (!c) return d
-        return { ...d, color: c, borderColor: c, wickColor: c }
-      })
-      mainSeries.setData(colored)
+      // Only color bars if the user has clicked to activate trend coloring.
+      if (trendColorActiveRef.current) {
+        const colored = parsedData.map((d, i) => {
+          const c = colorForState(trendStates[i])
+          if (!c) return d
+          return { ...d, color: c, borderColor: c, wickColor: c }
+        })
+        mainSeries.setData(colored)
+      } else {
+        mainSeries.setData(parsedData)
+      }
     } else if (isTrend) {
       const trendData = parsedData.map((d, i) => {
         const prev = i > 0 ? parsedData[i - 1].close : d.open
@@ -847,7 +862,7 @@ export default function CandlestickChart({
     indicatorSeriesRef.current = []
 
     for (const indId of activeIndicators) {
-      const indicator = AVAILABLE_INDICATORS.find(i => i.id === indId)
+      const indicator = resolveIndicator(indId, indicatorOverrides)
       if (!indicator) continue
       const result = indId === 'trend-logic' ? trendResult : computeIndicator(indicator, parsedData)
       if (!result) continue
@@ -950,7 +965,7 @@ export default function CandlestickChart({
         chart.timeScale().fitContent()
       }
     }
-  }, [data, activeIndicators, gexLevels, gexUseEtfStrike, chartType, timezone, upColor, downColor, borderUpColor, borderDownColor])
+  }, [data, activeIndicators, indicatorOverrides, gexLevels, gexUseEtfStrike, chartType, timezone, upColor, downColor, borderUpColor, borderDownColor])
 
   // Merge the live tick into the developing bar via mainSeries.update().
   // Deliberately depends ONLY on livePrice so a tick doesn't re-run setData
@@ -984,7 +999,7 @@ export default function CandlestickChart({
           close: livePrice,
         }
         const trendSnap = trendLatestRef.current
-        if (trendSnap) {
+        if (trendSnap && trendColorActiveRef.current) {
           // Use the last bar's EMA snapshot — 1 tick of drift on a 200 EMA is
           // negligible, and recomputing the full pass each tick is wasteful.
           let state
@@ -1008,6 +1023,36 @@ export default function CandlestickChart({
       }
     } catch { /* series not ready / stale ref during chartType swap — skip */ }
   }, [livePrice, chartType, upColor, downColor, borderUpColor, borderDownColor])
+
+  // Apply or remove trend colors when the user clicks to toggle them.
+  useEffect(() => {
+    trendColorActiveRef.current = trendColorActive
+    const mainSeries = seriesRef.current
+    const parsedData = dataRef.current
+    const trendStates = trendStatesRef.current
+    if (!mainSeries || !parsedData?.length) return
+
+    if (trendColorActive && trendStates?.length) {
+      const colored = parsedData.map((d, i) => {
+        const state = trendStates[i]
+        if (!state) return d
+        const c = state === 'bullish' ? TREND_COLORS.bullish
+          : state === 'bearish' ? TREND_COLORS.bearish
+          : TREND_COLORS.neutral
+        return { ...d, color: c, borderColor: c, wickColor: c }
+      })
+      mainSeries.setData(colored)
+    } else {
+      mainSeries.setData(parsedData)
+    }
+  }, [trendColorActive])
+
+  // Reset trend coloring when the trend-logic indicator is toggled off.
+  useEffect(() => {
+    if (!activeIndicators.includes('trend-logic')) {
+      setTrendColorActive(false)
+    }
+  }, [activeIndicators])
 
   useEffect(() => {
     if (!seriesRef.current) return

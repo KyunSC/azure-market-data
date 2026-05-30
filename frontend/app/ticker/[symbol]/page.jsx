@@ -11,7 +11,7 @@ import ChartTypeSelector from '../../../components/ChartTypeSelector'
 import TrendLogicTable from '../../../components/TrendLogicTable'
 import DrawingsInspector from '../../../components/DrawingsInspector'
 import { DEFAULT_CHART_COLORS, CHART_COLORS_STORAGE_KEY, DEFAULT_TIMEZONE, TIMEZONE_STORAGE_KEY } from '../../../components/chartDefaults'
-import { INDICATORS_STORAGE_KEY } from '../../../components/indicators'
+import { INDICATORS_STORAGE_KEY, INDICATOR_OVERRIDES_STORAGE_KEY } from '../../../components/indicators'
 
 const HISTORICAL_CACHE_PREFIX = 'historicalDataCache:'
 // Older than this and we treat the cache as too stale to seed — saves a flash
@@ -58,6 +58,7 @@ export default function TickerDetail({ params }) {
   const [error, setError] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [activeIndicators, setActiveIndicators] = useState([])
+  const [indicatorOverrides, setIndicatorOverrides] = useState({})
   const [upColor, setUpColor] = useState(DEFAULT_CHART_COLORS.upColor)
   const [downColor, setDownColor] = useState(DEFAULT_CHART_COLORS.downColor)
   const [bgColor, setBgColor] = useState(DEFAULT_CHART_COLORS.bgColor)
@@ -76,6 +77,10 @@ export default function TickerDetail({ params }) {
     try {
       const savedIndicators = JSON.parse(localStorage.getItem(INDICATORS_STORAGE_KEY))
       if (savedIndicators) setActiveIndicators(savedIndicators)
+    } catch { /* ignore */ }
+    try {
+      const savedOverrides = JSON.parse(localStorage.getItem(INDICATOR_OVERRIDES_STORAGE_KEY))
+      if (savedOverrides && typeof savedOverrides === 'object') setIndicatorOverrides(savedOverrides)
     } catch { /* ignore */ }
     try {
       const savedTz = localStorage.getItem(TIMEZONE_STORAGE_KEY)
@@ -425,6 +430,14 @@ export default function TickerDetail({ params }) {
     })
   }
 
+  const handleUpdateIndicator = (id, patch) => {
+    setIndicatorOverrides(prev => {
+      const next = { ...prev, [id]: { ...(prev[id] || {}), ...patch } }
+      try { localStorage.setItem(INDICATOR_OVERRIDES_STORAGE_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+
   return (
     <div className="app">
       <div className="ticker-detail">
@@ -448,6 +461,10 @@ export default function TickerDetail({ params }) {
             drawings={drawings}
             onDelete={(idx) => setDrawings(prev => prev.filter((_, i) => i !== idx))}
             onClearAll={() => setDrawings([])}
+            activeIndicators={activeIndicators}
+            onToggleIndicator={handleToggleIndicator}
+            indicatorOverrides={indicatorOverrides}
+            onUpdateIndicator={handleUpdateIndicator}
           />
           <ChartTypeSelector chartType={chartType} onSelect={setChartType} />
           <button className="settings-button" onClick={() => setSettingsOpen(prev => !prev)}>
@@ -502,7 +519,7 @@ export default function TickerDetail({ params }) {
         )}
         {!loading && !warmingUp && !error && ohlcData.length > 0 && (
           <div className="chart-with-trend">
-            <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} borderUpColor={borderUpColor} borderDownColor={borderDownColor} activeIndicators={activeIndicators} gexLevels={gexLevels} gexUseEtfStrike={!!gexSource?.useEtfStrike} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} timezone={timezone} livePrice={livePrice} />
+            <CandlestickChart data={tickBars ? aggregateToTickBars(ohlcData, tickBars) : ohlcData} symbol={symbol} upColor={upColor} downColor={downColor} bgColor={bgColor} borderUpColor={borderUpColor} borderDownColor={borderDownColor} activeIndicators={activeIndicators} indicatorOverrides={indicatorOverrides} gexLevels={gexLevels} gexUseEtfStrike={!!gexSource?.useEtfStrike} chartType={chartType} drawingTool={drawingTool} drawings={drawings} onDrawingComplete={(d) => { setDrawings(prev => [...prev, d]); setDrawingTool(null) }} onDrawingUpdate={(idx, updated) => { setDrawings(prev => updated === null ? prev.filter((_, i) => i !== idx) : prev.map((d, i) => i === idx ? updated : d)) }} timezone={timezone} livePrice={livePrice} />
             {activeIndicators.includes('trend-logic') && (
               <TrendLogicTable symbol={symbol} />
             )}
