@@ -104,6 +104,20 @@ public class HistoricalDataService {
         // anchored on the most recent bar.
         LocalDateTime dbCutoff = dbCutoffFor(period);
 
+        // Hard floor on lookback per stored interval. Protects against
+        // period=max (or an unknown period) pulling years of 1m bars in a
+        // single response. Also clamps absurdly long periods on small
+        // intervals (e.g. period=10y at interval=1m). Numbers chosen for a
+        // ~600 KB-per-fetch ceiling after projection.
+        LocalDateTime minCutoff = maxLookbackFor(queryInterval);
+        if (minCutoff != null && (dbCutoff == null || dbCutoff.isBefore(minCutoff))) {
+            if (dbCutoff != null) {
+                logger.info("Clamped lookback for {} {} (requested cutoff {} → {})",
+                        symbol, interval, dbCutoff, minCutoff);
+            }
+            dbCutoff = minCutoff;
+        }
+
         List<HistoricalBar> data = dbCutoff == null
                 ? localRepository.findBarsBySymbolAndInterval(symbol.toUpperCase(), queryInterval)
                 : localRepository.findBarsBySymbolAndIntervalSince(
@@ -245,6 +259,27 @@ public class HistoricalDataService {
             case "2y" -> now.minusYears(2).minusDays(7);
             case "5y" -> now.minusYears(5).minusDays(7);
             case "10y" -> now.minusYears(10).minusDays(7);
+            default -> null;
+        };
+    }
+
+    /**
+     * Hard floor on how far back the DB query may reach, per stored interval.
+     * Keeps any single response under ~600 KB after projection even on
+     * worst-case inputs (period=max, or absurd period/interval pairings).
+     * <ul>
+     *   <li>1m stored → 30 days (~11k rows)</li>
+     *   <li>5m stored → 6 months (~14k rows)</li>
+     *   <li>1h stored → 5 years (~12k rows)</li>
+     *   <li>1d stored → no cap (rows are cheap)</li>
+     * </ul>
+     */
+    private LocalDateTime maxLookbackFor(String storedInterval) {
+        LocalDateTime now = LocalDateTime.now();
+        return switch (storedInterval) {
+            case "1m" -> now.minusDays(30);
+            case "5m" -> now.minusMonths(6);
+            case "1h" -> now.minusYears(5);
             default -> null;
         };
     }

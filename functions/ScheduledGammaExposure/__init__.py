@@ -13,6 +13,7 @@ from GEXCalculator.gex_calculator import (
     GEX_PAIRS,
     is_market_open,
     is_premarket_window,
+    is_postclose_window,
 )
 
 
@@ -135,17 +136,25 @@ def fallback_gex_from_previous(cursor, etf_symbol):
     return new_id
 
 
-def run_gex(premarket: bool = False) -> None:
+def run_gex(premarket: bool = False, postclose: bool = False) -> None:
     """Compute and persist GEX for all pairs.
 
-    premarket=False: gated by is_market_open() (regular 5-min intraday cadence).
-    premarket=True:  gated by is_premarket_window() so the 9:25 ET pre-open run
-    only fires on the DST-correct UTC tick. QQQ price will be a stale close but
-    NQ trades overnight, so strike labels are usable at the opening bell.
+    Exactly one mode flag should be true (or none for the regular cadence).
+    Each mode picks a different gate so the dual-cron (EDT+EST UTC ticks)
+    pattern only fires on the DST-correct side.
+
+    Regular:   is_market_open()       — 9:30–16:00 ET intraday cadence.
+    Premarket: is_premarket_window() — 9:25 ET pre-open snapshot.
+    Postclose: is_postclose_window() — 16:10 ET, after the 10-min-delayed
+               yfinance feed catches up to the 16:00 ET settlement.
     """
     if premarket:
         if not is_premarket_window():
             logging.info('Outside 9:00-9:30 ET premarket window — skipping.')
+            return
+    elif postclose:
+        if not is_postclose_window():
+            logging.info('Outside 16:00-16:30 ET postclose window — skipping.')
             return
     else:
         # QQQ/SPY option chains don't change while CBOE is closed; skipping closed
@@ -194,7 +203,7 @@ def run_gex(premarket: bool = False) -> None:
         if conn:
             conn.close()
 
-    logging.info(f'GEX run completed at {datetime.utcnow()} (premarket={premarket})')
+    logging.info(f'GEX run completed at {datetime.utcnow()} (premarket={premarket}, postclose={postclose})')
 
 
 def main(mytimer: func.TimerRequest) -> None:

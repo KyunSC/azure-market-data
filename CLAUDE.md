@@ -59,6 +59,7 @@ functions/                         # Azure Functions (Python)
   ScheduledDataIngestionGlobex/    # Timer (Sunday evenings every 5m): Globex session ingestion
   ScheduledGammaExposure/          # Timer (weekdays every 5m): GEX computation
   ScheduledGammaExposurePremarket/ # Timer (weekdays ~9:25 ET): one pre-open GEX run
+  ScheduledGammaExposurePostclose/ # Timer (weekdays ~16:10 ET): one post-close GEX snapshot
   GEXCalculator/gex_calculator.py  # Black-Scholes gamma exposure calculator
   shared/
     sanitize.py                    # yfinance OHLC price sanitization (phantom tick removal)
@@ -112,4 +113,5 @@ functions/                         # Azure Functions (Python)
 - Circuit breaker falls back to empty data on backend failures
 - `ScheduledDataIngestionGlobex` re-uses `ScheduledDataIngestion.main` to cover Sunday Globex hours (0 */5 22,23 * * 0 UTC)
 - `ScheduledGammaExposurePremarket` calls `ScheduledGammaExposure.run_gex(premarket=True)` to compute one GEX snapshot at ~9:25 ET. Cron `0 25 13,14 * * 1-5` fires at both EDT and EST candidate ticks; `is_premarket_window()` (9:00–9:30 ET) gates so only the DST-correct firing actually runs. QQQ spot is stale (pre-open), but NQ trades overnight so strike labels are usable at the opening bell.
+- `ScheduledGammaExposurePostclose` calls `ScheduledGammaExposure.run_gex(postclose=True)` to capture the day's final option-chain state at ~16:10 ET — by then the 10-min-delayed yfinance feed has caught up to the 16:00 ET settlement. Cron `0 10 20,21 * * 1-5` + `is_postclose_window()` (16:00–16:30 ET) follows the same dual-UTC/DST-gate pattern as the pre-market run.
 - Render free-tier instance is kept warm via an UptimeRobot HTTP monitor on `/health` (avoids 30–60s cold boots between viewer sessions)

@@ -53,6 +53,21 @@ def is_premarket_window():
     return now_et.hour == 9 and now_et.minute < 30
 
 
+def is_postclose_window():
+    """True during the 16:00–16:30 ET weekday window.
+
+    Used to gate a single post-close GEX run at ~16:10 ET, by which point the
+    10-minute-delayed yfinance feed has caught up to the 16:00 ET settlement
+    print. That captures the day's final option-chain state for overnight
+    reference levels. Same DST-mismatch pattern as is_premarket_window.
+    """
+    et_tz = pytz.timezone('US/Eastern')
+    now_et = datetime.now(et_tz)
+    if now_et.weekday() >= 5:
+        return False
+    return now_et.hour == 16 and now_et.minute < 30
+
+
 def fetch_option_chain(ticker_symbol, expiration):
     """Fetch option chain for a single expiration."""
     ticker = yf.Ticker(ticker_symbol)
