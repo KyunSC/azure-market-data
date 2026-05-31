@@ -1,5 +1,6 @@
 package com.example.api_server.repository.supabase;
 
+import com.example.api_server.dto.HistoricalBar;
 import com.example.api_server.entity.HistoricalDataEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -16,10 +17,28 @@ import java.util.Optional;
 @Repository
 public interface SupabaseHistoricalDataRepository extends JpaRepository<HistoricalDataEntity, Long> {
 
-    List<HistoricalDataEntity> findBySymbolAndIntervalTypeOrderByDateAsc(String symbol, String intervalType);
+    /**
+     * Projection-based read used by the chart path. Hydrates only the columns
+     * the response needs (date + OHLCV) instead of the full entity — drops
+     * {@code id}, {@code symbol}, {@code interval_type}, and {@code fetched_at}
+     * from the wire payload Supabase sends back.
+     */
+    @Query("SELECT new com.example.api_server.dto.HistoricalBar(" +
+            "h.date, h.open, h.high, h.low, h.close, h.volume) " +
+            "FROM HistoricalDataEntity h " +
+            "WHERE h.symbol = :symbol AND h.intervalType = :intervalType " +
+            "ORDER BY h.date ASC")
+    List<HistoricalBar> findBarsBySymbolAndInterval(
+            @Param("symbol") String symbol, @Param("intervalType") String intervalType);
 
-    List<HistoricalDataEntity> findBySymbolAndIntervalTypeAndDateGreaterThanEqualOrderByDateAsc(
-            String symbol, String intervalType, LocalDateTime startDate);
+    @Query("SELECT new com.example.api_server.dto.HistoricalBar(" +
+            "h.date, h.open, h.high, h.low, h.close, h.volume) " +
+            "FROM HistoricalDataEntity h " +
+            "WHERE h.symbol = :symbol AND h.intervalType = :intervalType AND h.date >= :start " +
+            "ORDER BY h.date ASC")
+    List<HistoricalBar> findBarsBySymbolAndIntervalSince(
+            @Param("symbol") String symbol, @Param("intervalType") String intervalType,
+            @Param("start") LocalDateTime start);
 
     /**
      * Cheap MAX(date) probe used to decide whether an incremental fetch has

@@ -19,7 +19,15 @@ public class CacheConfig {
         manager.setCaches(List.of(
                 // Live intraday bars: full-fetch cache. Bumped beyond poll-cycle
                 // time so repeated full refreshes within a minute share a hit.
+                // Only used for the live "today" 1m view now — everything else
+                // intraday routes to the medium bucket below.
                 buildCache("historicalData", Duration.ofSeconds(90), 200),
+                // Multi-day intraday and same-day non-1m views. Ingestion runs
+                // every 5 min, so a 5-min TTL never serves data older than the
+                // upstream write cadence while turning the biggest miss path
+                // (e.g. 1m bars over 5d ≈ 290 KB/fetch) into one Supabase read
+                // every 5 min across all viewers.
+                buildCache("historicalDataMedium", Duration.ofMinutes(5), 200),
                 // Non-live timeframes (1d/1wk): session-long bars rarely change,
                 // so cache aggressively to cut Supabase egress.
                 buildCache("historicalDataLong", Duration.ofHours(1), 200),
