@@ -103,10 +103,14 @@ def get_db_connection():
     return psycopg2.connect(os.environ['DATABASE_URL'])
 
 def insert_market_data(cursor, symbol, price, volume, timestamp):
-    """Insert a market data record."""
+    """Upsert the current market data snapshot (one row per symbol)."""
     cursor.execute("""
         INSERT INTO market_data (symbol, price, volume, timestamp)
         VALUES (%s, %s, %s, %s)
+        ON CONFLICT (symbol) DO UPDATE SET
+            price = EXCLUDED.price,
+            volume = EXCLUDED.volume,
+            timestamp = EXCLUDED.timestamp
     """, (symbol, price, volume, timestamp))
 
 SANITIZE_WINDOW_SIZE = 5  # bars of recent cleaned closes used as the median

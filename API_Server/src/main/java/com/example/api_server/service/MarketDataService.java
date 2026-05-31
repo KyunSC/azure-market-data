@@ -11,10 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
-import java.time.DayOfWeek;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -68,18 +65,7 @@ public class MarketDataService {
                 tickerData.setVolume(null);
             }
 
-            Double previousClose;
-            if (isWeekend() && entity != null) {
-                try {
-                    previousClose = fetchPreviousTradingDayClose(symbol.toUpperCase(), entity);
-                } catch (Exception e) {
-                    logger.warn("Previous-close lookup failed for {}: {}", symbol, e.getMessage());
-                    previousClose = liveTick == null ? null : liveTick.getPreviousClose();
-                }
-            } else {
-                previousClose = liveTick == null ? null : liveTick.getPreviousClose();
-            }
-            tickerData.setPreviousClose(previousClose);
+            tickerData.setPreviousClose(liveTick == null ? null : liveTick.getPreviousClose());
 
             tickerDataList.add(tickerData);
         }
@@ -88,18 +74,6 @@ public class MarketDataService {
         logger.info("Successfully fetched {} tickers from Supabase", tickerDataList.size());
 
         return response;
-    }
-
-    private boolean isWeekend() {
-        DayOfWeek day = LocalDate.now(ZoneId.of("America/New_York")).getDayOfWeek();
-        return day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY;
-    }
-
-    private Double fetchPreviousTradingDayClose(String symbol, MarketDataEntity current) {
-        LocalDateTime startOfCurrentDay = current.getTimestamp().toLocalDate().atStartOfDay();
-        MarketDataEntity prev = localRepository.findFirstBySymbolAndTimestampBeforeOrderByTimestampDesc(
-                symbol, startOfCurrentDay);
-        return prev != null ? prev.getPrice() : null;
     }
 
     private TickerData fetchLiveTick(String symbol) {

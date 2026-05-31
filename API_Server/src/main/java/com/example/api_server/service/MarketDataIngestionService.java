@@ -1,6 +1,5 @@
 package com.example.api_server.service;
 
-import com.example.api_server.entity.MarketDataEntity;
 import com.example.api_server.repository.supabase.SupabaseHistoricalDataRepository;
 import com.example.api_server.repository.supabase.SupabaseMarketDataRepository;
 import org.slf4j.Logger;
@@ -52,7 +51,8 @@ public class MarketDataIngestionService {
     }
 
     /**
-     * Fetch last price + volume per ticker and append to {@code market_data}.
+     * Fetch last price + volume per ticker and upsert into {@code market_data}.
+     * One row per symbol — the snapshot is replaced in place each tick.
      *
      * @param isMarketHours when false, equity tickers (no =F suffix) are skipped.
      *                      Matches the Python gating: futures trade nearly 24/5,
@@ -69,7 +69,7 @@ public class MarketDataIngestionService {
                     logger.warn("No valid price for {}", symbol);
                     continue;
                 }
-                marketRepo.save(new MarketDataEntity(symbol, tick.price, tick.volume, now));
+                marketRepo.upsertSnapshot(symbol, tick.price, tick.volume, now);
                 saved++;
                 logger.info("Saved {}: ${}", symbol, tick.price);
             } catch (Exception ex) {
