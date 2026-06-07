@@ -1,0 +1,24 @@
+name: Warm backend (market hours)
+
+# Keeps the Render free-tier backend awake only during ~8:00-17:00 ET on
+# weekdays, so it spins down (and stops accruing instance hours) overnight and
+# on weekends. Replaces 24/7 UptimeRobot warming.
+on:
+  schedule:
+    # Every 10 min, 12:00-21:50 UTC, Mon-Fri.
+    # Covers ~8:00-17:00 ET in BOTH EDT and EST (a static cron can't follow
+    # DST, so this over-warms by ~1h on one side -- harmless, ~10h/day).
+    # */10 stays well inside Render's 15-min spin-down grace, so the instance
+    # stays continuously warm across the window.
+    - cron: '*/10 12-21 * * 1-5'
+  workflow_dispatch: {}   # allow a manual warm-up from the Actions tab
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health to keep the instance awake
+        run: |
+          curl -fsS --max-time 90 "https://azure-market-data.onrender.com/health" \
+            && echo "warmed ok" \
+            || echo "ping failed (non-fatal -- instance may be cold-booting)"
