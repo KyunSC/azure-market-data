@@ -1,0 +1,8 @@
+  noswr  delay=163000ms trial 1/1  ttfd=163181ms
+  swr    delay=163000ms trial 1/1  ttfd=98ms
+
+wrote bench/results/ttfd_163s.csv
+
+delay_ms   noswr_p50   swr_p50     saved
+--------------------------------------------
+  163000    163181ms      98ms  163083ms

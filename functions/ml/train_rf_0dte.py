@@ -79,16 +79,28 @@ def main() -> None:
             len(df), MIN_ROWS_FOR_TRAIN)
         return
 
+    # TimeSeriesSplit needs (n_splits+1)*test_size + gap <= n. Downscale test_size
+    # so preview runs succeed on the ~300-400-row post-migration samples that
+    # accumulate in the first few weeks; the main harness's 5x100 assumes the
+    # much bigger, pre-migration-inclusive datasets used in train_rf_horizons.
+    n_splits, test_size = 5, 100
+    if len(df) < (n_splits + 1) * test_size:
+        test_size = max(30, len(df) // (n_splits + 1))
+        logging.info("Small sample: reducing test_size to %d to fit %d rows across %d folds",
+                     test_size, len(df), n_splits)
+
+    kw = dict(model_factory=rf_factory, n_splits=n_splits, test_size=test_size)
+
     print(f"\n[1/3] RF-base — baseline features only ({len(FEATURES_BASELINE)} features)")
-    res_base = walk_forward(df, features=FEATURES_BASELINE, model_factory=rf_factory)
+    res_base = walk_forward(df, features=FEATURES_BASELINE, **kw)
     summarize("RF-base", res_base)
 
     print(f"\n[2/3] RF-GEX — baseline + legacy GEX ({len(FEATURES_BASELINE_PLUS_GEX)} features)")
-    res_gex = walk_forward(df, features=FEATURES_BASELINE_PLUS_GEX, model_factory=rf_factory)
+    res_gex = walk_forward(df, features=FEATURES_BASELINE_PLUS_GEX, **kw)
     summarize("RF-GEX", res_gex)
 
     print(f"\n[3/3] RF-GEX+0DTE — baseline + legacy GEX + 0DTE ({len(FEATURES_BASELINE_PLUS_GEX_PLUS_0DTE)} features)")
-    res_0dte = walk_forward(df, features=FEATURES_BASELINE_PLUS_GEX_PLUS_0DTE, model_factory=rf_factory)
+    res_0dte = walk_forward(df, features=FEATURES_BASELINE_PLUS_GEX_PLUS_0DTE, **kw)
     summarize("RF-GEX+0DTE", res_0dte)
 
     print("\n=== Delta (RF-GEX+0DTE minus RF-GEX) ===")

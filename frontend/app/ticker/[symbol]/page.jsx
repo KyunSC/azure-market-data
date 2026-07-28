@@ -441,9 +441,14 @@ export default function TickerDetail({ params }) {
   return (
     <div className="app">
       <div className="ticker-detail">
-        <button className="back-button" onClick={() => router.push('/')}>
-          ← Back to Dashboard
-        </button>
+        <div className="ticker-nav">
+          <button className="back-button" onClick={() => router.push('/')}>
+            ← Back to Dashboard
+          </button>
+          <button className="back-button" onClick={() => router.push('/backtest')}>
+            Backtester →
+          </button>
+        </div>
 
         <div className="ticker-header">
           <h1 className="symbol">{displayName}</h1>

@@ -1,0 +1,267 @@
+/**
+ * Terminal styling for /backtest.
+ *
+ * Tailwind's `preflight.css` is deliberately NOT imported: it would reset the
+ * 1,055 lines of hand-written styling the dashboard and ticker pages rely on.
+ * Only the theme (custom-property definitions) and the utilities are pulled in,
+ * and the handful of element resets the terminal actually needs are scoped
+ * under `.bt-root` below.
+ */
+
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+
+@source './';
+@source '../../components/backtest/';
+@source '../../lib/backtest/';
+
+@theme {
+  /* Canvas and structure */
+  --color-canvas: #0b0c0e;
+  --color-panel: #131519;
+  --color-panel-2: #171a1f;
+  --color-panel-3: #1c2027;
+  --color-hair: #22262d;
+  --color-hair-bright: #2e343d;
+
+  /* Phosphor amber leads; the dashboard's cyan and P/L greens stay so the
+     terminal reads as part of the same app rather than a bolt-on. */
+  --color-amber: #e8b339;
+  --color-amber-dim: #8a6a22;
+  --color-cyan: #4a90a4;
+  --color-pos: #4caf50;
+  --color-neg: #ff6b6b;
+  --color-violet: #7c6bd6;
+
+  /* Type */
+  --color-ink: #e6e8eb;
+  --color-muted: #8a9098;
+  --color-dim: #5a616b;
+
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --radius-panel: 3px;
+}
+
+@layer base {
+  /* Scoped resets — the parts of preflight the terminal needs, and nothing
+     that could escape this route. */
+  .bt-root {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-feature-settings: 'tnum' 1, 'ss01' 1;
+    min-height: 100vh;
+  }
+
+  .bt-root button,
+  .bt-root input,
+  .bt-root select,
+  .bt-root textarea {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    outline: none;
+  }
+
+  .bt-root button {
+    cursor: pointer;
+  }
+
+  .bt-root button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  .bt-root select {
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .bt-root svg {
+    display: block;
+  }
+
+  .bt-root ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .bt-root ::-webkit-scrollbar-track {
+    background: var(--color-canvas);
+  }
+  .bt-root ::-webkit-scrollbar-thumb {
+    background: var(--color-hair-bright);
+    border-radius: 4px;
+  }
+  .bt-root ::-webkit-scrollbar-thumb:hover {
+    background: #3b424c;
+  }
+}
+
+@layer components {
+  .panel {
+    background: var(--color-panel);
+    border: 1px solid var(--color-hair);
+    border-radius: var(--radius-panel);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Every panel is titled the same way: 10px, uppercase, tracked. */
+  .panel-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-dim);
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--color-hair);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+    background: linear-gradient(180deg, var(--color-panel-2), var(--color-panel));
+  }
+
+  .panel-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* Numbers: mono, tabular, right-aligned by default. */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 1px 4px;
+    border: 1px solid var(--color-hair-bright);
+    border-radius: 2px;
+    color: var(--color-muted);
+    background: var(--color-panel-3);
+  }
+
+  .btn {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 5px 10px;
+    border: 1px solid var(--color-hair-bright);
+    border-radius: 2px;
+    color: var(--color-muted);
+    background: var(--color-panel-2);
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+  }
+  .btn:hover:not(:disabled) {
+    color: var(--color-ink);
+    border-color: var(--color-dim);
+    background: var(--color-panel-3);
+  }
+  .btn-primary {
+    color: var(--color-canvas);
+    background: var(--color-amber);
+    border-color: var(--color-amber);
+    font-weight: 600;
+  }
+  .btn-primary:hover:not(:disabled) {
+    color: var(--color-canvas);
+    background: #f2c04a;
+    border-color: #f2c04a;
+  }
+  .btn-active {
+    color: var(--color-amber);
+    border-color: var(--color-amber-dim);
+    background: rgba(232, 179, 57, 0.09);
+  }
+
+  .field {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--color-canvas);
+    border: 1px solid var(--color-hair);
+    border-radius: 2px;
+    padding: 4px 6px;
+    width: 100%;
+  }
+  .field:focus {
+    border-color: var(--color-amber-dim);
+  }
+
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--color-panel-3);
+    border: 1px solid var(--color-hair-bright);
+    border-radius: 2px;
+    padding: 3px 6px;
+    color: var(--color-ink);
+  }
+  .chip:hover {
+    border-color: var(--color-dim);
+  }
+
+  .hair-t {
+    border-top: 1px solid var(--color-hair);
+  }
+  .hair-b {
+    border-bottom: 1px solid var(--color-hair);
+  }
+}
+
+@layer utilities {
+  /* Scanline wash — barely visible, but it is what makes the surface read as a
+     CRT rather than a dark web page. */
+  .scanlines::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+
+  .text-glow {
+    text-shadow: 0 0 12px rgba(232, 179, 57, 0.35);
+  }
+}
+
+/* react-resizable-panels handles are unstyled by default. */
+.bt-resize-handle {
+  position: relative;
+  background: var(--color-hair);
+  transition: background 0.15s;
+}
+.bt-resize-handle[data-panel-group-direction='horizontal'] {
+  width: 3px;
+}
+.bt-resize-handle[data-panel-group-direction='vertical'] {
+  height: 3px;
+}
+.bt-resize-handle:hover,
+.bt-resize-handle[data-resize-handle-active] {
+  background: var(--color-amber-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bt-root * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -1,0 +1,38 @@
+  noswr  delay=     0ms trial 1/5  ttfd=116ms
+  noswr  delay=     0ms trial 2/5  ttfd=111ms
+  noswr  delay=     0ms trial 3/5  ttfd=112ms
+  noswr  delay=     0ms trial 4/5  ttfd=111ms
+  noswr  delay=     0ms trial 5/5  ttfd=148ms
+  swr    delay=     0ms trial 1/5  ttfd=97ms
+  swr    delay=     0ms trial 2/5  ttfd=113ms
+  swr    delay=     0ms trial 3/5  ttfd=113ms
+  swr    delay=     0ms trial 4/5  ttfd=115ms
+  swr    delay=     0ms trial 5/5  ttfd=113ms
+  noswr  delay=  2000ms trial 1/5  ttfd=2367ms
+  noswr  delay=  2000ms trial 2/5  ttfd=2383ms
+  noswr  delay=  2000ms trial 3/5  ttfd=2365ms
+  noswr  delay=  2000ms trial 4/5  ttfd=2379ms
+  noswr  delay=  2000ms trial 5/5  ttfd=2378ms
+  swr    delay=  2000ms trial 1/5  ttfd=93ms
+  swr    delay=  2000ms trial 2/5  ttfd=116ms
+  swr    delay=  2000ms trial 3/5  ttfd=116ms
+  swr    delay=  2000ms trial 4/5  ttfd=93ms
+  swr    delay=  2000ms trial 5/5  ttfd=94ms
+  noswr  delay= 10000ms trial 1/5  ttfd=10418ms
+  noswr  delay= 10000ms trial 2/5  ttfd=10420ms
+  noswr  delay= 10000ms trial 3/5  ttfd=10425ms
+  noswr  delay= 10000ms trial 4/5  ttfd=10433ms
+  noswr  delay= 10000ms trial 5/5  ttfd=10416ms
+  swr    delay= 10000ms trial 1/5  ttfd=92ms
+  swr    delay= 10000ms trial 2/5  ttfd=115ms
+  swr    delay= 10000ms trial 3/5  ttfd=112ms
+  swr    delay= 10000ms trial 4/5  ttfd=91ms
+  swr    delay= 10000ms trial 5/5  ttfd=90ms
+
+wrote bench/results/ttfd.csv
+
+delay_ms   noswr_p50   swr_p50     saved
+--------------------------------------------
+       0       112ms     113ms      -1ms
+    2000      2378ms      94ms    2284ms
+   10000     10420ms      92ms   10328ms

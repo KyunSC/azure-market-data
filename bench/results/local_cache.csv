@@ -1,0 +1,18 @@
+arm,trial,phase,endpoint,seconds,http_code,bytes
+cache,1,boot,health,-1,200,0
+cache,1,cold,market,0.000194,000,0-1 000 0
+cache,1,warm,market,0.000143,000,0-1 000 0
+cache,1,warm,market,0.000156,000,0-1 000 0
+cache,1,warm,market,0.000141,000,0-1 000 0
+cache,1,cold,hist_1m_5d,0.000184,000,0-1 000 0
+cache,1,warm,hist_1m_5d,0.000153,000,0-1 000 0
+cache,1,warm,hist_1m_5d,0.000175,000,0-1 000 0
+cache,1,warm,hist_1m_5d,0.000096,000,0-1 000 0
+cache,1,cold,hist_1d,0.000090,000,0-1 000 0
+cache,1,warm,hist_1d,0.000158,000,0-1 000 0
+cache,1,warm,hist_1d,0.000136,000,0-1 000 0
+cache,1,warm,hist_1d,0.000166,000,0-1 000 0
+cache,1,cold,gamma,0.000135,000,0-1 000 0
+cache,1,warm,gamma,0.000160,000,0-1 000 0
+cache,1,warm,gamma,0.000138,000,0-1 000 0
+cache,1,warm,gamma,0.000164,000,0-1 000 0

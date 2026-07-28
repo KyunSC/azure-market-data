@@ -1,8 +1,10 @@
 package com.example.api_server.config;
 
 import com.github.benmanes.caffeine.cache.Caffeine;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.caffeine.CaffeineCache;
+import org.springframework.cache.support.NoOpCacheManager;
 import org.springframework.cache.support.SimpleCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,7 +15,20 @@ import java.util.List;
 @Configuration
 public class CacheConfig {
 
+    /**
+     * Benchmark escape hatch: {@code --app.cache.enabled=false} swaps every
+     * Caffeine bucket for a no-op manager so @Cacheable methods always execute.
+     * Used by bench/ to measure the uncached arm without touching call sites.
+     * Absent the property, caching stays on.
+     */
     @Bean
+    @ConditionalOnProperty(name = "app.cache.enabled", havingValue = "false")
+    public CacheManager noOpCacheManager() {
+        return new NoOpCacheManager();
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "app.cache.enabled", havingValue = "true", matchIfMissing = true)
     public CacheManager cacheManager() {
         SimpleCacheManager manager = new SimpleCacheManager();
         manager.setCaches(List.of(

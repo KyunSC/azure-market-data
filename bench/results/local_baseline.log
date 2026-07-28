@@ -1,0 +1,279 @@
+=== baseline trial 1/1 ===
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.0.1)
+
+2026-07-22T03:13:52.455-04:00  INFO 7189 --- [API_Server] [           main] c.e.api_server.ApiServerApplication      : Starting ApiServerApplication v0.0.1-SNAPSHOT using Java 25.0.2 with PID 7189 (/Users/sunnychen/Developper/PersonalProjects/azure-market-data/API_Server/target/API_Server-0.0.1-SNAPSHOT.jar started by sunnychen in /Users/sunnychen/Developper/PersonalProjects/azure-market-data)
+2026-07-22T03:13:52.457-04:00  INFO 7189 --- [API_Server] [           main] c.e.api_server.ApiServerApplication      : No active profile set, falling back to 1 default profile: "default"
+2026-07-22T03:13:52.725-04:00  INFO 7189 --- [API_Server] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-07-22T03:13:52.785-04:00  INFO 7189 --- [API_Server] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 55 ms. Found 3 JPA repository interfaces.
+2026-07-22T03:13:53.208-04:00  INFO 7189 --- [API_Server] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat initialized with port 8099 (http)
+2026-07-22T03:13:53.215-04:00  INFO 7189 --- [API_Server] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-07-22T03:13:53.215-04:00  INFO 7189 --- [API_Server] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/11.0.15]
+2026-07-22T03:13:53.225-04:00  INFO 7189 --- [API_Server] [           main] b.w.c.s.WebApplicationContextInitializer : Root WebApplicationContext: initialization completed in 736 ms
+2026-07-22T03:13:53.309-04:00  INFO 7189 --- [API_Server] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-07-22T03:13:53.323-04:00  INFO 7189 --- [API_Server] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-07-22T03:14:03.343-04:00  INFO 7189 --- [API_Server] [           main] org.hibernate.orm.jpa                    : HHH008540: Processing PersistenceUnitInfo [name: supabase]
+2026-07-22T03:14:03.367-04:00  INFO 7189 --- [API_Server] [           main] org.hibernate.orm.core                   : HHH000001: Hibernate ORM core version 7.2.0.Final
+2026-07-22T03:14:03.539-04:00  INFO 7189 --- [API_Server] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-07-22T03:14:13.552-04:00  WARN 7189 --- [API_Server] [           main] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:14:13.553-04:00  WARN 7189 --- [API_Server] [           main] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10001ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:14:13.553-04:00  WARN 7189 --- [API_Server] [           main] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:14:13.553-04:00  WARN 7189 --- [API_Server] [           main] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10001ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:14:13.553-04:00  WARN 7189 --- [API_Server] [           main] org.hibernate.orm.jdbc                   : HHH100046: Could not obtain connection to query JDBC database metadata
+
+org.hibernate.exception.AuthException: Unable to obtain isolated JDBC connection [HikariPool-1 - Connection is not available, request timed out after 10001ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+	at org.hibernate.exception.internal.SQLStateConversionDelegate.convert(SQLStateConversionDelegate.java:87) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.exception.internal.StandardSQLExceptionConverter.convert(StandardSQLExceptionConverter.java:34) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.engine.jdbc.spi.SqlExceptionHelper.convert(SqlExceptionHelper.java:115) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.engine.jdbc.spi.SqlExceptionHelper.convert(SqlExceptionHelper.java:101) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.resource.transaction.backend.jdbc.internal.JdbcIsolationDelegate.delegateWork(JdbcIsolationDelegate.java:51) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.engine.jdbc.env.internal.JdbcEnvironmentInitiator.getJdbcEnvironmentUsingJdbcMetadata(JdbcEnvironmentInitiator.java:366) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.engine.jdbc.env.internal.JdbcEnvironmentInitiator.getJdbcEnvironment(JdbcEnvironmentInitiator.java:143) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.engine.jdbc.env.internal.JdbcEnvironmentInitiator.initiateService(JdbcEnvironmentInitiator.java:120) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.engine.jdbc.env.internal.JdbcEnvironmentInitiator.initiateService(JdbcEnvironmentInitiator.java:80) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.boot.registry.internal.StandardServiceRegistryImpl.initiateService(StandardServiceRegistryImpl.java:133) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.service.internal.AbstractServiceRegistryImpl.createService(AbstractServiceRegistryImpl.java:260) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.service.internal.AbstractServiceRegistryImpl.initializeService(AbstractServiceRegistryImpl.java:235) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.service.internal.AbstractServiceRegistryImpl.getService(AbstractServiceRegistryImpl.java:212) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.boot.model.relational.Database.<init>(Database.java:44) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.boot.internal.InFlightMetadataCollectorImpl.getDatabase(InFlightMetadataCollectorImpl.java:251) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.boot.internal.InFlightMetadataCollectorImpl.<init>(InFlightMetadataCollectorImpl.java:203) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.boot.model.process.spi.MetadataBuildingProcess.complete(MetadataBuildingProcess.java:170) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.jpa.boot.internal.EntityManagerFactoryBuilderImpl.metadata(EntityManagerFactoryBuilderImpl.java:1392) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.jpa.boot.internal.EntityManagerFactoryBuilderImpl.populateSessionFactoryBuilder(EntityManagerFactoryBuilderImpl.java:1472) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.jpa.boot.internal.EntityManagerFactoryBuilderImpl.build(EntityManagerFactoryBuilderImpl.java:1454) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.springframework.orm.jpa.vendor.SpringHibernateJpaPersistenceProvider.createContainerEntityManagerFactory(SpringHibernateJpaPersistenceProvider.java:66) ~[spring-orm-7.0.2.jar!/:7.0.2]
+	at org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean.createNativeEntityManagerFactory(LocalContainerEntityManagerFactoryBean.java:433) ~[spring-orm-7.0.2.jar!/:7.0.2]
+	at org.springframework.orm.jpa.AbstractEntityManagerFactoryBean.buildNativeEntityManagerFactory(AbstractEntityManagerFactoryBean.java:416) ~[spring-orm-7.0.2.jar!/:7.0.2]
+	at org.springframework.orm.jpa.AbstractEntityManagerFactoryBean.afterPropertiesSet(AbstractEntityManagerFactoryBean.java:396) ~[spring-orm-7.0.2.jar!/:7.0.2]
+	at org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean.afterPropertiesSet(LocalContainerEntityManagerFactoryBean.java:409) ~[spring-orm-7.0.2.jar!/:7.0.2]
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.invokeInitMethods(AbstractAutowireCapableBeanFactory.java:1864) ~[spring-beans-7.0.2.jar!/:7.0.2]
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.initializeBean(AbstractAutowireCapableBeanFactory.java:1813) ~[spring-beans-7.0.2.jar!/:7.0.2]
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:603) ~[spring-beans-7.0.2.jar!/:7.0.2]
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:525) ~[spring-beans-7.0.2.jar!/:7.0.2]
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:333) ~[spring-beans-7.0.2.jar!/:7.0.2]
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:371) ~[spring-beans-7.0.2.jar!/:7.0.2]
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:331) ~[spring-beans-7.0.2.jar!/:7.0.2]
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:201) ~[spring-beans-7.0.2.jar!/:7.0.2]
+	at org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization(AbstractApplicationContext.java:976) ~[spring-context-7.0.2.jar!/:7.0.2]
+	at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:620) ~[spring-context-7.0.2.jar!/:7.0.2]
+	at org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext.refresh(ServletWebServerApplicationContext.java:143) ~[spring-boot-web-server-4.0.1.jar!/:4.0.1]
+	at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:756) ~[spring-boot-4.0.1.jar!/:4.0.1]
+	at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:445) ~[spring-boot-4.0.1.jar!/:4.0.1]
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:321) ~[spring-boot-4.0.1.jar!/:4.0.1]
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1365) ~[spring-boot-4.0.1.jar!/:4.0.1]
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1354) ~[spring-boot-4.0.1.jar!/:4.0.1]
+	at com.example.api_server.ApiServerApplication.main(ApiServerApplication.java:18) ~[!/:0.0.1-SNAPSHOT]
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104) ~[na:na]
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565) ~[na:na]
+	at org.springframework.boot.loader.launch.Launcher.launch(Launcher.java:106) ~[API_Server-0.0.1-SNAPSHOT.jar:0.0.1-SNAPSHOT]
+	at org.springframework.boot.loader.launch.Launcher.launch(Launcher.java:64) ~[API_Server-0.0.1-SNAPSHOT.jar:0.0.1-SNAPSHOT]
+	at org.springframework.boot.loader.launch.JarLauncher.main(JarLauncher.java:40) ~[API_Server-0.0.1-SNAPSHOT.jar:0.0.1-SNAPSHOT]
+Caused by: java.sql.SQLTransientConnectionException: HikariPool-1 - Connection is not available, request timed out after 10001ms (total=0, active=0, idle=0, waiting=0)
+	at com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:714) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:184) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:142) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.HikariDataSource.getConnection(HikariDataSource.java:127) ~[HikariCP-7.0.2.jar!/:na]
+	at org.hibernate.engine.jdbc.connections.internal.DataSourceConnectionProvider.getConnection(DataSourceConnectionProvider.java:137) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.engine.jdbc.env.internal.JdbcEnvironmentInitiator$ConnectionProviderJdbcConnectionAccess.obtainConnection(JdbcEnvironmentInitiator.java:508) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	at org.hibernate.resource.transaction.backend.jdbc.internal.JdbcIsolationDelegate.delegateWork(JdbcIsolationDelegate.java:48) ~[hibernate-core-7.2.0.Final.jar!/:7.2.0.Final]
+	... 42 common frames omitted
+Caused by: org.postgresql.util.PSQLException: FATAL: password authentication failed for user "postgres"
+	at org.postgresql.core.v3.ConnectionFactoryImpl.doAuthentication(ConnectionFactoryImpl.java:778) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.core.v3.ConnectionFactoryImpl.tryConnect(ConnectionFactoryImpl.java:234) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.core.v3.ConnectionFactoryImpl.openConnectionImpl(ConnectionFactoryImpl.java:289) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.core.ConnectionFactory.openConnection(ConnectionFactory.java:57) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.jdbc.PgConnection.<init>(PgConnection.java:279) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.Driver.makeConnection(Driver.java:448) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.Driver.connect(Driver.java:298) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at com.zaxxer.hikari.util.DriverDataSource.getConnection(DriverDataSource.java:144) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.PoolBase.newConnection(PoolBase.java:373) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.PoolBase.newPoolEntry(PoolBase.java:210) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool.createPoolEntry(HikariPool.java:488) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool$PoolEntryCreator.call(HikariPool.java:752) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool$PoolEntryCreator.call(HikariPool.java:731) ~[HikariCP-7.0.2.jar!/:na]
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:328) ~[na:na]
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090) ~[na:na]
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614) ~[na:na]
+	at java.base/java.lang.Thread.run(Thread.java:1474) ~[na:na]
+
+2026-07-22T03:14:13.565-04:00  WARN 7189 --- [API_Server] [           main] org.hibernate.orm.deprecation            : HHH90000025: PostgreSQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-07-22T03:14:13.568-04:00  INFO 7189 --- [API_Server] [           main] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: NONE [default NONE]
+	JDBC fetch size: undefined/unknown
+	Pool: DataSourceConnectionProvider
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-07-22T03:14:13.892-04:00  INFO 7189 --- [API_Server] [           main] org.hibernate.orm.core                   : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-07-22T03:14:13.894-04:00  INFO 7189 --- [API_Server] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'supabase'
+2026-07-22T03:14:13.948-04:00  INFO 7189 --- [API_Server] [           main] o.s.d.j.r.query.QueryEnhancerFactories   : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-07-22T03:14:14.735-04:00  INFO 7189 --- [API_Server] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 8099 (http) with context path '/'
+2026-07-22T03:14:14.740-04:00  INFO 7189 --- [API_Server] [           main] c.e.api_server.ApiServerApplication      : Started ApiServerApplication in 22.469 seconds (process running for 22.737)
+2026-07-22T03:14:14.741-04:00  INFO 7189 --- [API_Server] [           main] c.e.api_server.ApiServerApplication      : API Server started successfully
+2026-07-22T03:14:15.021-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-07-22T03:14:15.021-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-07-22T03:14:15.021-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 0 ms
+  boot->200: 23.062s
+2026-07-22T03:14:15.082-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-2] o.apache.coyote.http11.Http11Processor   : Error parsing HTTP request header
+ Note: further occurrences of HTTP request parsing errors will be logged at DEBUG level.
+
+java.lang.IllegalArgumentException: Invalid character found in the request target [/api/market?tickers=ES=F,NQ=F,SPY,QQQ,^VIX,XEQT.TO,BTC-USD,ETH-USD,SOL-USD ]. The valid characters are defined in RFC 7230 and RFC 3986
+	at org.apache.coyote.http11.Http11InputBuffer.parseRequestLine(Http11InputBuffer.java:466) ~[tomcat-embed-core-11.0.15.jar!/:na]
+	at org.apache.coyote.http11.Http11Processor.service(Http11Processor.java:270) ~[tomcat-embed-core-11.0.15.jar!/:na]
+	at org.apache.coyote.AbstractProcessorLight.process(AbstractProcessorLight.java:63) ~[tomcat-embed-core-11.0.15.jar!/:na]
+	at org.apache.coyote.AbstractProtocol$ConnectionHandler.process(AbstractProtocol.java:903) ~[tomcat-embed-core-11.0.15.jar!/:na]
+	at org.apache.tomcat.util.net.NioEndpoint$SocketProcessor.doRun(NioEndpoint.java:1778) ~[tomcat-embed-core-11.0.15.jar!/:na]
+	at org.apache.tomcat.util.net.SocketProcessorBase.run(SocketProcessorBase.java:52) ~[tomcat-embed-core-11.0.15.jar!/:na]
+	at org.apache.tomcat.util.threads.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:946) ~[tomcat-embed-core-11.0.15.jar!/:na]
+	at org.apache.tomcat.util.threads.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:480) ~[tomcat-embed-core-11.0.15.jar!/:na]
+	at org.apache.tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:57) ~[tomcat-embed-core-11.0.15.jar!/:na]
+	at java.base/java.lang.Thread.run(Thread.java:1474) ~[na:na]
+
+  cold market: 0.002762s (400, 435B)
+2026-07-22T03:14:15.129-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-6] c.e.a.service.HistoricalDataService      : Fetching historical data for NQ=F with period=5d, interval=1m from Supabase
+Hibernate: select hde1_0.date,hde1_0.open,hde1_0.high,hde1_0.low,hde1_0.close_price,hde1_0.volume from historical_data hde1_0 where hde1_0.symbol=? and hde1_0.interval_type=? and hde1_0.date>=? order by hde1_0.date
+2026-07-22T03:14:25.164-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-6] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:14:25.165-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-6] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10006ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:14:25.165-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-6] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:14:25.165-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-6] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10006ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:14:25.176-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-6] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10006ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+  cold hist_1m_5d: 10.094201s (503, 159B)
+2026-07-22T03:14:25.220-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-7] c.e.a.service.HistoricalDataService      : Fetching historical data for NQ=F with period=5d, interval=1m from Supabase
+Hibernate: select hde1_0.date,hde1_0.open,hde1_0.high,hde1_0.low,hde1_0.close_price,hde1_0.volume from historical_data hde1_0 where hde1_0.symbol=? and hde1_0.interval_type=? and hde1_0.date>=? order by hde1_0.date
+2026-07-22T03:14:35.227-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-7] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:14:35.227-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-7] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:14:35.227-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-7] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:14:35.227-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-7] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:14:35.228-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-7] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+2026-07-22T03:14:35.244-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-8] c.e.a.service.HistoricalDataService      : Fetching historical data for NQ=F with period=5d, interval=1m from Supabase
+Hibernate: select hde1_0.date,hde1_0.open,hde1_0.high,hde1_0.low,hde1_0.close_price,hde1_0.volume from historical_data hde1_0 where hde1_0.symbol=? and hde1_0.interval_type=? and hde1_0.date>=? order by hde1_0.date
+2026-07-22T03:14:45.250-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-8] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:14:45.251-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-8] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:14:45.251-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-8] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:14:45.251-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-8] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:14:45.251-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-8] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+2026-07-22T03:14:45.261-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-9] c.e.a.service.HistoricalDataService      : Fetching historical data for NQ=F with period=5d, interval=1m from Supabase
+Hibernate: select hde1_0.date,hde1_0.open,hde1_0.high,hde1_0.low,hde1_0.close_price,hde1_0.volume from historical_data hde1_0 where hde1_0.symbol=? and hde1_0.interval_type=? and hde1_0.date>=? order by hde1_0.date
+2026-07-22T03:14:55.267-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-9] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:14:55.270-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-9] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:14:55.271-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-9] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:14:55.271-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-9] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:14:55.272-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-9] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+2026-07-22T03:14:55.291-04:00  INFO 7189 --- [API_Server] [io-8099-exec-10] c.e.a.service.HistoricalDataService      : Fetching historical data for NQ=F with period=1y, interval=1d from Supabase
+Hibernate: select hde1_0.date,hde1_0.open,hde1_0.high,hde1_0.low,hde1_0.close_price,hde1_0.volume from historical_data hde1_0 where hde1_0.symbol=? and hde1_0.interval_type=? and hde1_0.date>=? order by hde1_0.date
+2026-07-22T03:14:57.291-04:00  WARN 7189 --- [API_Server] [onnection-adder] com.zaxxer.hikari.pool.PoolBase          : HikariPool-1 - Pool is empty, failed to create/setup connection (c9a2a496-5d61-40a9-92dc-62b937b53115)
+
+org.postgresql.util.PSQLException: FATAL: password authentication failed for user "postgres"
+	at org.postgresql.core.v3.ConnectionFactoryImpl.doAuthentication(ConnectionFactoryImpl.java:778) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.core.v3.ConnectionFactoryImpl.tryConnect(ConnectionFactoryImpl.java:234) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.core.v3.ConnectionFactoryImpl.openConnectionImpl(ConnectionFactoryImpl.java:289) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.core.ConnectionFactory.openConnection(ConnectionFactory.java:57) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.jdbc.PgConnection.<init>(PgConnection.java:279) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.Driver.makeConnection(Driver.java:448) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.Driver.connect(Driver.java:298) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at com.zaxxer.hikari.util.DriverDataSource.getConnection(DriverDataSource.java:144) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.PoolBase.newConnection(PoolBase.java:373) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.PoolBase.newPoolEntry(PoolBase.java:210) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool.createPoolEntry(HikariPool.java:488) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool$PoolEntryCreator.call(HikariPool.java:752) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool$PoolEntryCreator.call(HikariPool.java:731) ~[HikariCP-7.0.2.jar!/:na]
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:328) ~[na:na]
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090) ~[na:na]
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614) ~[na:na]
+	at java.base/java.lang.Thread.run(Thread.java:1474) ~[na:na]
+
+2026-07-22T03:15:05.298-04:00  WARN 7189 --- [API_Server] [io-8099-exec-10] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:05.299-04:00  WARN 7189 --- [API_Server] [io-8099-exec-10] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10006ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:05.299-04:00  WARN 7189 --- [API_Server] [io-8099-exec-10] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:05.299-04:00  WARN 7189 --- [API_Server] [io-8099-exec-10] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10006ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:05.300-04:00 ERROR 7189 --- [API_Server] [io-8099-exec-10] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10006ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+  cold hist_1d: 10.013016s (503, 159B)
+2026-07-22T03:15:05.324-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-1] c.e.a.service.HistoricalDataService      : Fetching historical data for NQ=F with period=1y, interval=1d from Supabase
+Hibernate: select hde1_0.date,hde1_0.open,hde1_0.high,hde1_0.low,hde1_0.close_price,hde1_0.volume from historical_data hde1_0 where hde1_0.symbol=? and hde1_0.interval_type=? and hde1_0.date>=? order by hde1_0.date
+2026-07-22T03:15:15.331-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-1] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:15.331-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-1] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:15.331-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-1] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:15.331-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-1] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:15.333-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-1] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+2026-07-22T03:15:15.353-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-2] c.e.a.service.HistoricalDataService      : Fetching historical data for NQ=F with period=1y, interval=1d from Supabase
+Hibernate: select hde1_0.date,hde1_0.open,hde1_0.high,hde1_0.low,hde1_0.close_price,hde1_0.volume from historical_data hde1_0 where hde1_0.symbol=? and hde1_0.interval_type=? and hde1_0.date>=? order by hde1_0.date
+2026-07-22T03:15:25.360-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-2] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:25.360-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-2] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:25.360-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-2] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:25.360-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-2] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:25.362-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-2] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+2026-07-22T03:15:25.383-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-3] c.e.a.service.HistoricalDataService      : Fetching historical data for NQ=F with period=1y, interval=1d from Supabase
+Hibernate: select hde1_0.date,hde1_0.open,hde1_0.high,hde1_0.low,hde1_0.close_price,hde1_0.volume from historical_data hde1_0 where hde1_0.symbol=? and hde1_0.interval_type=? and hde1_0.date>=? order by hde1_0.date
+2026-07-22T03:15:35.389-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-3] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:35.390-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-3] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:35.390-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-3] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:35.390-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-3] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:35.392-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-3] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+2026-07-22T03:15:35.415-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-4] c.e.a.service.GammaExposureService       : Fetching gamma exposure for symbol: QQQ
+Hibernate: select gee1_0.id,gee1_0.computed_at,gee1_0.conversion_ratio,gee1_0.etf_price,gee1_0.expirations_used,gee1_0.futures_price,gee1_0.iv_atm,gee1_0.iv_skew,gee1_0.market_open,gee1_0.pcr_oi,gee1_0.pcr_volume,gee1_0.symbol from gamma_exposure gee1_0 where gee1_0.symbol=? and exists(select 1 from gamma_levels gle1_0 where gle1_0.gamma_exposure_id=gee1_0.id and gle1_0.strike_futures is not null) order by gee1_0.computed_at desc fetch first 1 rows only
+2026-07-22T03:15:45.430-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-4] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:45.430-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-4] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:45.430-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-4] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:45.430-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-4] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:45.432-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-4] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+  cold gamma: 10.022109s (503, 159B)
+2026-07-22T03:15:45.455-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-5] c.e.a.service.GammaExposureService       : Fetching gamma exposure for symbol: QQQ
+Hibernate: select gee1_0.id,gee1_0.computed_at,gee1_0.conversion_ratio,gee1_0.etf_price,gee1_0.expirations_used,gee1_0.futures_price,gee1_0.iv_atm,gee1_0.iv_skew,gee1_0.market_open,gee1_0.pcr_oi,gee1_0.pcr_volume,gee1_0.symbol from gamma_exposure gee1_0 where gee1_0.symbol=? and exists(select 1 from gamma_levels gle1_0 where gle1_0.gamma_exposure_id=gee1_0.id and gle1_0.strike_futures is not null) order by gee1_0.computed_at desc fetch first 1 rows only
+2026-07-22T03:15:55.461-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-5] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:55.461-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-5] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:55.461-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-5] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: 28P01
+2026-07-22T03:15:55.461-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-5] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:15:55.462-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-5] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+2026-07-22T03:15:55.483-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-6] c.e.a.service.GammaExposureService       : Fetching gamma exposure for symbol: QQQ
+Hibernate: select gee1_0.id,gee1_0.computed_at,gee1_0.conversion_ratio,gee1_0.etf_price,gee1_0.expirations_used,gee1_0.futures_price,gee1_0.iv_atm,gee1_0.iv_skew,gee1_0.market_open,gee1_0.pcr_oi,gee1_0.pcr_volume,gee1_0.symbol from gamma_exposure gee1_0 where gee1_0.symbol=? and exists(select 1 from gamma_levels gle1_0 where gle1_0.gamma_exposure_id=gee1_0.id and gle1_0.strike_futures is not null) order by gee1_0.computed_at desc fetch first 1 rows only
+2026-07-22T03:16:02.839-04:00  WARN 7189 --- [API_Server] [onnection-adder] com.zaxxer.hikari.pool.PoolBase          : HikariPool-1 - Pool is empty, failed to create/setup connection (2d27a9f8-c923-4e0d-b406-baa2ab496555)
+
+org.postgresql.util.PSQLException: FATAL: (ECIRCUITBREAKER) too many authentication failures, new connections are temporarily blocked
+	at org.postgresql.core.v3.ConnectionFactoryImpl.doAuthentication(ConnectionFactoryImpl.java:778) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.core.v3.ConnectionFactoryImpl.tryConnect(ConnectionFactoryImpl.java:234) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.core.v3.ConnectionFactoryImpl.openConnectionImpl(ConnectionFactoryImpl.java:289) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.core.ConnectionFactory.openConnection(ConnectionFactory.java:57) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.jdbc.PgConnection.<init>(PgConnection.java:279) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.Driver.makeConnection(Driver.java:448) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at org.postgresql.Driver.connect(Driver.java:298) ~[postgresql-42.7.8.jar!/:42.7.8]
+	at com.zaxxer.hikari.util.DriverDataSource.getConnection(DriverDataSource.java:144) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.PoolBase.newConnection(PoolBase.java:373) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.PoolBase.newPoolEntry(PoolBase.java:210) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool.createPoolEntry(HikariPool.java:488) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool$PoolEntryCreator.call(HikariPool.java:752) ~[HikariCP-7.0.2.jar!/:na]
+	at com.zaxxer.hikari.pool.HikariPool$PoolEntryCreator.call(HikariPool.java:731) ~[HikariCP-7.0.2.jar!/:na]
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:328) ~[na:na]
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090) ~[na:na]
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614) ~[na:na]
+	at java.base/java.lang.Thread.run(Thread.java:1474) ~[na:na]
+
+2026-07-22T03:16:05.490-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-6] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: XX000
+2026-07-22T03:16:05.490-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-6] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:16:05.490-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-6] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: XX000
+2026-07-22T03:16:05.490-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-6] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:16:05.490-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-6] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+2026-07-22T03:16:05.503-04:00  INFO 7189 --- [API_Server] [nio-8099-exec-7] c.e.a.service.GammaExposureService       : Fetching gamma exposure for symbol: QQQ
+Hibernate: select gee1_0.id,gee1_0.computed_at,gee1_0.conversion_ratio,gee1_0.etf_price,gee1_0.expirations_used,gee1_0.futures_price,gee1_0.iv_atm,gee1_0.iv_skew,gee1_0.market_open,gee1_0.pcr_oi,gee1_0.pcr_volume,gee1_0.symbol from gamma_exposure gee1_0 where gee1_0.symbol=? and exists(select 1 from gamma_levels gle1_0 where gle1_0.gamma_exposure_id=gee1_0.id and gle1_0.strike_futures is not null) order by gee1_0.computed_at desc fetch first 1 rows only
+2026-07-22T03:16:15.508-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-7] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: XX000
+2026-07-22T03:16:15.508-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-7] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:16:15.508-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-7] org.hibernate.orm.jdbc.error             : HHH000247: ErrorCode: 0, SQLState: XX000
+2026-07-22T03:16:15.508-04:00  WARN 7189 --- [API_Server] [nio-8099-exec-7] org.hibernate.orm.jdbc.error             : HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)
+2026-07-22T03:16:15.509-04:00 ERROR 7189 --- [API_Server] [nio-8099-exec-7] c.e.a.exception.GlobalExceptionHandler   : Database connection failure: Unable to acquire JDBC Connection [HikariPool-1 - Connection is not available, request timed out after 10005ms (total=0, active=0, idle=0, waiting=0)] [n/a]
+2026-07-22T03:16:15.512-04:00  INFO 7189 --- [API_Server] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-07-22T03:16:15.515-04:00  INFO 7189 --- [API_Server] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-07-22T03:16:15.523-04:00  INFO 7189 --- [API_Server] [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'supabase'
+2026-07-22T03:16:15.524-04:00  INFO 7189 --- [API_Server] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-07-22T03:16:18.640-04:00  INFO 7189 --- [API_Server] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.

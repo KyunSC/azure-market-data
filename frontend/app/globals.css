@@ -161,6 +161,30 @@ body {
   color: #1e1e1e;
 }
 
+.ticker-nav {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Dashboard → backtester entry point */
+.header-links {
+  margin-top: 0.35rem;
+}
+
+.backtest-link {
+  color: #E8B339;
+  text-decoration: none;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.backtest-link:hover {
+  border-bottom-color: #E8B339;
+}
+
 /* Chart Container */
 .chart-container {
   background: #252526;

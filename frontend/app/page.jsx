@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import Dashboard from '../components/Dashboard'
 
 const EQUITIES_TICKERS = ['ES=F', 'NQ=F', 'SPY', 'QQQ', '^VIX', 'XEQT.TO']
@@ -140,6 +141,9 @@ export default function Home() {
     <div className="app">
       <header className="header">
         <h1>Market Data Dashboard</h1>
+        <p className="header-links">
+          <Link href="/backtest" className="backtest-link">Strategy backtester →</Link>
+        </p>
         {warmingUp && <p className="warming-up">Warming up server...</p>}
         {lastUpdated && !warmingUp && (
           <p className="last-updated">

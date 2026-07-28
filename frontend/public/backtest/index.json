@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-07-26T22:46:26+00:00",
+  "datasets": [
+    {
+      "symbol": "QQQ",
+      "file": "qqq_5m.json",
+      "bars": 3226,
+      "start": "2026-04-24T14:05:00+00:00",
+      "end": "2026-07-10T19:40:00+00:00",
+      "interval": "5m",
+      "horizonMinutes": 15,
+      "sizeKb": 960,
+      "hasMl": true,
+      "oosSharpe": 0.7619,
+      "oosIc": -0.0157
+    },
+    {
+      "symbol": "SPY",
+      "file": "spy_5m.json",
+      "bars": 3115,
+      "start": "2026-04-24T13:35:00+00:00",
+      "end": "2026-07-10T19:40:00+00:00",
+      "interval": "5m",
+      "horizonMinutes": 15,
+      "sizeKb": 933,
+      "hasMl": true,
+      "oosSharpe": 0.0472,
+      "oosIc": 0.0223
+    }
+  ]
+}
