@@ -406,13 +406,15 @@ public class HistoricalDataService {
     public HistoricalDataResponse getHistoricalDataFallback(String symbol, String period, String interval, Exception ex) {
         logger.warn("Circuit breaker fallback for historical data {}. Reason: {}", symbol, ex.getMessage());
 
-        // Return empty response
-        return new HistoricalDataResponse(
+        // Preserve the chart's empty fallback while distinguishing outages for research consumers.
+        HistoricalDataResponse response = new HistoricalDataResponse(
                 symbol.toUpperCase(),
                 period,
                 interval,
                 LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
                 List.of()
         );
+        response.setUnavailable(true);
+        return response;
     }
 }

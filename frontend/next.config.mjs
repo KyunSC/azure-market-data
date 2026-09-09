@@ -4,6 +4,7 @@ const apiUrl = process.env.API_URL || 'https://azure-market-data.onrender.com'
 const nextConfig = {
   async rewrites() {
     return [
+      { source: '/api/backtest/:path*', destination: `${apiUrl}/api/backtest/:path*` },
       // Match subpaths too (e.g. /api/market/live, /api/historical/since).
       { source: '/api/market/:path+', destination: `${apiUrl}/api/market/:path+` },
       { source: '/api/market', destination: `${apiUrl}/api/market` },

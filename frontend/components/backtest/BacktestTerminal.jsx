@@ -37,6 +37,7 @@ export default function BacktestTerminal() {
   const setTab = useBacktest((s) => s.setTab)
   const datasetError = useBacktest((s) => s.datasetError)
   const runError = useBacktest((s) => s.runError)
+  const configError = useBacktest((s) => s.configError)
   const loadDataset = useBacktest((s) => s.loadDataset)
   const wide = useWide()
 
@@ -44,7 +45,6 @@ export default function BacktestTerminal() {
   useEffect(() => {
     const store = useBacktest.getState()
     store.hydrate(decodeConfig(window.location.search))
-    store.loadResearchIndex()
     store.loadDataset()
   }, [])
 
@@ -86,6 +86,7 @@ export default function BacktestTerminal() {
         </PanelError>
       )}
       {runError && <PanelError>{runError}</PanelError>}
+      {configError && <PanelError>{configError}</PanelError>}
     </>
   )
 
@@ -228,7 +229,7 @@ function useKeyboard() {
         default: {
           const fam = FAMILIES.find((f) => f.hotkey === e.key)
           if (fam) {
-            const first = strategiesForPlane(s.plane).find((st) => st.family === fam.id)
+            const first = strategiesForPlane(s.plane, s.dataset).find((st) => st.family === fam.id)
             if (first && getStrategy(s.strategyId).family !== fam.id) s.setStrategy(first.id)
           }
         }

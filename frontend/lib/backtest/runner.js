@@ -43,6 +43,7 @@ export async function ensureDataset(ds) {
   const api = getWorker()
   if (!api) {
     localDatasets.set(ds.id, ds)
+    if (localDatasets.size > 4) localDatasets.delete(localDatasets.keys().next().value)
     return false
   }
   if (!(await api.hasDataset(ds.id))) {

@@ -23,7 +23,7 @@ export default function StrategyPanel() {
   const dataset = useBacktest((s) => s.dataset)
 
   const strategy = getStrategy(strategyId)
-  const available = strategiesForPlane(plane)
+  const available = strategiesForPlane(plane, dataset)
 
   return (
     <Panel
@@ -117,6 +117,10 @@ function DatasetSection({ plane, setPlane }) {
   const dataset = useBacktest((s) => s.dataset)
 
   const researchSets = researchIndex?.datasets || []
+  const example = useBacktest((s) => s.example)
+  const setExample = useBacktest((s) => s.setExample)
+  const refreshDataset = useBacktest((s) => s.refreshDataset)
+  const loading = useBacktest((s) => s.datasetLoading)
 
   return (
     <Section title="dataset">
@@ -146,8 +150,7 @@ function DatasetSection({ plane, setPlane }) {
       <p className="mt-1.5 text-[10px] leading-snug text-dim">
         {plane === 'research' ? (
           <>
-            Bar-aligned historical GEX exported from the ML parquets. Roughly three months of 5m bars —
-            short enough that a good Sharpe here is a hypothesis, not a result.
+            {example ? 'Bundled example data. Historical coverage is fixed.' : 'Published historical OHLCV, GEX and optional model predictions.'}
           </>
         ) : (
           <>
@@ -156,6 +159,23 @@ function DatasetSection({ plane, setPlane }) {
           </>
         )}
       </p>
+      {plane === 'research' && (
+        <label className="flex items-center gap-2 text-[10px] text-muted">
+          <input type="checkbox" checked={example} onChange={e => setExample(e.target.checked)} />
+          Use bundled examples
+        </label>
+      )}
+      <button className="btn mt-2" disabled={loading} onClick={refreshDataset}>
+        {loading ? 'Loading dataset…' : 'Refresh dataset'}
+      </button>
+      {dataset && <p className="mt-2 text-[10px] text-muted">
+        {new Date(dataset.start).toISOString().slice(0, 10)} → {new Date(dataset.end).toISOString().slice(0, 10)} · {dataset.n.toLocaleString()} bars
+        {dataset.generatedAt && <> · Generated {dataset.generatedAt.slice(0, 10)}</>}
+        {dataset.version && <> · Version {dataset.version.slice(0, 8)}</>}
+        {(dataset.cached || researchIndex?.cached) && <> · Offline cached data (up to 24 hours old)</>}
+        {dataset.quality?.predictionValidation === 'legacy-unverified' && <> · Legacy model predictions; training overlap has not been verified.</>}
+        {dataset.plane === 'live' && <> · Exploratory snapshot; shared links reload current history.</>}
+      </p>}
       {plane === 'research' && dataset?.plane === 'research' && dataset.ml && (
         <p className="mt-1 text-[10px] leading-snug text-dim">
           Model: <span className="text-muted">{dataset.ml.model}</span>, {dataset.ml.horizon}.

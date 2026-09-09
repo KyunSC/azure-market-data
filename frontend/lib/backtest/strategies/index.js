@@ -46,6 +46,18 @@ export function sweepableParams(id) {
   return getStrategy(id).params.filter((p) => p.type === 'number')
 }
 
-export function strategiesForPlane(plane) {
-  return STRATEGIES.filter((s) => s.plane !== 'research' || plane === 'research')
+export function strategyAvailable(strategy, dataset) {
+  if (!dataset) return strategy.plane !== 'research'
+  if (strategy.family === 'ml') return Boolean(dataset.ml?.pred?.some(Number.isFinite))
+  if (strategy.family === 'gex') {
+    const required = strategy.id === 'gexWallFade'
+      ? ['dist_call_wall_atr', 'dist_put_wall_atr', 'above_zero_gamma', 'call_wall_strength', 'put_wall_strength']
+      : ['above_zero_gamma', 'gamma_regime_strength']
+    return dataset.plane === 'research' && required.every(key => dataset.features?.[key]?.some(Number.isFinite))
+  }
+  return true
+}
+
+export function strategiesForPlane(plane, dataset) {
+  return STRATEGIES.filter((s) => (s.plane !== 'research' || plane === 'research') && (dataset === undefined || strategyAvailable(s, dataset)))
 }

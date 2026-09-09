@@ -32,6 +32,7 @@ public class CacheConfig {
     public CacheManager cacheManager() {
         SimpleCacheManager manager = new SimpleCacheManager();
         manager.setCaches(List.of(
+                buildCache("backtestBenchmarks", Duration.ofHours(6), 100),
                 // Live intraday bars: full-fetch cache. Bumped beyond poll-cycle
                 // time so repeated full refreshes within a minute share a hit.
                 // Only used for the live "today" 1m view now — everything else

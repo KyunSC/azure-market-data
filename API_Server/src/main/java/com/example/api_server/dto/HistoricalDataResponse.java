@@ -8,6 +8,9 @@ public class HistoricalDataResponse {
     private String interval;
     private String timestamp;
     private List<OhlcData> data;
+    private boolean unavailable;
+    public boolean isUnavailable() { return unavailable; }
+    public void setUnavailable(boolean unavailable) { this.unavailable = unavailable; }
 
     /**
      * Epoch-second of the most recent {@code fetched_at} the server has seen

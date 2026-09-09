@@ -16,6 +16,7 @@ export default function CommandPalette() {
   const togglePalette = useBacktest((s) => s.togglePalette)
   const plane = useBacktest((s) => s.plane)
   const strategyId = useBacktest((s) => s.strategyId)
+  const dataset = useBacktest((s) => s.dataset)
 
   useEffect(() => {
     const onKey = (e) => {
@@ -73,7 +74,7 @@ export default function CommandPalette() {
           </Group>
 
           <Group heading="strategy">
-            {strategiesForPlane(plane).map((st) => (
+            {strategiesForPlane(plane, dataset).map((st) => (
               <Item key={st.id} onSelect={act(() => s.setStrategy(st.id))} active={st.id === strategyId}>
                 {st.label} <span className="text-dim">— {st.blurb}</span>
               </Item>

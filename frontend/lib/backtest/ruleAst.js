@@ -117,6 +117,10 @@ export function isEmpty(node) {
 function operandSeries(node, ds, n) {
   if (!node) return constSeries(n, Number.NaN)
   if (node.t === 'const') return constSeries(n, node.v)
+  if ((node.k?.startsWith('f:') && !ds.features?.[node.k.slice(2)]?.some(Number.isFinite)) ||
+      (node.k === 'ml:pred' && !ds.ml?.pred?.some(Number.isFinite))) {
+    throw new Error(`Dataset does not contain ${operandLabel(node.k)}`)
+  }
   return getSeries(ds, node.k)
 }
 

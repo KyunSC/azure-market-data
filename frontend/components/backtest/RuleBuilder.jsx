@@ -147,6 +147,7 @@ function ConditionRow({ value, onChange, plane }) {
 }
 
 function OperandPicker({ value, onChange, plane, allowConst }) {
+  const dataset = useBacktest((s) => s.dataset)
   if (value?.t === 'const') {
     return (
       <input
@@ -160,6 +161,10 @@ function OperandPicker({ value, onChange, plane, allowConst }) {
   }
 
   const groups = OPERAND_GROUPS.filter((g) => g.plane !== 'research' || plane === 'research')
+    .map(g => ({ ...g, items: g.items.filter(item =>
+      item.k.startsWith('f:') ? dataset?.features?.[item.k.slice(2)]?.some(Number.isFinite)
+        : item.k === 'ml:pred' ? dataset?.ml?.pred?.some(Number.isFinite) : true) }))
+    .filter(g => g.items.length)
 
   return (
     <select

@@ -8,9 +8,14 @@
  */
 
 const KEY = 'c'
+import { ENGINE_VERSION } from './datasets'
 
 export function encodeConfig(state) {
   const payload = {
+    engineVersion: ENGINE_VERSION,
+    researchDatasetId: state.plane === 'research' && !state.example ? state.dataset?.id || state.researchDatasetId : null,
+    datasetVersion: state.dataset?.version,
+    example: state.example,
     plane: state.plane,
     symbol: state.plane === 'research' ? state.researchSymbol : state.liveSymbol,
     period: state.livePeriod,

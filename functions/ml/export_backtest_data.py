@@ -84,7 +84,7 @@ def fetch_bars(api_base: str, symbol: str, period: str, interval: str) -> pd.Dat
     return df[["date", "time", "open", "high", "low", "close", "volume"]].sort_values("date")
 
 
-def walk_forward_predictions(df: pd.DataFrame, features: list[str], test_size: int) -> dict:
+def walk_forward_predictions(df: pd.DataFrame, features: list[str], test_size: int, horizon_bars: int) -> dict:
     """Expanding-window walk-forward mirroring eval.walk_forward, but also keeping
     the in-sample fit so the UI can render IS-vs-OOS per fold (the honest
     comparison — an IS Sharpe that dwarfs OOS is the overfitting tell)."""
@@ -103,7 +103,11 @@ def walk_forward_predictions(df: pd.DataFrame, features: list[str], test_size: i
     for k in range(N_SPLITS):
         test_start = first_test + k * test_size
         test_end = test_start + test_size
-        train_idx = np.arange(0, test_start)
+        # Labels consume future closes. Purge training labels that reach the test window.
+        cutoff = df['date'].iloc[test_start] - pd.Timedelta(minutes=horizon_bars * 5)
+        train_idx = np.flatnonzero((df['date'].iloc[:test_start] < cutoff).to_numpy())
+        if not len(train_idx):
+            raise ValueError('No training rows remain after purging label overlap')
         test_idx = np.arange(test_start, test_end)
 
         model = RandomForestRegressor(
@@ -193,7 +197,7 @@ def build_symbol(symbol: str, horizon_bars: int, api_base: str, period: str, ski
     ml = None
     if not skip_ml:
         test_size = max(120, len(df) // 10)
-        ml = walk_forward_predictions(df, FEATURES_BASELINE_PLUS_GEX, test_size)
+        ml = walk_forward_predictions(df, FEATURES_BASELINE_PLUS_GEX, test_size, horizon_bars)
 
     out = {
         "symbol": symbol,
@@ -223,6 +227,7 @@ def build_symbol(symbol: str, horizon_bars: int, api_base: str, period: str, ski
 
     if ml is not None:
         out["ml"] = {
+            "purgeMinutes": horizon_bars * 5,
             "model": "RandomForest(300, leaf=10, sqrt) on baseline+GEX",
             "target": f"forward log return, {horizon_bars * 5}m",
             "pred": [_round(v, sig=FEATURE_SIG) for v in ml["pred"]],
@@ -243,6 +248,7 @@ def main() -> None:
     ap.add_argument("--period", default="6mo", help="period passed to /api/historical")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT_DIR)
     ap.add_argument("--skip-ml", action="store_true", help="skip the walk-forward RF fit")
+    ap.add_argument("--publish-out", type=Path, help="Validate and publish immutable backend artifacts after export")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -275,6 +281,9 @@ def main() -> None:
     }
     (args.out / "index.json").write_text(json.dumps(index, indent=2))
     logging.info("wrote %s", args.out / "index.json")
+    if args.publish_out:
+        from publish_backtest_data import publish
+        publish(args.out, args.publish_out)
 
 
 if __name__ == "__main__":

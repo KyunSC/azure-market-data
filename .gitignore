@@ -10,6 +10,7 @@ venv/
 
 # ML pipeline artifacts (reproducible from DB)
 functions/ml/data/
+API_Server/backtest-data/
 functions/ml/notebooks/.ipynb_checkpoints/
 
 # macOS
