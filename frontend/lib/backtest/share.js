@@ -13,6 +13,7 @@ import { ENGINE_VERSION } from './datasets'
 export function encodeConfig(state) {
   const payload = {
     engineVersion: ENGINE_VERSION,
+    benchmarkSymbol: state.benchmarkSymbol,
     researchDatasetId: state.plane === 'research' && !state.example ? state.dataset?.id || state.researchDatasetId : null,
     datasetVersion: state.dataset?.version,
     example: state.example,

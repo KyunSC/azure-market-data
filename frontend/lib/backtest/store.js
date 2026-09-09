@@ -14,6 +14,7 @@ import { ENGINE_VERSION, loadLiveDataset, loadResearchDataset, loadResearchIndex
 import { axisValues } from './analytics'
 import * as runner from './runner'
 import { emptyRule, newCompare } from './ruleAst'
+import { BENCHMARKS } from './benchmark'
 
 const initialParams = () => {
   const out = {}
@@ -58,6 +59,10 @@ export const useBacktest = create((rawSet, get) => {
   datasetLoading: true,
   datasetError: null,
   configError: null,
+  benchmarkSymbol: 'SPY',
+  setBenchmarkSymbol(symbol) {
+    if (BENCHMARKS.some(item => item.symbol === symbol)) set({ benchmarkSymbol: symbol })
+  },
 
   // ── configuration ──────────────────────────────────────────────────────
   strategyId: 'gexWallFade',
@@ -453,6 +458,7 @@ export const useBacktest = create((rawSet, get) => {
           datasetId: dataset.id,
           datasetVersion: dataset.version,
           engineVersion: ENGINE_VERSION,
+          benchmarkSymbol: get().benchmarkSymbol,
           costs: { ...get().costs },
           risk: { ...get().risk },
           rule: get().rule,
@@ -505,6 +511,7 @@ export const useBacktest = create((rawSet, get) => {
       set({ autoRun: false, configError: 'This link uses an unsupported engine version. Run manually to use the current engine.' })
     }
     const patch = {}
+    if (BENCHMARKS.some(item => item.symbol === config.benchmarkSymbol)) patch.benchmarkSymbol = config.benchmarkSymbol
     patch.researchDatasetId = config.researchDatasetId || null
     patch.example = Boolean(config.example)
     if (config.plane) patch.plane = config.plane

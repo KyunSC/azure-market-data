@@ -7,6 +7,7 @@ import { useBacktest } from '../../lib/backtest/store'
 import { fmtSigned, fmtPct, fmtPctAbs, signClass } from '../../lib/backtest/format'
 import Panel from './Panel'
 import useSize from './useSize'
+import BenchmarkComparison from './BenchmarkComparison'
 
 const SLOTS = ['A', 'B', 'C']
 const SLOT_COLORS = { A: '#E8B339', B: '#4A90A4', C: '#7C6BD6' }
@@ -76,6 +77,7 @@ export default function ComparePanel() {
       className="h-full"
       delay={0.1}
     >
+      <BenchmarkComparison />
       {!filled.length ? (
         <p className="p-3 text-[10px] leading-snug text-dim">
           Pin a run to A, B or C to hold it while you change parameters. Curves are normalised to their

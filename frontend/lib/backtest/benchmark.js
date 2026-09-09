@@ -7,10 +7,12 @@ export const BENCHMARKS = [
 ]
 
 const dateFormat = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' })
-const hourFormat = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/New_York', hour: '2-digit', hourCycle: 'h23' })
+const closeFormat = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 const barSeconds = { '1m': 60, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400 }
 
-/** Use completed daily strategy observations, excluding partial first/last sessions.
+/** Use the last available near-close strategy mark on each date.
+ * Research exports omit their final forward-label bars, so these marks can
+ * precede the official close; the comparison UI explicitly labels this.
  * Daily bars are date-labeled UTC; intraday bars are timestamped at bucket start.
  */
 export function dailyStrategy(dataset, result) {
@@ -22,19 +24,20 @@ export function dailyStrategy(dataset, result) {
       const seconds = barSeconds[dataset.interval]
       if (!seconds) throw new Error('Daily benchmark comparison is unavailable for this interval')
       const closeTime = new Date((time + seconds) * 1000)
-      if (Number(hourFormat.format(closeTime)) < 16 || dateFormat.format(closeTime) !== date) continue
+      const clock = closeFormat.format(closeTime)
+      if (clock < '15:30' || clock > '16:00' || dateFormat.format(closeTime) !== date) continue
     }
-    if (Number.isFinite(result.equity[i]) && result.equity[i] > 0) observations.set(date, result.equity[i])
+    if (Number.isFinite(result.equity[i])) observations.set(date, result.equity[i])
   }
   return observations
 }
 
-function metrics(values, dates) {
+function metrics(values, dates, missingSessions) {
   const returns = values.slice(1).map((value, i) => value / values[i] - 1)
   // Missing sessions make annualized daily Sharpe misleading; retain return/DD.
   const gaps = dates.slice(1).some((date, i) => (Date.parse(date) - Date.parse(dates[i])) / 86400000 > 4)
   return { totalReturn: values.at(-1) / values[0] - 1, maxDd: drawdown(values).maxDd,
-    sharpe: gaps || returns.length < 2 ? null : sharpe(returns, 252) }
+    sharpe: missingSessions || gaps || returns.length < 2 || !returns.every(Number.isFinite) ? null : sharpe(returns, 252) }
 }
 
 export function compareBenchmark(observations, payload) {
@@ -45,10 +48,12 @@ export function compareBenchmark(observations, payload) {
     seen.add(point.date)
     return observations.has(point.date)
   }).sort((a, b) => a.date.localeCompare(b.date))
-  if (points.length < 2) throw new Error('Need at least two matching completed daily closes to compare')
+  if (points.length < 2) throw new Error('Need at least two matching daily observations to compare')
   const dates = points.map(point => point.date)
   const strategy = points.map(point => observations.get(point.date))
   const benchmark = points.map(point => point.adjustedClose)
-  return { dates, strategy: metrics(strategy, dates), benchmark: metrics(benchmark, dates), currency: payload.currency,
+  if (strategy[0] <= 0) throw new Error('Strategy must have positive equity at comparison start')
+  const missingSessions = payload.data.some(point => point.date >= dates[0] && point.date <= dates.at(-1) && !observations.has(point.date))
+  return { dates, strategy: metrics(strategy, dates, missingSessions), benchmark: metrics(benchmark, dates, missingSessions), currency: payload.currency,
     points: points.map((point, i) => ({ date: point.date, strategy: strategy[i] / strategy[0], benchmark: benchmark[i] / benchmark[0] })) }
 }

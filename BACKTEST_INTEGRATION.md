@@ -69,12 +69,24 @@ persistence and exact replay of live TA snapshots are outside this implementatio
 
 ## Verification
 
+The Compare panel defaults to S&P 500 buy-and-hold via SPY, with QQQ and XEQT.TO
+alternatives. `GET /api/backtest/benchmark?symbol=SPY&start=YYYY-MM-DD&end=YYYY-MM-DD`
+loads Yahoo adjusted daily closes directly, so XEQT does not require ingestion or
+research features. Requests are symbol-allowlisted, range-limited and cached six
+hours. Benchmark holdings are fully invested without trading costs; adjusted closes
+reflect provider adjustments. Both curves rebase at their first shared date. XEQT
+returns are CAD, SPY/QQQ USD, with no FX conversion. Intraday strategy observations
+use the last available mark between 15:30 and 16:00 ET and may precede the official
+benchmark close, as labeled in the UI. Current-day benchmark data is excluded.
+Only common dates are compared; annualized Sharpe is omitted when sessions are
+missing. The existing equity-panel ghost remains the traded asset's own buy-and-hold.
+
 ```sh
 python3 -m unittest discover -s functions/tests -p test_backtest_publish.py
 cd API_Server
 ./mvnw -Dtest=BacktestDatasetTests test
 cd ../frontend
-node --test lib/backtest/integration.test.mjs
+node --test lib/backtest/integration.test.mjs lib/backtest/benchmark.test.mjs
 npm run build
 ```
 

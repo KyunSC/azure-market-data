@@ -84,7 +84,7 @@ export default function EquityPanel() {
         result ? (
           <span className="flex items-center gap-2 text-[9px]">
             <Legend color="#E8B339" label="strategy" />
-            <Legend color="#5A616B" label="buy & hold" dashed />
+            <Legend color="#5A616B" label={`${dataset?.symbol} hold`} dashed />
             {geom?.stitched && <Legend color="#7C6BD6" label="wf oos" />}
           </span>
         ) : null
