@@ -27,4 +27,14 @@ class BenchmarkTests {
         assertEquals("2025-01-02", benchmark.data().getFirst().date());
         assertEquals(33.0, benchmark.data().getLast().adjustedClose());
     }
+
+    @Test void datesCryptoCandlesInUtc() {
+        // 2025-01-04T00:00Z and 2025-01-05T00:00Z: a weekend, and the evening before in New York.
+        Map<String, Object> result = Map.of("timestamp", List.of(1735948800L, 1736035200L),
+                "indicators", Map.of("adjclose", List.of(Map.of("adjclose", List.of(98000.0, 98300.0)))));
+        var benchmark = BenchmarkService.parse("BTC-USD", LocalDate.parse("2025-01-01"), LocalDate.parse("2025-01-10"),
+                Map.of("chart", Map.of("result", List.of(result))));
+        assertEquals("USD", benchmark.currency());
+        assertEquals(List.of("2025-01-04", "2025-01-05"), benchmark.data().stream().map(BenchmarkService.Point::date).toList());
+    }
 }

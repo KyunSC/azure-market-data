@@ -11,6 +11,8 @@
  * ask where its bars came from.
  */
 
+import { CRYPTO_SYMBOLS, calendarFor } from './markets'
+
 const NA = Number.NaN
 export const ENGINE_VERSION = '2'
 
@@ -62,7 +64,7 @@ async function fetchJson(url, signal) {
   }
 }
 
-export const LIVE_SYMBOLS = ['QQQ', 'SPY', 'NQ=F', 'ES=F', 'BTC-USD', 'ETH-USD']
+export const LIVE_SYMBOLS = ['QQQ', 'SPY', 'NQ=F', 'ES=F', ...CRYPTO_SYMBOLS]
 export const LIVE_PERIODS = ['5d', '1mo', '3mo', '6mo', '1y', '2y']
 export const LIVE_INTERVALS = ['5m', '15m', '30m', '1h', '4h', '1d']
 
@@ -213,7 +215,7 @@ export function datasetLabel(ds) {
   return `${ds.symbol} · ${ds.interval} · ${ds.n.toLocaleString()} bars`
 }
 
-export function barsPerDay(interval) {
-  const m = { '1m': 390, '5m': 78, '15m': 26, '30m': 13, '1h': 7, '4h': 2, '1d': 1 }
-  return m[interval] || 1
+export function barsPerDay(interval, symbol) {
+  const minutes = { '1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240 }[interval]
+  return minutes ? Math.max(1, Math.round(calendarFor(symbol).minutesPerDay / minutes)) : 1
 }

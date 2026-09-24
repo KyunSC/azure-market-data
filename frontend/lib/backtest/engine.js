@@ -241,6 +241,7 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
     trades,
     barsInMarket,
     interval: ds.interval,
+    symbol: ds.symbol,
     initialCapital: c.initialCapital,
   })
 

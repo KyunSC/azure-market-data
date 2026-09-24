@@ -8,21 +8,21 @@
  */
 
 import { sharpeInference } from './stats'
+import { calendarFor } from './markets'
 
-const TRADING_DAYS = 252
-const RTH_MINUTES = 390
-
-/** Bars per year for an interval label, matching the ML harness's convention
- *  of counting only regular-hours bars. */
-export function periodsPerYear(interval) {
+/** Bars per year for an interval label. Equities match the ML harness's
+ *  convention of counting only regular-hours bars; crypto counts every bar of
+ *  its 24/7 calendar. */
+export function periodsPerYear(interval, symbol) {
+  const { days, minutesPerDay } = calendarFor(symbol)
   const m = {
     '1m': 1, '2m': 2, '5m': 5, '15m': 15, '30m': 30, '60m': 60, '1h': 60, '4h': 240,
   }[interval]
-  if (m) return TRADING_DAYS * Math.max(1, Math.round(RTH_MINUTES / m))
-  if (interval === '1d') return TRADING_DAYS
+  if (m) return days * Math.max(1, Math.round(minutesPerDay / m))
+  if (interval === '1d') return days
   if (interval === '1wk') return 52
   if (interval === '1mo') return 12
-  return TRADING_DAYS
+  return days
 }
 
 function mean(a) {
@@ -80,8 +80,8 @@ export function drawdown(equity) {
   return { maxDd, curve, duration: longest, troughIdx }
 }
 
-export function computeMetrics({ equity, returns, trades, barsInMarket, interval, initialCapital }) {
-  const ppy = periodsPerYear(interval)
+export function computeMetrics({ equity, returns, trades, barsInMarket, interval, symbol, initialCapital }) {
+  const ppy = periodsPerYear(interval, symbol)
   const n = equity.length
   const last = equity[n - 1] ?? initialCapital
   const totalReturn = initialCapital > 0 ? last / initialCapital - 1 : 0

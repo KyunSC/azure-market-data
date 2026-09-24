@@ -69,8 +69,8 @@ persistence and exact replay of live TA snapshots are outside this implementatio
 
 ## Verification
 
-The Compare panel defaults to S&P 500 buy-and-hold via SPY, with QQQ and XEQT.TO
-alternatives. `GET /api/backtest/benchmark?symbol=SPY&start=YYYY-MM-DD&end=YYYY-MM-DD`
+The Compare panel defaults to S&P 500 buy-and-hold via SPY, with QQQ, XEQT.TO,
+BTC-USD and ETH-USD alternatives. `GET /api/backtest/benchmark?symbol=SPY&start=YYYY-MM-DD&end=YYYY-MM-DD`
 loads Yahoo adjusted daily closes directly, so XEQT does not require ingestion or
 research features. Requests are symbol-allowlisted, range-limited and cached six
 hours. Benchmark holdings are fully invested without trading costs; adjusted closes
@@ -79,7 +79,15 @@ returns are CAD, SPY/QQQ USD, with no FX conversion. Intraday strategy observati
 use the last available mark between 15:30 and 16:00 ET and may precede the official
 benchmark close, as labeled in the UI. Current-day benchmark data is excluded.
 Only common dates are compared; annualized Sharpe is omitted when sessions are
-missing. The existing equity-panel ghost remains the traded asset's own buy-and-hold.
+missing.
+
+Crypto (`*-USD`: BTC, ETH, SOL on the live plane) uses a 24/7 calendar: metrics
+annualize over 365 days of 1440 minutes, crypto benchmark candles are dated in UTC,
+and intraday crypto strategies mark their daily close at the last bar ending within
+30 minutes of 00:00 UTC. Crypto-vs-crypto comparisons use every calendar day at
+365/yr; any equity leg restricts common dates to weekdays at 252/yr, and an equity
+strategy is not penalized for lacking weekend marks. Live crypto backtests need
+the ingester's `TICKER_LIST` to include the symbols. The existing equity-panel ghost remains the traded asset's own buy-and-hold.
 
 ```sh
 python3 -m unittest discover -s functions/tests -p test_backtest_publish.py

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useBacktest } from '../../lib/backtest/store'
 import { BENCHMARKS, dailyStrategy, compareBenchmark } from '../../lib/backtest/benchmark'
+import { isCrypto } from '../../lib/backtest/markets'
 import { fmtPct, fmtPctAbs, fmtSigned, signClass } from '../../lib/backtest/format'
 
 export default function BenchmarkComparison() {
@@ -22,13 +23,13 @@ export default function BenchmarkComparison() {
       try {
         const observations = dailyStrategy(dataset, result)
         const dates = [...observations.keys()].sort()
-        if (dates.length < 2) throw new Error('Need at least two trading days with daily or near-close strategy marks.')
+        if (dates.length < 2) throw new Error(`Need at least two days with daily or near-close strategy marks${isCrypto(dataset.symbol) ? ' (crypto closes at 00:00 UTC)' : ''}.`)
         const params = new URLSearchParams({ symbol, start: dates[0], end: dates.at(-1) })
         const response = await fetch(`/api/backtest/benchmark?${params}`, { signal: controller.signal })
         if (!response.ok) throw new Error(`Benchmark history unavailable (${response.status}).`)
         const payload = await response.json()
         if (payload.symbol !== symbol) throw new Error('Benchmark symbol mismatch')
-        const data = compareBenchmark(observations, payload)
+        const data = compareBenchmark(observations, payload, dataset.symbol)
         if (!controller.signal.aborted) setRequest({ result, symbol, data })
       } catch (error) {
         if (!controller.signal.aborted) setRequest({ result, symbol, error: error.message })
@@ -75,7 +76,8 @@ export default function BenchmarkComparison() {
         </table>
         <p className="mt-1 text-muted">Strategy minus benchmark: <span className={signClass(data.strategy.totalReturn - data.benchmark.totalReturn)}>{fmtSigned((data.strategy.totalReturn - data.benchmark.totalReturn) * 100)} pp</span></p>
         <p className="mt-1 text-dim">{data.dates[0]} → {data.dates.at(-1)} · {data.dates.length} common dates. Both rebased to 1 at the first observation.</p>
-        {dataset.interval !== '1d' && <p className="mt-1 text-dim">Strategy uses its last available mark near 16:00 ET, which may precede the benchmark’s daily close.</p>}
+        {dataset.interval !== '1d' && <p className="mt-1 text-dim">Strategy uses its last available mark near {isCrypto(dataset.symbol) ? '00:00 UTC' : '16:00 ET'}, which may precede the benchmark’s daily close.</p>}
+        {isCrypto(dataset.symbol) !== isCrypto(symbol) && <p className="mt-1 text-dim">Crypto closes at 00:00 UTC and trades weekends; only common weekday dates are compared.</p>}
       </>}
     <p className="mt-1 text-dim">Benchmark: adjusted closes, fully invested, no trading costs. {selected.currency} returns; no FX conversion. Strategy retains its configured costs.</p>
   </div>
