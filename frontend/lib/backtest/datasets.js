@@ -12,7 +12,7 @@
  */
 
 const NA = Number.NaN
-export const ENGINE_VERSION = '1'
+export const ENGINE_VERSION = '2'
 
 export function validateDataset(j) {
   const n = j.bars

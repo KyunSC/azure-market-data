@@ -28,3 +28,6 @@ node_modules/
 .claude/*.lock
 CLAUDE.md
 AGENTS.md
+
+# Nightly backtest output (uploaded as a CI artifact)
+frontend/backtest-results/

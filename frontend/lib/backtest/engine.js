@@ -80,6 +80,11 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
   let pending = null   // target position queued for next bar's open
   let barsInMarket = 0
   let prevTarget = 0
+  // Direction closed by a stop, target or time exit. Re-entry that way waits
+  // until the strategy stops asking for it — otherwise a regime strategy whose
+  // condition is still true buys straight back in on the next open and the
+  // "stop" becomes one-bar churn.
+  let lockout = 0
 
   const buyFill = (px) => px * (1 + slip)
   const sellFill = (px) => px * (1 - slip)
@@ -153,8 +158,10 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
       }
     }
 
-    // 2 — intrabar risk exits. Stop is checked before target: when a single bar
-    // spans both, assuming the worse fill is the only defensible choice.
+    // 2 — intrabar risk exits. A bar that opens beyond a level fills at the
+    // open: a stop cannot be filled at a price the market gapped through. Inside
+    // the bar, stop is checked before target — when one bar spans both, the
+    // worse fill is the only defensible assumption.
     if (pos !== 0) {
       const excursion = pos > 0
         ? { fav: ds.high[i] / entryPrice - 1, adv: ds.low[i] / entryPrice - 1 }
@@ -164,24 +171,41 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
 
       const stopHit = stopPrice > 0 && (pos > 0 ? ds.low[i] <= stopPrice : ds.high[i] >= stopPrice)
       const targetHit = targetPrice > 0 && (pos > 0 ? ds.high[i] >= targetPrice : ds.low[i] <= targetPrice)
-      if (stopHit) {
+      const o = ds.open[i]
+      const gapStop = stopHit && (pos > 0 ? o <= stopPrice : o >= stopPrice)
+      const gapTarget = targetHit && (pos > 0 ? o >= targetPrice : o <= targetPrice)
+      const dir = pos
+      if (gapStop) {
+        closePosition(i, o, EXIT_REASON.STOP)
+      } else if (gapTarget) {
+        closePosition(i, o, EXIT_REASON.TARGET)
+      } else if (stopHit) {
         closePosition(i, stopPrice, EXIT_REASON.STOP)
-        eq = cash
       } else if (targetHit) {
         closePosition(i, targetPrice, EXIT_REASON.TARGET)
+      }
+      if (pos === 0) {
         eq = cash
+        lockout = dir
+        prevTarget = 0
       }
     }
 
     // 3 — time and session exits, filled at this bar's close
     if (pos !== 0 && r.maxBars > 0 && i - entryIdx >= r.maxBars) {
+      lockout = pos
       closePosition(i, ds.close[i], EXIT_REASON.TIME)
       eq = cash
-    }
-    if (pos !== 0 && sessionEnd && sessionEnd[i]) {
-      closePosition(i, ds.close[i], EXIT_REASON.SESSION)
-      eq = cash
       prevTarget = 0
+    }
+    if (sessionEnd && sessionEnd[i]) {
+      if (pos !== 0) {
+        closePosition(i, ds.close[i], EXIT_REASON.SESSION)
+        eq = cash
+      }
+      // A new session is a fresh start: yesterday's stop does not veto today.
+      prevTarget = 0
+      lockout = 0
     }
     if (pos !== 0 && i === wEnd) {
       closePosition(i, ds.close[i], EXIT_REASON.END)
@@ -203,6 +227,10 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
       if (target < 0 && !r.allowShort) target = 0
       if (sessionEnd && sessionEnd[i]) target = 0
       prevTarget = target
+      if (lockout !== 0) {
+        if (target === lockout) target = 0
+        else lockout = 0
+      }
       if (target !== pos) pending = target
     }
   }
@@ -250,6 +278,7 @@ export function summarize(result) {
   const m = result.metrics
   return {
     sharpe: m.sharpe,
+    sr: m.inference.sr,
     sortino: m.sortino,
     totalReturn: m.totalReturn,
     maxDd: m.maxDd,

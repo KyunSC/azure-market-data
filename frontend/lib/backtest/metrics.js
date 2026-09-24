@@ -7,6 +7,8 @@
  * hard-coded constant, so a 5m run and a 1d run are comparable.
  */
 
+import { sharpeInference } from './stats'
+
 const TRADING_DAYS = 252
 const RTH_MINUTES = 390
 
@@ -128,6 +130,7 @@ export function computeMetrics({ equity, returns, trades, barsInMarket, interval
     turnover: years > 0 ? nTrades / years : 0,
     ddCurve: curve,
     periodsPerYear: ppy,
+    inference: sharpeInference(returns, ppy),
   }
 }
 

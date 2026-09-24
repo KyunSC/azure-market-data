@@ -77,9 +77,10 @@ export function runSweep({ dataset, strategyId, params, costs, risk, xKey, yKey,
  * anyone should quote — the IS numbers are shown purely so the gap between them
  * is visible.
  */
-export function runWalkForward({ dataset, strategyId, params, costs, risk, xKey, xValues, yKey, yValues, nSplits = 5 }, onProgress) {
+export function runWalkForward({ dataset, strategyId, params, costs, risk, xKey, xValues, yKey, yValues, nSplits = 5, window }, onProgress) {
   const strategy = getStrategy(strategyId)
-  const n = dataset.close.length
+  // Folds tile only the research window — the locked holdout stays unseen.
+  const n = Math.min(dataset.close.length, (window?.end ?? dataset.close.length - 1) + 1)
   const testSize = Math.floor(n / (nSplits + 1))
   const firstTest = n - nSplits * testSize
   const folds = []
@@ -88,7 +89,7 @@ export function runWalkForward({ dataset, strategyId, params, costs, risk, xKey,
   const ys = yValues?.length ? yValues : [null]
   for (const x of xs) for (const y of ys) grid.push({ x, y })
 
-  const stitched = new Float64Array(n).fill(Number.NaN)
+  const stitched = new Float64Array(dataset.close.length).fill(Number.NaN)
   let carry = costs.initialCapital
 
   for (let k = 0; k < nSplits; k++) {
@@ -193,10 +194,10 @@ export function runMonteCarlo({ trades, paths = 1000, blockSize = 5, seed = 42, 
  * Cost sensitivity: the same strategy re-run across a slippage ladder. If an
  * edge only exists at zero slippage it does not exist.
  */
-export function runCostCurve({ dataset, strategyId, params, costs, risk, ladder = [0, 0.5, 1, 2, 3, 5, 8, 12] }) {
+export function runCostCurve({ dataset, strategyId, params, costs, risk, window, ladder = [0, 0.5, 1, 2, 3, 5, 8, 12] }) {
   const strategy = getStrategy(strategyId)
   return ladder.map((bps) => {
-    const res = runBacktest({ dataset, strategy, params, costs: { ...costs, slippageBps: bps }, risk })
+    const res = runBacktest({ dataset, strategy, params, costs: { ...costs, slippageBps: bps }, risk, window })
     return { slippageBps: bps, sharpe: res.metrics.sharpe, totalReturn: res.metrics.totalReturn, nTrades: res.metrics.nTrades }
   })
 }

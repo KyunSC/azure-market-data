@@ -84,6 +84,11 @@ def load_supabase_rest_creds() -> Optional[tuple[str, str]]:
 
 
 def _rest_get(base: str, key: str, table: str, params: dict, page_size: int = 1000) -> list:
+    # Offset pagination is only a partition of the table under a total order.
+    # Without one, Postgres may return pages in different physical orders, so
+    # rows are silently duplicated across pages and others never returned.
+    if "order" not in params:
+        raise ValueError(f"_rest_get({table}) needs an 'order' param with a unique tiebreaker")
     rows: list = []
     offset = 0
     while True:
@@ -109,7 +114,7 @@ def fetch_bars_rest(base: str, key: str, symbol: str, interval: str) -> pd.DataF
         "symbol": f"eq.{symbol}",
         "interval_type": f"eq.{interval}",
         "select": "date,open,high,low,close_price,volume",
-        "order": "date.asc",
+        "order": "date.asc,id.asc",
     })
     df = pd.DataFrame(rows).rename(columns={"close_price": "close"})
     df["date"] = pd.to_datetime(df["date"], utc=True)
@@ -124,15 +129,19 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
     ge_rows = _rest_get(base, key, "gamma_exposure", {
         "symbol": f"eq.{symbol}",
         "select": "id,computed_at,pcr_volume,pcr_oi,iv_atm,iv_skew",
-        "order": "computed_at.asc",
+        "order": "computed_at.asc,id.asc",
     })
     if not ge_rows:
         return pd.DataFrame()
 
     gl_rows = _rest_get(base, key, "gamma_levels", {
-        "select": "gamma_exposure_id,label,strike_etf,gex,gex_0dte,gamma_exposure!inner(symbol)",
+        "select": "id,gamma_exposure_id,label,strike_etf,gex,gex_0dte,gamma_exposure!inner(symbol)",
         "gamma_exposure.symbol": f"eq.{symbol}",
+        "order": "id.asc",
     })
+    level_ids = [lvl["id"] for lvl in gl_rows]
+    if len(level_ids) != len(set(level_ids)):
+        raise RuntimeError(f"REST pagination returned {len(level_ids) - len(set(level_ids))} duplicate gamma_levels rows")
     logging.info("REST: fetched %d exposures, %d levels", len(ge_rows), len(gl_rows))
 
     levels_by_id: dict = {}

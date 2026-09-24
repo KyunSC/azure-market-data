@@ -1,0 +1,48 @@
+name: Nightly backtest
+
+# Re-tests every strategy on fresh bars after the close and reports whether the
+# in-sample winner still makes money on a locked holdout, net of costs. Results
+# land in the run summary and as a downloadable artifact — nothing is committed.
+on:
+  schedule:
+    # 21:30 UTC Mon-Fri: after the ~16:10 ET post-close ingestion in both EDT
+    # and EST, and inside warm-backend.yml's window so Render is usually awake.
+    - cron: '30 21 * * 1-5'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45  # worst case: backend hanging on every retry
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Engine tests
+        run: npm test
+
+      - name: Run nightly backtests
+        run: npm run backtest:nightly
+        env:
+          API_BASE: https://azure-market-data.onrender.com
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-backtest-${{ github.run_id }}
+          path: frontend/backtest-results/
+          retention-days: 30
+          if-no-files-found: ignore

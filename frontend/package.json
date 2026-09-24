@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --test lib/backtest/*.test.mjs",
+    "backtest:nightly": "node scripts/nightly-backtest.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",
@@ -29,5 +31,8 @@
     "react-resizable-panels": "^4.12.2",
     "tailwindcss": "^4.3.3",
     "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "jiti": "^2.7.0"
   }
 }

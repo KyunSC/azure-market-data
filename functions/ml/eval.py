@@ -92,7 +92,12 @@ def block_bootstrap_ic(
     block_size: int = 73,  # ~1 trading day at 5min bars over RTH
     seed: int = 42,
 ) -> tuple[float, float, float]:
-    """Stationary block bootstrap for IC. Returns (2.5%-ile, mean, 97.5%-ile)."""
+    """Stationary block bootstrap for IC. Returns (2.5%-ile, mean, 97.5%-ile).
+
+    n_resamples=0 skips it (NaNs) — for callers like the null test that only need the IC.
+    """
+    if n_resamples == 0:
+        return float("nan"), float("nan"), float("nan")
     rng = np.random.default_rng(seed)
     n = len(y_true)
     n_blocks = int(np.ceil(n / block_size))
@@ -106,6 +111,60 @@ def block_bootstrap_ic(
     return float(np.percentile(samples, 2.5)), float(samples.mean()), float(np.percentile(samples, 97.5))
 
 
+def session_ids(dates: pd.Series) -> np.ndarray:
+    """Integer id per row for its RTH session (ET calendar date), 0 = first session."""
+    d = pd.to_datetime(dates, utc=True).dt.tz_convert("America/New_York").dt.date
+    return pd.factorize(d, sort=True)[0]
+
+
+def session_folds(
+    df: pd.DataFrame,
+    n_splits: int = 5,
+    test_sessions: int | None = None,
+    embargo_sessions: int = 1,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Expanding-window folds cut on session boundaries, with purge + embargo.
+
+    The last `n_splits * test_sessions` sessions become consecutive test folds.
+    Each fold trains on every earlier session except the `embargo_sessions`
+    immediately before the test block:
+
+        [ train ........ ][ embargo ][ test ]
+
+    Purge: any training row whose `target_time` reaches into the test block is
+    dropped. `build_dataset.compute_target` never lets a target cross a session,
+    so on session-aligned cuts this removes nothing — it's the safety net if
+    that ever changes.
+    """
+    sid = session_ids(df["date"])
+    n_sessions = int(sid.max()) + 1
+    if test_sessions is None:
+        test_sessions = n_sessions // (n_splits + 1)
+    first_test = n_sessions - n_splits * test_sessions
+    if test_sessions < 1 or first_test - embargo_sessions < 1:
+        raise ValueError(
+            f"{n_sessions} sessions can't fit {n_splits} folds x {test_sessions} test "
+            f"sessions + {embargo_sessions} embargo"
+        )
+
+    target_time = pd.to_datetime(df["target_time"], utc=True).values if "target_time" in df else None
+    date = pd.to_datetime(df["date"], utc=True).values
+    folds = []
+    for k in range(n_splits):
+        t0 = first_test + k * test_sessions
+        test_mask = (sid >= t0) & (sid < t0 + test_sessions)
+        train_mask = sid < t0 - embargo_sessions
+        test_idx = np.flatnonzero(test_mask)
+        test_start = date[test_idx].min()
+        if target_time is not None:
+            train_mask &= target_time < test_start
+        train_idx = np.flatnonzero(train_mask)
+        if target_time is not None:
+            assert target_time[train_idx].max() < test_start, "LEAK: train target reaches test fold"
+        folds.append((train_idx, test_idx))
+    return folds
+
+
 def walk_forward(
     df: pd.DataFrame,
     features: list[str],
@@ -114,14 +173,24 @@ def walk_forward(
     n_splits: int = 5,
     test_size: int = 100,
     bootstrap_resamples: int = 1000,
+    split: str = "sessions",
+    test_sessions: int | None = None,
+    embargo_sessions: int = 1,
 ) -> WalkForwardResult:
     """Expanding-window walk-forward CV.
 
-    With n_splits=5 and test_size=100 on 1095 rows:
+    split="sessions" (default): folds from `session_folds` — cut on trading-day
+    boundaries, purged, with `embargo_sessions` skipped before every test fold.
+    `test_sessions` defaults to n_sessions // (n_splits + 1).
+
+    split="rows": the original row-count split, kept only so the README's
+    pre-embargo numbers stay reproducible. With n_splits=5 and test_size=100 on
+    1095 rows:
       fold 1: train [0:595],  test [595:695]
-      fold 2: train [0:695],  test [695:795]
       ...
       fold 5: train [0:995],  test [995:1095]
+    Folds cut mid-session, so the last `horizon` training rows' targets overlap
+    the test fold — slightly optimistic.
 
     `model_factory` is a zero-arg callable that returns a fresh estimator with
     .fit(X, y) and .predict(X). The harness fits on the train slice only.
@@ -129,10 +198,17 @@ def walk_forward(
     X = df[features].values
     y = df[target].values
 
-    tscv = TimeSeriesSplit(n_splits=n_splits, test_size=test_size)
+    if split == "sessions":
+        folds = session_folds(df, n_splits=n_splits, test_sessions=test_sessions,
+                              embargo_sessions=embargo_sessions)
+    elif split == "rows":
+        folds = list(TimeSeriesSplit(n_splits=n_splits, test_size=test_size).split(X))
+    else:
+        raise ValueError(f"unknown split={split!r}")
+
     all_preds, all_true, all_idx, fold_metrics = [], [], [], []
 
-    for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
+    for fold, (train_idx, test_idx) in enumerate(folds):
         model = model_factory()
         model.fit(X[train_idx], y[train_idx])
         preds = model.predict(X[test_idx])
@@ -141,10 +217,11 @@ def walk_forward(
         all_true.append(y[test_idx])
         all_idx.append(test_idx)
         fm = compute_metrics(y[test_idx], preds)
+        fm["n_train"] = int(len(train_idx))
         fold_metrics.append(fm)
         logging.info(
             "Fold %d/%d  train=%d test=%d  IC=%+.4f  dir_acc=%.3f",
-            fold + 1, n_splits, len(train_idx), len(test_idx),
+            fold + 1, len(folds), len(train_idx), len(test_idx),
             fm["ic_pearson"], fm["directional_acc"],
         )
 
