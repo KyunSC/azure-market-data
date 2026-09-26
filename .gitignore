@@ -19,6 +19,7 @@ functions/ml/notebooks/.ipynb_checkpoints/
 # Secrets/Environment
 .env
 .env.*
+!API_Server/src/main/resources/.env.properties
 **/application-local.properties
 
 # Node
