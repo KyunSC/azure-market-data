@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { scaleLinear } from '@visx/scale'
 import { useBacktest } from '../../lib/backtest/store'
 import { getStrategy, sweepableParams } from '../../lib/backtest/strategies'
-import { fmtSigned, fmtPct, fmtParam, signClass } from '../../lib/backtest/format'
+import { fmtSigned, fmtPct, fmtParam, fmtMoneySigned, fmtPctAbs, signClass } from '../../lib/backtest/format'
 import { Select } from './StrategyPanel'
 import { EmptyState } from './Panel'
 import useSize from './useSize'
@@ -30,6 +30,10 @@ export default function SweepPanel() {
   const params = useBacktest((s) => s.paramsByStrategy[s.strategyId])
   const [ref, { width, height }] = useSize()
   const [hover, setHover] = useState(null)
+  // Colour by prop EV when the sweep ran in prop mode — the axis a
+  // "profitable only as a prop account" strategy is found on.
+  const [metricPick, setMetric] = useState('sharpe')
+  const metric = metricPick === 'propEv' && sweep.data?.prop ? 'propEv' : 'sharpe'
 
   const numeric = sweepableParams(strategyId)
   const schema = getStrategy(strategyId).params
@@ -43,10 +47,12 @@ export default function SweepPanel() {
     const ch = innerH / data.yValues.length
     // Diverging around zero, anchored on the larger tail so a single outlier
     // cannot make everything else look flat.
-    const bound = Math.max(Math.abs(data.min), Math.abs(data.max), 0.5)
+    const span = metric === 'propEv' ? data.prop : data
+    const bound = Math.max(Math.abs(span.min), Math.abs(span.max), metric === 'propEv' ? 1 : 0.5)
     const color = scaleLinear({ domain: [-bound, 0, bound], range: ['#ff6b6b', '#171A1F', '#4caf50'] })
-    return { data, innerW, innerH, cw, ch, color, bound }
-  }, [sweep.data, width, height])
+    const best = metric === 'propEv' ? data.prop.best : data.best
+    return { data, innerW, innerH, cw, ch, color, bound, best }
+  }, [sweep.data, width, height, metric])
 
   const current = { x: params?.[sweep.xKey], y: params?.[sweep.yKey] }
 
@@ -67,6 +73,15 @@ export default function SweepPanel() {
           />
           <span className="text-dim">= {sweep.steps * sweep.steps} runs</span>
         </label>
+        {sweep.data?.prop && (
+          <div className="flex gap-1">
+            {[['sharpe', 'sharpe'], ['propEv', 'prop EV']].map(([id, label]) => (
+              <button key={id} onClick={() => setMetric(id)} className={`btn !px-2 !py-0.5 ${metric === id ? 'btn-active' : ''}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <button onClick={runSweep} disabled={sweep.running || numeric.length < 1} className="btn ml-auto">
           {sweep.running ? `sweeping ${(sweep.progress * 100).toFixed(0)}%` : 'run sweep'}
         </button>
@@ -90,7 +105,8 @@ export default function SweepPanel() {
           <svg width={width} height={height} onMouseLeave={() => setHover(null)}>
             <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
               {grid.data.cells.map((c) => {
-                const isBest = grid.data.best && c.xi === grid.data.best.xi && c.yi === grid.data.best.yi
+                const isBest = grid.best && c.xi === grid.best.xi && c.yi === grid.best.yi
+                const v = c[metric]
                 const isCurrent = c.x === current.x && c.y === current.y
                 return (
                   <rect
@@ -99,7 +115,7 @@ export default function SweepPanel() {
                     y={grid.innerH - (c.yi + 1) * grid.ch}
                     width={Math.max(1, grid.cw - 1)}
                     height={Math.max(1, grid.ch - 1)}
-                    fill={Number.isFinite(c.sharpe) ? grid.color(c.sharpe) : '#131519'}
+                    fill={Number.isFinite(v) ? grid.color(v) : '#131519'}
                     stroke={isBest ? '#E8B339' : isCurrent ? '#4A90A4' : 'transparent'}
                     strokeWidth={isBest || isCurrent ? 1.5 : 0}
                     className="cursor-pointer"
@@ -163,6 +179,11 @@ export default function SweepPanel() {
               {labelFor(schema, sweep.yKey)} <span className="text-ink">{fmtParam(hover.y)}</span>
             </div>
             <div className={signClass(hover.sharpe)}>Sharpe {fmtSigned(hover.sharpe)}</div>
+            {Number.isFinite(hover.propEv) && (
+              <div className={signClass(hover.propEv)}>
+                prop EV {fmtMoneySigned(hover.propEv)} · pass {fmtPctAbs(hover.passRate)}
+              </div>
+            )}
             <div className="text-dim">
               ret {fmtPct(hover.totalReturn)} · dd {(hover.maxDd * 100).toFixed(1)}% · {hover.nTrades} trades
             </div>
@@ -183,6 +204,12 @@ export default function SweepPanel() {
             iqr {fmtSigned(sweep.data.p25)} → {fmtSigned(sweep.data.p75)}
           </span>
           <span className="text-dim">{sweep.data.trials} trials</span>
+          {metric === 'propEv' && (
+            <span className="text-dim">
+              prop EV best <span className={signClass(sweep.data.prop.best?.propEv)}>{fmtMoneySigned(sweep.data.prop.best?.propEv)}</span> · median{' '}
+              <span className={signClass(sweep.data.prop.median)}>{fmtMoneySigned(sweep.data.prop.median)}</span>
+            </span>
+          )}
           <span className="ml-auto max-w-[52ch] text-right leading-snug text-dim">
             Best-of-{sweep.data.trials} is a maximum, not an estimate. Quote the median unless the whole
             neighbourhood is green.

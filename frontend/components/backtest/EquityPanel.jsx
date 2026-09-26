@@ -8,7 +8,7 @@ import { LinearGradient } from '@visx/gradient'
 import { AxisBottom, AxisLeft } from '@visx/axis'
 import { useBacktest } from '../../lib/backtest/store'
 import { fmtMoney, fmtPct, fmtDate, fmtTime } from '../../lib/backtest/format'
-import Panel, { EmptyState } from './Panel'
+import Panel, { NoRunYet } from './Panel'
 import useSize from './useSize'
 
 const MARGIN = { top: 6, right: 46, bottom: 16, left: 4 }
@@ -95,7 +95,7 @@ export default function EquityPanel() {
     >
       <div ref={ref} className="relative h-full w-full">
         {!result ? (
-          <EmptyState>Run a strategy to draw its equity curve.</EmptyState>
+          <NoRunYet what="Equity curves" />
         ) : !geom ? null : (
           <>
             <svg

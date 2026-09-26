@@ -106,6 +106,12 @@ function FoldTable({ wf, dataset, schema }) {
         <Stat label="folds positive" value={`${wf.positiveFolds}/${wf.folds.length}`} tone={wf.positiveFolds > wf.folds.length / 2 ? 'text-pos' : 'text-neg'} />
         <Stat label="stitched OOS return" value={fmtPct(wf.totalReturn)} tone={signClass(wf.totalReturn)} />
         <Stat label="trials / fold" value={wf.trialsPerFold} tone="text-dim" />
+        <Stat
+          label="embargo"
+          value={`${wf.embargoBars} bars`}
+          tone="text-dim"
+          title="Bars skipped between each training window and its test slice."
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">

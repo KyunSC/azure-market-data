@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { useBacktest } from '../../lib/backtest/store'
 
 /**
  * Panel shell. Every panel in the terminal wears the same 10px tracked label,
@@ -32,6 +33,16 @@ export function EmptyState({ children, action }) {
       {action}
     </div>
   )
+}
+
+/** The one "nothing to show yet" message, worded for what the user should do next. */
+export function NoRunYet({ what = 'Results' }) {
+  const loading = useBacktest((s) => s.datasetLoading)
+  const running = useBacktest((s) => s.running)
+  const autoRun = useBacktest((s) => s.autoRun)
+  if (loading) return <EmptyState>Loading data…</EmptyState>
+  if (running) return <EmptyState>Running…</EmptyState>
+  return <EmptyState>{autoRun ? `${what} appear here automatically once a strategy runs.` : `Press Run (or R) to see ${what.toLowerCase()}.`}</EmptyState>
 }
 
 export function PanelError({ children }) {

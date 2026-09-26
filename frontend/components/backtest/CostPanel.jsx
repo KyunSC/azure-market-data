@@ -24,6 +24,12 @@ export default function CostPanel() {
   const costs = useBacktest((s) => s.costs)
   const setCosts = useBacktest((s) => s.setCosts)
   const result = useBacktest((s) => s.result)
+  const prop = useBacktest((s) => s.prop)
+  const setProp = useBacktest((s) => s.setProp)
+  // Prop mode trades futures, where slippage is quoted in ticks.
+  const unit = prop.enabled ? 'tk' : 'bp'
+  const slipValue = prop.enabled ? prop.slippageTicks : costs.slippageBps
+  const setSlip = (v) => (prop.enabled ? setProp({ slippageTicks: v }) : setCosts({ slippageBps: v }))
   const [ref, { width, height }] = useSize()
 
   const geom = useMemo(() => {
@@ -69,12 +75,12 @@ export default function CostPanel() {
             min={0}
             max={12}
             step={0.25}
-            value={costs.slippageBps}
-            onChange={(e) => setCosts({ slippageBps: Number(e.target.value) })}
+            value={slipValue}
+            onChange={(e) => setSlip(Number(e.target.value))}
             className="h-[3px] max-w-[220px] flex-1 cursor-pointer appearance-none rounded bg-hair-bright accent-amber"
           />
-          <span className="num w-10 text-ink">{costs.slippageBps.toFixed(2)}</span>
-          bp
+          <span className="num w-10 text-ink">{slipValue.toFixed(2)}</span>
+          {unit}
         </label>
         {result && (
           <span>
@@ -107,8 +113,8 @@ export default function CostPanel() {
                 />
               ))}
               <line
-                x1={geom.x(Math.min(costs.slippageBps, data[data.length - 1].slippageBps))}
-                x2={geom.x(Math.min(costs.slippageBps, data[data.length - 1].slippageBps))}
+                x1={geom.x(Math.min(slipValue, data[data.length - 1].slippageBps))}
+                x2={geom.x(Math.min(slipValue, data[data.length - 1].slippageBps))}
                 y1={0}
                 y2={geom.innerH}
                 stroke="#4A90A4"
@@ -135,7 +141,7 @@ export default function CostPanel() {
                 ) : null,
               )}
               <text x={geom.innerW} y={geom.innerH + 12} textAnchor="end" fill="#5A616B" fontSize={9} fontFamily="var(--font-jetbrains-mono), monospace">
-                bp
+                {unit}
               </text>
             </g>
           </svg>
@@ -148,15 +154,15 @@ export default function CostPanel() {
             break-even slippage{' '}
             <span className={breakEven === null || breakEven < 2 ? 'text-neg' : breakEven === Infinity ? 'text-pos' : 'text-amber'}>
               {breakEven === null
-                ? 'none — negative at 0 bp'
+                ? `none — negative at 0 ${unit}`
                 : breakEven === Infinity
                   ? '> ladder'
-                  : `${breakEven.toFixed(2)} bp`}
+                  : `${breakEven.toFixed(2)} ${unit}`}
             </span>
           </span>
           <span>
-            at 0 bp <span className={signClass(data[0].sharpe)}>{fmtSigned(data[0].sharpe)}</span> · at{' '}
-            {data[data.length - 1].slippageBps} bp{' '}
+            at 0 {unit} <span className={signClass(data[0].sharpe)}>{fmtSigned(data[0].sharpe)}</span> · at{' '}
+            {data[data.length - 1].slippageBps} {unit}{' '}
             <span className={signClass(data[data.length - 1].sharpe)}>{fmtSigned(data[data.length - 1].sharpe)}</span>
           </span>
           <span>

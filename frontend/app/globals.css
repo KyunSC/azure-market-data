@@ -1,7 +1,12 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* Layered so it loses to any other layered stylesheet — /backtest's Tailwind
+   utilities live in `@layer utilities` and an unlayered reset would zero every
+   padding class there. Unlayered dashboard rules below still win as before. */
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
 }
 
 body {

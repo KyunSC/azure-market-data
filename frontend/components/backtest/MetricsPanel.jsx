@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { animate } from 'framer-motion'
 import { useBacktest } from '../../lib/backtest/store'
-import { fmtSigned, fmtPct, fmtPctAbs, fmtRatio, fmtMoney, signClass } from '../../lib/backtest/format'
-import Panel, { EmptyState } from './Panel'
+import { fmtSigned, fmtPct, fmtPctAbs, fmtRatio, fmtMoney, fmtMoneySigned, signClass } from '../../lib/backtest/format'
+import Panel, { NoRunYet } from './Panel'
 
 /** Metric values count from their previous reading to the new one, so a
  *  parameter nudge shows you the direction it moved rather than a hard swap. */
-function useCountUp(value, dp = 2) {
+export function useCountUp(value, dp = 2) {
   const [display, setDisplay] = useState(Number.isFinite(value) ? value : 0)
   const prev = useRef(Number.isFinite(value) ? value : 0)
 
@@ -29,7 +29,7 @@ function useCountUp(value, dp = 2) {
   return Number.isFinite(display) ? display.toFixed(dp) : '—'
 }
 
-function Headline({ label, value, dp = 2, tone, suffix = '', title }) {
+export function Headline({ label, value, dp = 2, tone, suffix = '', title }) {
   const shown = useCountUp(value, dp)
   return (
     <div className="flex flex-col gap-0.5 px-2 py-1.5" title={title}>
@@ -56,11 +56,12 @@ export default function MetricsPanel() {
   const strategyId = useBacktest((s) => s.strategyId)
   const sweep = useBacktest((s) => s.sweep.data)
   const runCount = useBacktest((s) => s.runCount)
+  const setTab = useBacktest((s) => s.setTab)
 
   if (!result) {
     return (
       <Panel label="metrics" className="h-full" delay={0.06}>
-        <EmptyState>No run yet. Press R or hit ▸ RUN.</EmptyState>
+        <NoRunYet what="Metrics" />
       </Panel>
     )
   }
@@ -74,7 +75,9 @@ export default function MetricsPanel() {
     <Panel
       label="metrics"
       right={
-        isOos ? (
+        result.prop ? (
+          <span className="rounded-[2px] border border-amber-dim px-1 text-[9px] text-amber">PROP · {result.prop.plan.planLabel} {result.prop.plan.sizeLabel}</span>
+        ) : isOos ? (
           <span className="rounded-[2px] border border-pos/40 px-1 text-[9px] text-pos">OOS</span>
         ) : (
           <span className="text-[9px] text-dim">in-sample</span>
@@ -108,6 +111,16 @@ export default function MetricsPanel() {
           <Headline label="Trades" value={m.nTrades} dp={0} />
         </div>
       </div>
+
+      {result.prop && (
+        <button onClick={() => setTab('prop')} className="hair-t flex w-full items-baseline justify-between gap-2 px-2 py-1.5 text-left hover:bg-panel-2" title="Open the prop tab">
+          <span className="font-mono text-[9px] tracking-[0.14em] text-dim uppercase">EV / purchase</span>
+          <span className={`num text-[13px] ${signClass((result.prop.bootstrap || result.prop.historical).ev)}`}>
+            {fmtMoneySigned((result.prop.bootstrap || result.prop.historical).ev)}
+            <span className="ml-1.5 text-[10px] text-dim">pass {fmtPctAbs((result.prop.bootstrap || result.prop.historical).passRate)}</span>
+          </span>
+        </button>
+      )}
 
       <div className="hair-t py-1">
         <Row label="Total return" value={fmtPct(m.totalReturn)} tone={signClass(m.totalReturn)} />

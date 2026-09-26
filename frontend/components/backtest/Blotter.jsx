@@ -4,7 +4,7 @@ import { useRef, useState, useMemo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useBacktest } from '../../lib/backtest/store'
 import { fmtTime, fmtMoneySigned, fmtPct, fmtNum, signClass } from '../../lib/backtest/format'
-import { EmptyState } from './Panel'
+import { EmptyState, NoRunYet } from './Panel'
 
 const COLS = [
   { key: 'n', label: '#', w: 'w-9', align: 'text-right' },
@@ -50,7 +50,7 @@ export default function Blotter() {
     overscan: 12,
   })
 
-  if (!result) return <EmptyState>No run yet.</EmptyState>
+  if (!result) return <NoRunYet what="Trades" />
   if (!trades.length) {
     return (
       <EmptyState>

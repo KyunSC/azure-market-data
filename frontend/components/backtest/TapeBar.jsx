@@ -24,6 +24,8 @@ export default function TapeBar() {
   const toggleAutoRun = useBacktest((s) => s.toggleAutoRun)
   const togglePalette = useBacktest((s) => s.togglePalette)
   const toggleShortcuts = useBacktest((s) => s.toggleShortcuts)
+  const advanced = useBacktest((s) => s.advanced)
+  const setAdvanced = useBacktest((s) => s.setAdvanced)
   const [copied, setCopied] = useState(false)
 
   // The Clipboard API rejects on insecure origins and when permission is
@@ -53,7 +55,7 @@ export default function TapeBar() {
         className="tracking-[0.18em] text-amber uppercase no-underline text-glow hover:text-ink"
         title="Back to dashboard"
       >
-        tape
+        backtester
       </Link>
 
       {dataset ? (
@@ -68,7 +70,7 @@ export default function TapeBar() {
           <span className="text-dim">bars</span>
           <Sep />
           <span className={dataset.plane === 'research' ? 'text-violet' : 'text-cyan'}>
-            {dataset.plane === 'research' ? 'research plane' : 'live plane'}
+            {dataset.plane === 'research' ? (dataset.example ? 'sample data' : 'historical + gex') : 'live prices'}
           </span>
         </span>
       ) : (
@@ -76,32 +78,49 @@ export default function TapeBar() {
       )}
 
       <span className="ml-auto flex items-center gap-3">
-        <span className="text-dim">
-          {running ? <span className="text-amber">running…</span> : <>{lastRunMs.toFixed(0)}ms</>}
-        </span>
-        <button
-          onClick={() => useBacktest.getState().toggleShortcuts(true)}
-          className={`${snooping} hover:text-ink`}
-          title="Runs this session — every sweep cell counts. Data-snooping tally."
-        >
-          runs:{runCount.toLocaleString()}
-        </button>
-        <button
-          onClick={toggleAutoRun}
-          className={autoRun ? 'text-cyan' : 'text-dim'}
-          title="Re-run automatically when a parameter changes"
-        >
-          auto{autoRun ? '✓' : '✕'}
-        </button>
+        {running && <span className="text-amber">running…</span>}
+        {advanced && (
+          <>
+            {!running && <span className="text-dim">{lastRunMs.toFixed(0)}ms</span>}
+            <button
+              onClick={() => useBacktest.getState().toggleShortcuts(true)}
+              className={`${snooping} hover:text-ink`}
+              title="Runs this session — every sweep cell counts. Data-snooping tally."
+            >
+              runs:{runCount.toLocaleString()}
+            </button>
+            <button
+              onClick={toggleAutoRun}
+              className={autoRun ? 'text-cyan' : 'text-dim'}
+              title="Re-run automatically when a parameter changes"
+            >
+              auto{autoRun ? '✓' : '✕'}
+            </button>
+          </>
+        )}
         <button onClick={copyShare} className="text-dim hover:text-ink" title="Copy a link that reproduces this run">
           {copied ? <span className="text-pos">{copied}</span> : 'share'}
         </button>
-        <button onClick={() => toggleShortcuts(true)} className="text-dim hover:text-ink" title="Keyboard shortcuts">
-          ?
+        <button
+          role="switch"
+          aria-checked={advanced}
+          onClick={() => setAdvanced(!advanced)}
+          className={`flex items-center gap-1.5 ${advanced ? 'text-amber' : 'text-dim'} hover:text-ink`}
+          title="Show research tools: parameter sweeps, walk-forward, Monte Carlo, cost ladder, prop-firm accounts, custom rules, A/B/C compare"
+        >
+          <span className="switch pointer-events-none" aria-checked={advanced} />
+          advanced
         </button>
-        <button onClick={() => togglePalette(true)} className="kbd hover:text-ink">
-          ⌘K
-        </button>
+        {advanced && (
+          <>
+            <button onClick={() => toggleShortcuts(true)} className="text-dim hover:text-ink" title="Keyboard shortcuts">
+              ?
+            </button>
+            <button onClick={() => togglePalette(true)} className="kbd hover:text-ink">
+              ⌘K
+            </button>
+          </>
+        )}
       </span>
     </div>
   )

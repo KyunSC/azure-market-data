@@ -19,8 +19,10 @@ import WalkForwardPanel from './WalkForwardPanel'
 import MonteCarloPanel from './MonteCarloPanel'
 import CostPanel from './CostPanel'
 import RuleBuilder from './RuleBuilder'
+import PropPanel from './PropPanel'
 import CommandPalette from './CommandPalette'
 import ShortcutSheet from './ShortcutSheet'
+import KpiStrip from './KpiStrip'
 import Panel, { PanelError } from './Panel'
 
 const TABS = [
@@ -29,6 +31,7 @@ const TABS = [
   { id: 'wf', label: 'walk-fwd' },
   { id: 'mc', label: 'monte carlo' },
   { id: 'costs', label: 'costs' },
+  { id: 'prop', label: 'prop' },
   { id: 'rules', label: 'rules' },
 ]
 
@@ -36,6 +39,9 @@ export default function BacktestTerminal() {
   const activeTab = useBacktest((s) => s.activeTab)
   const setTab = useBacktest((s) => s.setTab)
   const datasetError = useBacktest((s) => s.datasetError)
+  const datasetNotice = useBacktest((s) => s.datasetNotice)
+  const setExample = useBacktest((s) => s.setExample)
+  const advanced = useBacktest((s) => s.advanced)
   const runError = useBacktest((s) => s.runError)
   const configError = useBacktest((s) => s.configError)
   const loadDataset = useBacktest((s) => s.loadDataset)
@@ -44,6 +50,8 @@ export default function BacktestTerminal() {
   // Boot: restore a shared config, learn what research datasets exist, load.
   useEffect(() => {
     const store = useBacktest.getState()
+    // UI preference first, so a shared link that needs advanced can override it.
+    store.restoreUi()
     store.hydrate(decodeConfig(window.location.search))
     store.loadDataset()
   }, [])
@@ -72,11 +80,20 @@ export default function BacktestTerminal() {
       {activeTab === 'mc' && <MonteCarloPanel />}
       {activeTab === 'costs' && <CostPanel />}
       {activeTab === 'rules' && <RuleBuilder />}
+      {activeTab === 'prop' && <PropPanel />}
     </>
   )
 
   const errors = (
     <>
+      {datasetNotice && !datasetError && (
+        <div className="mx-2 mt-2 flex items-center gap-2 rounded-[2px] border border-amber-dim/60 bg-amber/5 px-2 py-1.5 font-mono text-[11px] text-amber">
+          <span className="flex-1">{datasetNotice}</span>
+          <button onClick={() => setExample(false)} className="btn !px-2 !py-0.5">
+            retry server
+          </button>
+        </div>
+      )}
       {datasetError && (
         <PanelError>
           {datasetError}
@@ -95,7 +112,9 @@ export default function BacktestTerminal() {
       <TapeBar />
       {errors}
 
-      {wide ? (
+      {!advanced ? (
+        <SimpleLayout wide={wide} />
+      ) : wide ? (
         <PanelGroup orientation="horizontal" className="min-h-0 flex-1 gap-0 p-1.5">
           <RPanel defaultSize="19" minSize="14" maxSize="32" className="min-h-0">
             <div className="h-full overflow-hidden">
@@ -167,6 +186,66 @@ export default function BacktestTerminal() {
   )
 }
 
+/** Default view: setup on the left; results (headline numbers, price, equity,
+ *  trades) on the right. Everything else sits behind the Advanced toggle. */
+function SimpleLayout({ wide }) {
+  const trades = (
+    <Panel label="trades" className="h-full" scroll={false} delay={0.12}>
+      <Blotter />
+    </Panel>
+  )
+
+  if (!wide) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-1.5">
+        <div className="shrink-0">
+          <KpiStrip />
+        </div>
+        <div className="h-[320px] shrink-0">
+          <PricePanel />
+        </div>
+        <div className="h-[220px] shrink-0">
+          <EquityPanel />
+        </div>
+        <div className="shrink-0">
+          <StrategyPanel />
+        </div>
+        <div className="h-[320px] shrink-0">{trades}</div>
+      </div>
+    )
+  }
+
+  return (
+    <PanelGroup orientation="horizontal" className="min-h-0 flex-1 gap-0 p-1.5">
+      <RPanel defaultSize="22" minSize="16" maxSize="34" className="min-h-0">
+        <div className="h-full overflow-hidden">
+          <StrategyPanel />
+        </div>
+      </RPanel>
+      <PanelResizeHandle className="bt-resize-handle mx-1 rounded" />
+
+      <RPanel defaultSize="78" minSize="40" className="min-h-0">
+        <div className="flex h-full min-h-0 flex-col gap-1.5">
+          <KpiStrip />
+          <PanelGroup orientation="vertical" className="min-h-0 flex-1">
+            <RPanel defaultSize="45" minSize="20">
+              <PricePanel />
+            </RPanel>
+            <PanelResizeHandle className="bt-resize-handle my-1 rounded" />
+            <RPanel defaultSize="30" minSize="15">
+              <EquityPanel />
+            </RPanel>
+            <PanelResizeHandle className="bt-resize-handle my-1 rounded" />
+            <RPanel defaultSize="25" minSize="12">
+              {trades}
+            </RPanel>
+          </PanelGroup>
+        </div>
+      </RPanel>
+    </PanelGroup>
+  )
+}
+
 function useWide() {
   const [wide, setWide] = useState(true)
   useEffect(() => {
@@ -203,20 +282,24 @@ function useKeyboard() {
           s.nudgeFocusedParam(1)
           break
         case 's':
+          s.setAdvanced(true)
           s.setTab('sweep')
           s.runSweep()
           break
         case 'w':
+          s.setAdvanced(true)
           s.setTab('wf')
           s.runWalkForward()
           break
         case 'm':
+          s.setAdvanced(true)
           s.setTab('mc')
           s.runMonteCarlo()
           break
         case 'a':
         case 'b':
         case 'c':
+          s.setAdvanced(true)
           s.saveSlot(e.key.toUpperCase())
           break
         case '?':
