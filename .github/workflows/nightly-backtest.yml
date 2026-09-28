@@ -16,7 +16,9 @@ permissions:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 45  # worst case: backend hanging on every retry
+    # The script stops starting live fetches after 25 min (LIVE_BUDGET_MS), so
+    # even a hung backend leaves ~15 min to evaluate and write the report.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: frontend
