@@ -1,0 +1,23 @@
+{
+  "id": "gex-put-wall-bounce-longgamma",
+  "family": "gex",
+  "rationale": "In long-gamma (price above zero gamma) dealers buy dips into the put wall, so price within `band` ATR of the put wall should mean-revert up. Exit once it has moved `exit` ATR off the wall.",
+  "direction": "long",
+  "warmupBars": 1,
+  "risk": { "flatAtSessionEnd": true },
+  "params": [
+    { "key": "band", "values": [0.25, 0.5, 1.0] },
+    { "key": "exit", "values": [1.0, 2.0] }
+  ],
+  "rule": {
+    "entryLong": { "t": "and", "items": [
+      { "t": "cmp", "op": ">", "a": { "t": "ref", "k": "f:above_zero_gamma" }, "b": { "t": "const", "v": 0 } },
+      { "t": "cmp", "op": "<=", "a": { "t": "ref", "k": "f:dist_put_wall_atr" }, "b": { "t": "param", "k": "band" } },
+      { "t": "cmp", "op": ">=", "a": { "t": "ref", "k": "f:dist_put_wall_atr" }, "b": { "t": "const", "v": -0.5 } }
+    ] },
+    "exitLong": { "t": "or", "items": [
+      { "t": "cmp", "op": ">=", "a": { "t": "ref", "k": "f:dist_put_wall_atr" }, "b": { "t": "param", "k": "exit" } },
+      { "t": "cmp", "op": "<", "a": { "t": "ref", "k": "f:dist_put_wall_atr" }, "b": { "t": "const", "v": -1.5 } }
+    ] }
+  }
+}

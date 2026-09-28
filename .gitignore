@@ -32,3 +32,7 @@ AGENTS.md
 
 # Nightly backtest output (uploaded as a CI artifact)
 frontend/backtest-results/
+
+# Strategy lab: research-only exports and run ledgers (regenerable / per-machine)
+frontend/lab/data/
+frontend/lab/runs/

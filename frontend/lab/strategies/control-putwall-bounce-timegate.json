@@ -1,0 +1,23 @@
+{
+  "id": "control-putwall-bounce-timegate",
+  "family": "control",
+  "rationale": "Negative control for gex-put-wall-bounce-longgamma: identical entry/exit, but the long-gamma gate (true on ~70% of bars) is replaced by minutes_since_open < 260 (also ~70%). If this scores like the GEX version, the regime gate carries no information beyond time of day and base rate.",
+  "direction": "long",
+  "warmupBars": 1,
+  "risk": { "flatAtSessionEnd": true },
+  "params": [
+    { "key": "band", "values": [0.25, 0.5, 1.0] },
+    { "key": "exit", "values": [1.0, 2.0] }
+  ],
+  "rule": {
+    "entryLong": { "t": "and", "items": [
+      { "t": "cmp", "op": "<", "a": { "t": "ref", "k": "f:minutes_since_open" }, "b": { "t": "const", "v": 260 } },
+      { "t": "cmp", "op": "<=", "a": { "t": "ref", "k": "f:dist_put_wall_atr" }, "b": { "t": "param", "k": "band" } },
+      { "t": "cmp", "op": ">=", "a": { "t": "ref", "k": "f:dist_put_wall_atr" }, "b": { "t": "const", "v": -0.5 } }
+    ] },
+    "exitLong": { "t": "or", "items": [
+      { "t": "cmp", "op": ">=", "a": { "t": "ref", "k": "f:dist_put_wall_atr" }, "b": { "t": "param", "k": "exit" } },
+      { "t": "cmp", "op": "<", "a": { "t": "ref", "k": "f:dist_put_wall_atr" }, "b": { "t": "const", "v": -1.5 } }
+    ] }
+  }
+}
