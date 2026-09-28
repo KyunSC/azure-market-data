@@ -1,3 +1,6 @@
+import { atr } from '../lib/backtest/series'
+import { sessionLevels, floorPivots, zoneSeries, buildZones, isIntraday, PIVOT_KEYS, PIVOT_METHODS } from '../lib/levels'
+
 export const AVAILABLE_INDICATORS = [
   { id: 'sma20', label: 'SMA 20', type: 'sma', period: 20, color: '#ff9800' },
   { id: 'sma50', label: 'SMA 50', type: 'sma', period: 50, color: '#e91e63' },
@@ -12,6 +15,9 @@ export const AVAILABLE_INDICATORS = [
   { id: 'volume', label: 'Volume', type: 'volume', color: '#5c6bc0' },
   { id: 'gex', label: 'GEX Levels', type: 'gex', color: '#ffff00' },
   { id: 'trend-logic', label: 'EMA Trend Friend Pro', type: 'trend-logic', fastPeriod: 21, slowPeriod: 200, color: '#4caf50' },
+  { id: 'sr-session', label: 'Session Levels', type: 'sr-session', orMinutes: 30, color: '#ff7043' },
+  { id: 'sr-pivots', label: 'Floor Pivots', type: 'sr-pivots', method: 'classic', color: '#ffee58' },
+  { id: 'sr-zones', label: 'S/R Zones', type: 'sr-zones', left: 5, tolAtr: 0.25, minScore: 1.5, maxZones: 6, color: '#29b6f6' },
 ]
 
 export const TREND_COLORS = {
@@ -36,6 +42,14 @@ export const EDITABLE_FIELDS_BY_TYPE = {
     { key: 'fastPeriod', label: 'Fast', min: 1, max: 1000 },
     { key: 'slowPeriod', label: 'Slow', min: 1, max: 1000 },
   ],
+  'sr-session':   [{ key: 'orMinutes', label: 'Opening range (min)', min: 5, max: 390 }],
+  'sr-pivots':    [{ key: 'method', label: 'Method', options: PIVOT_METHODS }],
+  'sr-zones':     [
+    { key: 'left',     label: 'Pivot strength', min: 2,    max: 50 },
+    { key: 'tolAtr',   label: 'Width (ATR)',    min: 0.05, max: 5,  step: 0.05 },
+    { key: 'minScore', label: 'Min score',      min: 0.25, max: 20, step: 0.25 },
+    { key: 'maxZones', label: 'Max zones',      min: 1,    max: 20 },
+  ],
 }
 
 export function resolveIndicator(id, overrides) {
@@ -51,6 +65,7 @@ export function indicatorDisplayLabel(ind) {
     case 'sma':          return `SMA ${ind.period}`
     case 'ema':          return `EMA ${ind.period}`
     case 'trend-logic':  return 'EMA Trend Friend Pro'
+    case 'sr-pivots':    return `Floor Pivots (${ind.method})`
     default:             return ind.label
   }
 }
@@ -165,7 +180,50 @@ export function latestTrendState(data, fastPeriod = 21, slowPeriod = 200) {
   return null
 }
 
-export function computeIndicator(indicator, data) {
+const SESSION_LINES = [
+  { key: 'pdh', label: 'PDH', color: '#ff7043' },
+  { key: 'pdl', label: 'PDL', color: '#26a69a' },
+  { key: 'pdc', label: 'PDC', color: '#bdbdbd', style: 2 },
+  { key: 'onh', label: 'ONH', color: '#ffa726', style: 2 },
+  { key: 'onl', label: 'ONL', color: '#66bb6a', style: 2 },
+  { key: 'orh', label: 'ORH', color: '#ab47bc', style: 1 },
+  { key: 'orl', label: 'ORL', color: '#7e57c2', style: 1 },
+]
+
+const pivotColor = (k) => (k === 'P' ? '#ffee58' : k.startsWith('R') ? '#ef5350' : '#26a69a')
+
+// Level arrays → line-series data. A change of value (new day, level just
+// formed) gets a whitespace point so the chart breaks the line there instead
+// of drawing a vertical connector.
+function levelLine(data, values) {
+  const out = []
+  let prev = NaN
+  for (let i = 0; i < data.length; i++) {
+    const v = values[i]
+    if (!Number.isFinite(v)) { out.push({ time: data[i].time }); prev = NaN; continue }
+    out.push(v === prev ? { time: data[i].time, value: v } : { time: data[i].time })
+    prev = v
+  }
+  return out
+}
+
+// Chart rows → the columnar shape `lib/levels.js` takes. Session math needs
+// real UTC epochs, so this reads `utc` (set by the chart's parser) rather than
+// the display-shifted `time`.
+function toColumns(data) {
+  return {
+    time: data.map(d => (typeof d.utc === 'number' ? d.utc : NaN)),
+    high: data.map(d => d.high),
+    low: data.map(d => d.low),
+    close: data.map(d => d.close),
+  }
+}
+
+/**
+ * `context.extraLevels` ([{ price, source, label }]) lets the chart add GEX
+ * walls and volume-profile nodes to the S/R zone scoring.
+ */
+export function computeIndicator(indicator, data, context = {}) {
   if (!data || data.length === 0) return null
 
   switch (indicator.type) {
@@ -206,6 +264,54 @@ export function computeIndicator(indicator, data) {
         states: calcTrendLogic(data, fast, slow),
         fast: { data: fastLine, color: '#26c6da' },
         slow: { data: slowLine, color: '#ab47bc' },
+      }
+    }
+    case 'sr-session': {
+      const cols = toColumns(data)
+      if (!isIntraday(cols.time)) return null
+      const lv = sessionLevels(cols, { orMinutes: indicator.orMinutes || 30 })
+      return {
+        type: 'levels',
+        lines: SESSION_LINES.map(l => ({ ...l, data: levelLine(data, lv[l.key]) })),
+      }
+    }
+    case 'sr-pivots': {
+      const cols = toColumns(data)
+      if (!isIntraday(cols.time)) return null
+      const lv = sessionLevels(cols)
+      const piv = floorPivots(lv.pdh, lv.pdl, lv.pdc, indicator.method || 'classic')
+      return {
+        type: 'levels',
+        lines: PIVOT_KEYS.map(k => ({
+          key: k, label: k, color: pivotColor(k), style: k === 'P' ? 0 : 2, data: levelLine(data, piv[k]),
+        })),
+      }
+    }
+    case 'sr-zones': {
+      const cols = toColumns(data)
+      const zs = zoneSeries(cols, atr(cols, 14), {
+        left: indicator.left || 5,
+        tolAtr: indicator.tolAtr || 0.25,
+      })
+      const { candidates, tol, now, halfLife } = zs.last
+      if (!(tol > 0)) return null
+      // Same scorer and tolerance as the engine's zones, plus the chart-only sources.
+      const extras = (context.extraLevels || []).filter(c => Number.isFinite(c.price))
+      const minScore = indicator.minScore ?? 1.5
+      const zones = buildZones([...candidates, ...extras], { tol, now, halfLife })
+        .filter(z => z.score >= minScore)
+      // Keep the strongest `maxZones`, then return them in price order.
+      zones.sort((a, b) => b.score - a.score)
+      const kept = zones.slice(0, indicator.maxZones || 6).sort((a, b) => a.mid - b.mid)
+      const close = data[data.length - 1].close
+      return {
+        type: 'zones',
+        color: indicator.color,
+        zones: kept.map(z => ({
+          ...z,
+          side: z.mid <= close ? 'S' : 'R',
+          firstTime: Number.isFinite(z.firstIdx) ? data[z.firstIdx].time : null,
+        })),
       }
     }
     default:

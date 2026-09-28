@@ -121,7 +121,17 @@ export default function DrawingsInspector({
                                 onChange={(e) => onUpdateIndicator(ind.id, { color: e.target.value })}
                               />
                             </label>
-                            {fields.map(f => (
+                            {fields.map(f => f.options ? (
+                              <label key={f.key} className="indicator-editor-field">
+                                <span>{f.label}</span>
+                                <select
+                                  value={ind[f.key]}
+                                  onChange={(e) => onUpdateIndicator(ind.id, { [f.key]: e.target.value })}
+                                >
+                                  {f.options.map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                              </label>
+                            ) : (
                               <label key={f.key} className="indicator-editor-field">
                                 <span>{f.label}</span>
                                 <input

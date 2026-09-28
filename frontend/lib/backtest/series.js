@@ -12,6 +12,11 @@
  * a half-formed average.
  */
 
+import { tradingDay, etMinuteOfDay } from './time'
+import { sessionLevels, floorPivots, zoneSeries } from '../levels'
+
+export { tradingDay, etMinuteOfDay }
+
 const NA = Number.NaN
 
 export function sma(src, period) {
@@ -94,8 +99,9 @@ export function atr(ds, period) {
   return sma(tr, period)
 }
 
-/** Session-anchored VWAP — resets on each new UTC calendar day, matching the
- *  chart's intraday VWAP. Daily and slower intervals get a single running band. */
+/** Session-anchored VWAP — resets at each new trading day (see `tradingDay`),
+ *  so a futures VWAP anchors at the 18:00 ET Globex open rather than restarting
+ *  1–2 hours into the session at UTC midnight. RTH equity days are unaffected. */
 export function vwap(ds) {
   const { high, low, close, volume, time } = ds
   const n = close.length
@@ -104,7 +110,7 @@ export function vwap(ds) {
   let cumPv = 0
   let cumV = 0
   for (let i = 0; i < n; i++) {
-    const d = Math.floor(time[i] / 86400)
+    const d = tradingDay(time[i])
     if (d !== day) {
       day = d
       cumPv = 0
@@ -119,15 +125,37 @@ export function vwap(ds) {
   return out
 }
 
-/** True on the last bar of a UTC calendar day (used for flat-at-close). */
+/** True on the last bar of each trading day (used for flat-at-close). */
 export function sessionEndFlags(time) {
   const n = time.length
   const out = new Uint8Array(n)
   for (let i = 0; i < n; i++) {
-    const next = i + 1 < n ? Math.floor(time[i + 1] / 86400) : -1
-    out[i] = i === n - 1 || next !== Math.floor(time[i] / 86400) ? 1 : 0
+    out[i] = i === n - 1 || tradingDay(time[i + 1]) !== tradingDay(time[i]) ? 1 : 0
   }
   return out
+}
+
+/**
+ * Prop-firm "flat by" cutoff (e.g. 16:45 ET → 1005). `end[i]` marks the last
+ * bar of each trading day that opens before the cutoff — positions close at
+ * its close — and `blocked[i]` marks bars at or after it, which may not open
+ * anything. The 18:00 ET Globex reopen is a new trading day and trades freely.
+ */
+export function flatByFlags(time, cutoffMinute) {
+  const n = time.length
+  const end = new Uint8Array(n)
+  const blocked = new Uint8Array(n)
+  for (let i = 0; i < n; i++) {
+    const m = etMinuteOfDay(time[i])
+    // The trading day rolls at 18:00 ET, so evening bars sit before the cutoff.
+    blocked[i] = m >= cutoffMinute && m < 18 * 60 ? 1 : 0
+  }
+  for (let i = 0; i < n; i++) {
+    if (blocked[i]) continue
+    const next = i + 1 < n ? i + 1 : -1
+    if (next === -1 || blocked[next] || tradingDay(time[next]) !== tradingDay(time[i])) end[i] = 1
+  }
+  return { end, blocked }
 }
 
 /**
@@ -135,6 +163,10 @@ export function sessionEndFlags(time) {
  *   `close` `open` `high` `low` `volume` `hl2` `typical`
  *   `sma:20` `ema:21` `rsi:14` `atr:14` `stdev:20` `vwap`
  *   `bbUpper:20:2` `bbLower:20:2` `bbMid:20`
+ *   `pdh` `pdl` `pdc` `onh` `onl` `orh:30` `orl:30` — session levels
+ *   `piv:classic:R1`  — floor pivot (classic|camarilla|fibonacci, P/R1–R3/S1–S3)
+ *   `srSup:5:0.25:1` `srRes:…` (+`Lo` `Hi` `Score` suffixes) — nearest S/R zone
+ *                       below/above the close; args are left:tolAtr:minScore
  *   `f:net_gex`   — exported GEX/baseline feature (research plane only)
  *   `ml:pred`     — walk-forward OOS model prediction (research plane only)
  *
@@ -192,6 +224,35 @@ function buildSeries(ds, key) {
       }
       return out
     }
+    case 'pdh':
+    case 'pdl':
+    case 'pdc':
+    case 'onh':
+    case 'onl':
+      return sessionOf(ds, 30)[name]
+    case 'orh':
+    case 'orl':
+      return sessionOf(ds, p(0, 30))[name]
+    case 'piv': {
+      const method = args[0] || 'classic'
+      const level = args[1] || 'P'
+      const piv = memoObj(ds, `#piv:${method}`, () => {
+        const s = sessionOf(ds, 30)
+        return floorPivots(s.pdh, s.pdl, s.pdc, method)
+      })
+      return piv[level] || new Float64Array(n).fill(NA)
+    }
+    case 'srSup': case 'srSupLo': case 'srSupHi': case 'srSupScore':
+    case 'srRes': case 'srResLo': case 'srResHi': case 'srResScore': {
+      const left = p(0, 5)
+      const tolAtr = p(1, 0.25)
+      const minScore = p(2, 1)
+      const z = memoObj(ds, `#sr:${left}:${tolAtr}:${minScore}`, () =>
+        zoneSeries(ds, getSeries(ds, 'atr:14'), { left, tolAtr, minScore }))
+      const side = name.slice(2, 5).toLowerCase() // 'sup' | 'res'
+      const part = name.slice(5) || 'Mid'
+      return z[`${side}${part}`]
+    }
     case 'f': {
       const col = ds.features?.[args.join(':')]
       return col || new Float64Array(n).fill(NA)
@@ -203,6 +264,21 @@ function buildSeries(ds, key) {
     default:
       return new Float64Array(n).fill(NA)
   }
+}
+
+/** Multi-output calculators share the series cache under `#`-prefixed keys,
+ *  which the rule grammar never produces. */
+function memoObj(ds, key, build) {
+  const cache = ds.__seriesCache
+  const hit = cache.get(key)
+  if (hit) return hit
+  const built = build()
+  cache.set(key, built)
+  return built
+}
+
+function sessionOf(ds, orMinutes) {
+  return memoObj(ds, `#session:${orMinutes}`, () => sessionLevels(ds, { orMinutes }))
 }
 
 /** Constant-series helper so the rule evaluator can treat literals uniformly. */

@@ -54,6 +54,25 @@ export const OPERAND_GROUPS = [
     ],
   },
   {
+    group: 'Levels',
+    items: [
+      { k: 'pdh', label: 'Prior-day high' },
+      { k: 'pdl', label: 'Prior-day low' },
+      { k: 'pdc', label: 'Prior-day close' },
+      { k: 'onh', label: 'Overnight high' },
+      { k: 'onl', label: 'Overnight low' },
+      { k: 'orh:30', label: 'Opening-range high (30m)' },
+      { k: 'orl:30', label: 'Opening-range low (30m)' },
+      { k: 'piv:classic:P', label: 'Pivot P (classic)' },
+      { k: 'piv:classic:R1', label: 'Pivot R1 (classic)' },
+      { k: 'piv:classic:S1', label: 'Pivot S1 (classic)' },
+      { k: 'srSup:5:0.25:1', label: 'Nearest support zone' },
+      { k: 'srRes:5:0.25:1', label: 'Nearest resistance zone' },
+      { k: 'srSupScore:5:0.25:1', label: 'Support zone score' },
+      { k: 'srResScore:5:0.25:1', label: 'Resistance zone score' },
+    ],
+  },
+  {
     group: 'GEX',
     plane: 'research',
     items: [

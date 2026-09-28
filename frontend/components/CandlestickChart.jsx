@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries, BarSeries, AreaSeries } from 'lightweight-charts'
 import { DEFAULT_CHART_COLORS } from './chartDefaults'
 import { computeIndicator, TREND_COLORS, resolveIndicator } from './indicators'
+import { computeVolumeProfile, computeValueArea, profileNodes } from '../lib/volumeProfile'
 
 const GEX_COLORS = {
   call_wall: '#00e676',
@@ -21,7 +22,41 @@ const GEX_LABELS = {
   significant_neg: 'GEX-',
 }
 
-const TICK_SIZE = 0.25 // ES/NQ futures tick size
+// ETF charts (SPY/QQQ) plot at strikeEtf directly; futures charts use
+// strikeFutures, falling back to strikeEtf * conversionRatio when the
+// futures-side strike wasn't persisted. Number(null)===0 passes isFinite, so
+// check for null explicitly. Returns NaN when no price can be resolved.
+function gexLevelPrice(level, gexLevels, useEtfStrike) {
+  let price
+  if (useEtfStrike) {
+    price = level.strikeEtf != null ? Number(level.strikeEtf) : NaN
+  } else {
+    price = level.strikeFutures != null
+      ? Number(level.strikeFutures)
+      : (level.strikeEtf != null && gexLevels.conversionRatio != null)
+        ? Number(level.strikeEtf) * Number(gexLevels.conversionRatio)
+        : NaN
+  }
+  return Number.isFinite(price) && price !== 0 ? price : NaN
+}
+
+// GEX walls and volume-profile nodes as extra S/R zone candidates.
+function chartExtraLevels(bars, gexLevels, useEtfStrike) {
+  const out = []
+  for (const level of gexLevels?.levels || []) {
+    if (!['call_wall', 'put_wall', 'zero_gamma'].includes(level.label)) continue
+    out.push({ price: gexLevelPrice(level, gexLevels, useEtfStrike), source: 'gex', label: GEX_LABELS[level.label] })
+  }
+  const nodes = profileNodes(computeVolumeProfile(bars.filter(d => d.volume > 0), 4))
+  if (nodes) {
+    out.push({ price: nodes.poc, source: 'vp', label: 'POC' })
+    out.push({ price: nodes.vah, source: 'vp', label: 'VAH' })
+    out.push({ price: nodes.val, source: 'vp', label: 'VAL' })
+  }
+  return out
+}
+
+const ZONE_SIDE_COLORS = { S: '#26a69a', R: '#ef5350' }
 
 function shiftToTimezone(utcEpoch, tz) {
   if (tz === 'UTC') return utcEpoch
@@ -30,205 +65,6 @@ function shiftToTimezone(utcEpoch, tz) {
   const tzStr = d.toLocaleString('en-US', { timeZone: tz })
   const result = utcEpoch + (new Date(tzStr) - new Date(utcStr)) / 1000
   return Number.isFinite(result) ? result : utcEpoch
-}
-
-// Wilder-smoothed ATR, first bar falls back to H-L.
-function wilderAtr(bars, period = 14) {
-  const n = bars.length
-  const atr = new Array(n)
-  if (n === 0) return atr
-  const alpha = 1 / period
-  let prevTr = bars[0].high - bars[0].low
-  atr[0] = prevTr
-  for (let i = 1; i < n; i++) {
-    const prevClose = bars[i - 1].close
-    const tr = Math.max(
-      bars[i].high - bars[i].low,
-      Math.abs(bars[i].high - prevClose),
-      Math.abs(bars[i].low - prevClose),
-    )
-    atr[i] = alpha * tr + (1 - alpha) * atr[i - 1]
-  }
-  return atr
-}
-
-// Convolve with a normalized Gaussian kernel (±3σ), edge-padded so mass at the
-// extremes isn't attenuated.
-function gaussianSmooth1D(values, sigma) {
-  if (sigma <= 0 || values.length === 0) return values.slice()
-  const half = Math.max(1, Math.ceil(3 * sigma))
-  const kernel = new Array(2 * half + 1)
-  let sum = 0
-  for (let i = -half; i <= half; i++) {
-    const w = Math.exp(-0.5 * (i / sigma) ** 2)
-    kernel[i + half] = w
-    sum += w
-  }
-  for (let i = 0; i < kernel.length; i++) kernel[i] /= sum
-
-  const n = values.length
-  const out = new Array(n).fill(0)
-  for (let i = 0; i < n; i++) {
-    let acc = 0
-    for (let k = -half; k <= half; k++) {
-      let j = i + k
-      if (j < 0) j = 0
-      else if (j >= n) j = n - 1
-      acc += values[j] * kernel[k + half]
-    }
-    out[i] = acc
-  }
-  return out
-}
-
-// OHLC-weighted volume distribution. With only bar data (no ticks), we spread
-// each bar's volume across its price range using a dynamic body-vs-wick weight,
-// with a uniform fallback for sprint bars that almost certainly never traded
-// evenly across the range. Returns the render-bucket contract the overlay
-// expects: { buckets: [{priceBottom, priceTop, volume}], maxVol }.
-function computeVolumeProfile(intradayData, ticksPerRow = 4) {
-  if (!intradayData || intradayData.length === 0) return null
-
-  const tickSize = TICK_SIZE
-  const bucketSize = ticksPerRow * tickSize
-  const bodyWeightBase = 0.7
-  const extremeThreshold = 3.0
-  const atrPeriod = 14
-  const smoothingSigmaTicks = 1.5
-
-  const bars = intradayData.filter(d =>
-    Number.isFinite(d.open) && Number.isFinite(d.high) &&
-    Number.isFinite(d.low) && Number.isFinite(d.close) &&
-    Number.isFinite(d.volume) && d.volume > 0
-  )
-  if (bars.length === 0) return null
-
-  const atr = wilderAtr(bars, atrPeriod)
-  const snapIdx = (price) => Math.round(price / tickSize)
-
-  // Per-tick accumulator keyed by absolute tick index.
-  const tickProfile = new Map()
-  const addTick = (idx, v) => {
-    if (v <= 0) return
-    tickProfile.set(idx, (tickProfile.get(idx) || 0) + v)
-  }
-  const addUniformIdx = (loIdx, hiIdx, v) => {
-    if (v <= 0 || hiIdx < loIdx) return
-    const share = v / (hiIdx - loIdx + 1)
-    for (let k = loIdx; k <= hiIdx; k++) addTick(k, share)
-  }
-
-  for (let i = 0; i < bars.length; i++) {
-    const bar = bars[i]
-    const oIdx = snapIdx(bar.open)
-    const hIdx = snapIdx(bar.high)
-    const lIdx = snapIdx(bar.low)
-    const cIdx = snapIdx(bar.close)
-    const volume = bar.volume
-    const rangeTicks = hIdx - lIdx
-
-    // Single-tick / collapsed bar.
-    if (rangeTicks <= 0) {
-      addTick(hIdx, volume)
-      continue
-    }
-
-    // Extreme move: range >> typical → assume volume sprinted uniformly.
-    if (atr[i] > 0 && rangeTicks * tickSize > extremeThreshold * atr[i]) {
-      addUniformIdx(lIdx, hIdx, volume)
-      continue
-    }
-
-    const bodyLoIdx = Math.min(oIdx, cIdx)
-    const bodyHiIdx = Math.max(oIdx, cIdx)
-    const bodyTicks = bodyHiIdx - bodyLoIdx
-
-    // wick_ratio ∈ [0,1]: fraction of bar range that's wick (0=marubozu).
-    // At typical wick_ratio=0.5, bodyWeight = base. Tight bar → up to 0.8;
-    // volatile bar → down to 0.5.
-    const wickRatio = (rangeTicks - bodyTicks) / rangeTicks
-    const bodyWeight = Math.max(
-      0.5,
-      Math.min(0.8, bodyWeightBase + (0.5 - wickRatio) * 0.3),
-    )
-    const bodyVol = volume * bodyWeight
-    const wickVol = volume * (1 - bodyWeight)
-
-    // Body: uniform across [bodyLo, bodyHi], or collapsed (doji) to one tick.
-    if (bodyTicks === 0) addTick(bodyLoIdx, bodyVol)
-    else addUniformIdx(bodyLoIdx, bodyHiIdx, bodyVol)
-
-    // Wicks: split proportionally to wick length, excluding the body range
-    // (already covered). Marubozu (no wicks) folds the wick share back into
-    // the body so total volume is conserved.
-    const upperTicks = hIdx - bodyHiIdx
-    const lowerTicks = bodyLoIdx - lIdx
-    const totalWickTicks = upperTicks + lowerTicks
-
-    if (totalWickTicks === 0) {
-      if (bodyTicks === 0) addTick(bodyLoIdx, wickVol)
-      else addUniformIdx(bodyLoIdx, bodyHiIdx, wickVol)
-      continue
-    }
-    if (upperTicks > 0) {
-      addUniformIdx(bodyHiIdx + 1, hIdx, wickVol * (upperTicks / totalWickTicks))
-    }
-    if (lowerTicks > 0) {
-      addUniformIdx(lIdx, bodyLoIdx - 1, wickVol * (lowerTicks / totalWickTicks))
-    }
-  }
-
-  if (tickProfile.size === 0) return null
-
-  // Aggregate per-tick volumes into render-bucket grid.
-  let minTickIdx = Infinity, maxTickIdx = -Infinity
-  for (const k of tickProfile.keys()) {
-    if (k < minTickIdx) minTickIdx = k
-    if (k > maxTickIdx) maxTickIdx = k
-  }
-  const bucketOf = (tickIdx) => Math.floor(tickIdx / ticksPerRow)
-  const minBucketIdx = bucketOf(minTickIdx)
-  const maxBucketIdx = bucketOf(maxTickIdx)
-  const numBuckets = maxBucketIdx - minBucketIdx + 1
-
-  const rawVolumes = new Array(numBuckets).fill(0)
-  for (const [tickIdx, v] of tickProfile) {
-    rawVolumes[bucketOf(tickIdx) - minBucketIdx] += v
-  }
-
-  // Smoothing sigma is specified in ticks; rescale to bucket units.
-  const smoothed = gaussianSmooth1D(rawVolumes, smoothingSigmaTicks / ticksPerRow)
-
-  const buckets = new Array(numBuckets)
-  let maxVol = 0
-  for (let i = 0; i < numBuckets; i++) {
-    const priceBottom = (minBucketIdx + i) * bucketSize
-    const volume = smoothed[i]
-    if (volume > maxVol) maxVol = volume
-    buckets[i] = {
-      priceBottom,
-      priceTop: priceBottom + bucketSize,
-      volume,
-    }
-  }
-  return { buckets, maxVol }
-}
-
-function computeValueArea(buckets, pct = 0.7) {
-  const totalVol = buckets.reduce((s, b) => s + b.volume, 0)
-  if (totalVol === 0) return null
-  const target = totalVol * pct
-  const pocIdx = buckets.reduce((mi, b, i, arr) => b.volume > arr[mi].volume ? i : mi, 0)
-  let accumulated = buckets[pocIdx].volume
-  let lo = pocIdx, hi = pocIdx
-  while (accumulated < target && (lo > 0 || hi < buckets.length - 1)) {
-    const loVol = lo > 0 ? buckets[lo - 1].volume : -1
-    const hiVol = hi < buckets.length - 1 ? buckets[hi + 1].volume : -1
-    if (loVol >= hiVol && lo > 0) { lo--; accumulated += buckets[lo].volume }
-    else if (hi < buckets.length - 1) { hi++; accumulated += buckets[hi].volume }
-    else break
-  }
-  return { lo, hi }
 }
 
 const DRAWING_PRESET_COLORS = [
@@ -244,6 +80,8 @@ function parseChartData(rawData, timezone) {
       const raw = /^\d+$/.test(d.time) ? Number(d.time) : d.time
       return {
         time: typeof raw === 'number' ? shiftToTimezone(raw, timezone) : raw,
+        // Unshifted epoch: session-anchored levels need real UTC, not display time.
+        utc: typeof raw === 'number' ? raw : undefined,
         open: Number(d.open),
         high: Number(d.high),
         low: Number(d.low),
@@ -440,6 +278,9 @@ export default function CandlestickChart({
   const renderFnRef = useRef(null)
   const isFirstDataRef = useRef(true)
   const gexPriceLinesRef = useRef([])
+  const srPriceLinesRef = useRef([])
+  const srCanvasRef = useRef()
+  const [srZones, setSrZones] = useState(null)
   // Latest fast/slow EMA of the trend-logic indicator on the most recent bar.
   // Lets the live-tick handler recolor the developing candle without rerunning
   // the full EMA pass on every 3s tick.
@@ -570,6 +411,85 @@ export default function CandlestickChart({
       chartContainerRef.current?.removeEventListener('wheel', drawProfile)
     }
   }, [vpData, data, activeIndicators, gexLevels, chartType, vaEnabled, vaPct, vpSide])
+
+  // Draw S/R zones as shaded bands behind the volume profile. Each band starts
+  // at its earliest pivot (or the pane's left edge for pivot-less zones) and
+  // its opacity scales with the zone score.
+  useEffect(() => {
+    const canvas = srCanvasRef.current
+    const chart = chartRef.current
+    const series = seriesRef.current
+    if (!canvas || !chart || !series || !srZones) {
+      if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
+      return
+    }
+
+    const drawZones = () => {
+      const container = chartContainerRef.current
+      if (!container) return
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = container.clientWidth * dpr
+      canvas.height = container.clientHeight * dpr
+      canvas.style.width = container.clientWidth + 'px'
+      canvas.style.height = container.clientHeight + 'px'
+      const ctx = canvas.getContext('2d')
+      ctx.scale(dpr, dpr)
+      ctx.clearRect(0, 0, container.clientWidth, container.clientHeight)
+
+      const chartPane = container.querySelector('table td canvas')
+      let chartLeft = 0
+      let chartRight = container.clientWidth
+      let chartTop = 0
+      let chartBottom = container.clientHeight
+      if (chartPane) {
+        const paneRect = chartPane.getBoundingClientRect()
+        const containerRect = container.getBoundingClientRect()
+        chartLeft = Math.max(0, paneRect.left - containerRect.left)
+        chartRight = Math.min(container.clientWidth, paneRect.right - containerRect.left)
+        chartTop = Math.max(0, paneRect.top - containerRect.top)
+        chartBottom = Math.min(container.clientHeight, paneRect.bottom - containerRect.top)
+      }
+
+      const maxScore = Math.max(...srZones.zones.map(z => z.score), 1)
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(chartLeft, chartTop, chartRight - chartLeft, chartBottom - chartTop)
+      ctx.clip()
+      for (const z of srZones.zones) {
+        const yTop = series.priceToCoordinate(z.hi)
+        const yBottom = series.priceToCoordinate(z.lo)
+        if (yTop === null || yBottom === null) continue
+        const xStart = z.firstTime != null ? chart.timeScale().timeToCoordinate(z.firstTime) : null
+        const x = xStart == null ? chartLeft : Math.max(chartLeft, xStart)
+        const hex = ZONE_SIDE_COLORS[z.side]
+        const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16)
+        const alpha = 0.08 + 0.22 * Math.min(1, z.score / maxScore)
+        const y = Math.min(yTop, yBottom)
+        const h = Math.max(Math.abs(yBottom - yTop), 1)
+        ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`
+        ctx.fillRect(x, y, chartRight - x, h)
+        ctx.strokeStyle = `rgba(${r},${g},${b},${Math.min(1, alpha * 2.5)})`
+        ctx.lineWidth = 0.5
+        ctx.strokeRect(x, y, chartRight - x, h)
+      }
+      ctx.restore()
+    }
+
+    drawZones()
+
+    const sub = chart.timeScale().subscribeVisibleLogicalRangeChange(drawZones)
+    chart.subscribeCrosshairMove(drawZones)
+    const resizeObs = new ResizeObserver(drawZones)
+    resizeObs.observe(chartContainerRef.current)
+    chartContainerRef.current.addEventListener('wheel', drawZones, { passive: true })
+
+    return () => {
+      sub && chart.timeScale().unsubscribeVisibleLogicalRangeChange(drawZones)
+      chart.unsubscribeCrosshairMove(drawZones)
+      resizeObs.disconnect()
+      chartContainerRef.current?.removeEventListener('wheel', drawZones)
+    }
+  }, [srZones, chartType])
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -728,6 +648,7 @@ export default function CandlestickChart({
     seriesRef.current = mainSeries
     indicatorSeriesRef.current = []
     gexPriceLinesRef.current = []
+    srPriceLinesRef.current = []
     isFirstDataRef.current = true
 
     // Show crosshair marker on indicator lines only when cursor is within 2px
@@ -861,10 +782,17 @@ export default function CandlestickChart({
     }
     indicatorSeriesRef.current = []
 
+    for (const pl of srPriceLinesRef.current) mainSeries.removePriceLine(pl)
+    srPriceLinesRef.current = []
+    let zonesResult = null
+
     for (const indId of activeIndicators) {
       const indicator = resolveIndicator(indId, indicatorOverrides)
       if (!indicator) continue
-      const result = indId === 'trend-logic' ? trendResult : computeIndicator(indicator, parsedData)
+      const context = indId === 'sr-zones'
+        ? { extraLevels: chartExtraLevels(parsedData, gexLevels, gexUseEtfStrike) }
+        : undefined
+      const result = indId === 'trend-logic' ? trendResult : computeIndicator(indicator, parsedData, context)
       if (!result) continue
 
       if (result.type === 'volume') {
@@ -902,6 +830,33 @@ export default function CandlestickChart({
           series.setData(band.data)
           indicatorSeriesRef.current.push({ series, data: band.data })
         }
+      } else if (result.type === 'levels') {
+        for (const line of result.lines) {
+          const series = chart.addSeries(LineSeries, {
+            color: line.color,
+            lineWidth: 1,
+            lineStyle: line.style || 0,
+            title: line.label,
+            crosshairMarkerVisible: false,
+            priceLineVisible: false,
+            lastValueVisible: true,
+          })
+          series.setData(line.data)
+          indicatorSeriesRef.current.push({ series, data: line.data })
+        }
+      } else if (result.type === 'zones') {
+        zonesResult = result
+        for (const z of result.zones) {
+          const tags = [z.touches ? `${z.touches}×` : null, ...z.labels].filter(Boolean).join('+')
+          const pl = mainSeries.createPriceLine({
+            price: z.mid,
+            color: ZONE_SIDE_COLORS[z.side],
+            lineVisible: false,
+            axisLabelVisible: true,
+            title: `${z.side} ${z.score.toFixed(1)}${tags ? ` ${tags}` : ''}`,
+          })
+          srPriceLinesRef.current.push(pl)
+        }
       } else if (result.type === 'trend-logic') {
         for (const line of [result.fast, result.slow]) {
           const series = chart.addSeries(LineSeries, {
@@ -917,6 +872,8 @@ export default function CandlestickChart({
       }
     }
 
+    setSrZones(zonesResult)
+
     // Remove old GEX price lines before adding new ones
     for (const pl of gexPriceLinesRef.current) {
       mainSeries.removePriceLine(pl)
@@ -925,21 +882,8 @@ export default function CandlestickChart({
 
     if (gexLevels && gexLevels.levels && activeIndicators.includes('gex')) {
       for (const level of gexLevels.levels) {
-        // ETF charts (SPY/QQQ) plot at strikeEtf directly; futures charts use
-        // strikeFutures, falling back to strikeEtf * conversionRatio when the
-        // futures-side strike wasn't persisted. Number(null)===0 passes
-        // isFinite, so check for null explicitly.
-        let price
-        if (gexUseEtfStrike) {
-          price = level.strikeEtf != null ? Number(level.strikeEtf) : NaN
-        } else {
-          price = level.strikeFutures != null
-            ? Number(level.strikeFutures)
-            : (level.strikeEtf != null && gexLevels.conversionRatio != null)
-              ? Number(level.strikeEtf) * Number(gexLevels.conversionRatio)
-              : NaN
-        }
-        if (!Number.isFinite(price) || price === 0) continue
+        const price = gexLevelPrice(level, gexLevels, gexUseEtfStrike)
+        if (!Number.isFinite(price)) continue
         const color = GEX_COLORS[level.label] || '#ffffff'
         const isKey = level.label === 'call_wall' || level.label === 'put_wall'
         const labelName = GEX_LABELS[level.label] || level.label
@@ -1664,6 +1608,18 @@ export default function CandlestickChart({
 
   return (
     <div ref={chartContainerRef} className="chart-container" style={{ position: 'relative' }}>
+      {activeIndicators.includes('sr-zones') && (
+        <canvas
+          ref={srCanvasRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        />
+      )}
       {activeIndicators.includes('vpro') && (
         <canvas
           ref={vpCanvasRef}

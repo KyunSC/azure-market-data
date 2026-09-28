@@ -16,12 +16,13 @@
 import smaCross from './smaCross'
 import bbReversion from './bbReversion'
 import vwapReversion from './vwapReversion'
+import srLevels from './srLevels'
 import gexWallFade from './gexWallFade'
 import gexRegime from './gexRegime'
 import mlSignal from './mlSignal'
 import custom from './custom'
 
-export const STRATEGIES = [smaCross, bbReversion, vwapReversion, gexWallFade, gexRegime, mlSignal, custom]
+export const STRATEGIES = [smaCross, bbReversion, vwapReversion, srLevels, gexWallFade, gexRegime, mlSignal, custom]
 
 export const FAMILIES = [
   { id: 'ta', label: 'Technical', hotkey: '1' },
