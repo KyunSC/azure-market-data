@@ -63,6 +63,9 @@ JOBS = {
     "fut-ohlcv-1m": Job("ohlcv-1m", "parent", "outrights"),  # every contract: roll-aware basis vs. index GEX levels
     "fut-bbo-1s": Job("bbo-1s", "continuous", "continuous", every="day", et_window=("09:25", "16:00")),
     "nq-mbo": Job("mbo", "continuous", "continuous", products=("NQ",), whole_window_only=True),
+    # Aggressor-side prints for delta bubbles / exact volume profile (orderflow_backtest.py).
+    "nq-trades": Job("trades", "continuous", "continuous", products=("NQ",), whole_window_only=True,
+                     every="day", et_window=("09:25", "16:00")),
     # Single venue (Nasdaq), but one consistent source from 2022 on; volume features are relative.
     "eq-ohlcv-1m": Job("ohlcv-1m", "raw_symbol", "raw", products=("QQQ", "SPY"), dataset="XNAS.ITCH"),
 }
