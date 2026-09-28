@@ -25,6 +25,7 @@ export function encodeConfig(state) {
     params: stripRule(state.paramsByStrategy[state.strategyId]),
     costs: state.costs,
     risk: state.risk,
+    prop: state.prop?.enabled ? state.prop : undefined,
     rule: state.strategyId === 'custom' ? state.rule : undefined,
   }
   try {

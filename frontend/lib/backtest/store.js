@@ -15,6 +15,8 @@ import { axisValues } from './analytics'
 import * as runner from './runner'
 import { emptyRule, newCompare } from './ruleAst'
 import { BENCHMARKS } from './benchmark'
+import { DEFAULT_PROP, propSetup } from './prop'
+import { FUTURES_LIVE_SYMBOLS, symbolFamily } from './prop/contracts'
 
 const initialParams = () => {
   const out = {}
@@ -33,7 +35,10 @@ export const useBacktest = create((rawSet, get) => {
   let revision = 0
   let controller
   let mcGeneration = 0
-  const inputKeys = ['plane', 'liveSymbol', 'livePeriod', 'liveInterval', 'researchSymbol', 'researchDatasetId', 'example', 'strategyId', 'paramsByStrategy', 'costs', 'risk', 'rule']
+  // Set when a research load fails over to the bundled sample, and read by the
+  // retried load so the notice survives the reset at the top of loadDataset().
+  let fallbackNotice = null
+  const inputKeys = ['plane', 'liveSymbol', 'livePeriod', 'liveInterval', 'researchSymbol', 'researchDatasetId', 'example', 'strategyId', 'paramsByStrategy', 'costs', 'risk', 'rule', 'prop']
   const cleared = () => ({ result: null, running: false, runError: null, costCurve: null, selectedTrade: null,
     sweep: { ...get().sweep, running: false, data: null, error: null },
     wf: { ...get().wf, running: false, data: null, error: null },
@@ -58,6 +63,7 @@ export const useBacktest = create((rawSet, get) => {
   dataset: null,
   datasetLoading: true,
   datasetError: null,
+  datasetNotice: null,
   configError: null,
   benchmarkSymbol: 'SPY',
   setBenchmarkSymbol(symbol) {
@@ -70,6 +76,8 @@ export const useBacktest = create((rawSet, get) => {
   costs: { ...DEFAULT_COSTS },
   risk: { ...DEFAULT_RISK, flatAtSessionEnd: true },
   rule: DEFAULT_RULE,
+  // Prop-firm account mode: fixed futures contracts under a firm's rules.
+  prop: { ...DEFAULT_PROP },
 
   // ── results ────────────────────────────────────────────────────────────
   result: null,
@@ -90,6 +98,8 @@ export const useBacktest = create((rawSet, get) => {
   paletteOpen: false,
   shortcutsOpen: false,
   activeTab: 'blotter',
+  // Simple view hides the research tooling (sweep, WF, MC, prop, rules, compare).
+  advanced: false,
 
   // ── dataset actions ────────────────────────────────────────────────────
   async loadDataset() {
@@ -98,7 +108,9 @@ export const useBacktest = create((rawSet, get) => {
     const { signal } = controller
     revision++
     const { plane, liveSymbol, livePeriod, liveInterval, researchSymbol, researchDatasetId, example } = get()
-    set({ ...cleared(), dataset: null, datasetLoading: true, datasetError: null })
+    const notice = fallbackNotice
+    fallbackNotice = null
+    set({ ...cleared(), dataset: null, datasetLoading: true, datasetError: null, datasetNotice: notice })
     try {
       let id = researchDatasetId
       if (plane === 'research') {
@@ -136,6 +148,13 @@ export const useBacktest = create((rawSet, get) => {
       if (get().autoRun) get().run()
     } catch (e) {
       if (signal.aborted) return
+      // A cold or failing backend should not leave a first visit staring at
+      // empty panels: fall back to the bundled sample and say so.
+      if (plane === 'research' && !example && ['QQQ', 'SPY'].includes(researchSymbol)) {
+        fallbackNotice = `${e.message || String(e)} — showing bundled sample data instead.`
+        set({ example: true, researchDatasetId: null })
+        return get().loadDataset()
+      }
       set({ datasetLoading: false, datasetError: e.message || String(e), dataset: null })
     }
   },
@@ -250,8 +269,8 @@ export const useBacktest = create((rawSet, get) => {
   },
 
   runConfig(extra = {}) {
-    const { dataset, strategyId, costs, risk } = get()
-    return {
+    const { dataset, strategyId, costs, risk, prop } = get()
+    const config = {
       datasetId: dataset.id,
       datasetVersion: dataset.version,
       engineVersion: ENGINE_VERSION,
@@ -259,8 +278,72 @@ export const useBacktest = create((rawSet, get) => {
       params: get().currentParams(),
       costs,
       risk,
-      ...extra,
     }
+    if (prop.enabled) {
+      const setup = propSetup({ prop, symbol: dataset.symbol, costs, risk })
+      if (setup.error) throw new Error(setup.error)
+      Object.assign(config, { costs: setup.costs, risk: setup.risk, prop: setup.plan })
+    }
+    return { ...config, ...extra }
+  },
+
+  /** `runConfig`, or null after reporting why (prop mode on a non-futures symbol). */
+  tryRunConfig(onError) {
+    try {
+      return get().runConfig()
+    } catch (e) {
+      onError(e.message || String(e))
+      return null
+    }
+  },
+
+  /** Resolved prop setup for the loaded dataset (plan, contract, limits), or null. */
+  propInfo() {
+    const { dataset, prop, costs, risk, plane, liveSymbol, researchSymbol } = get()
+    if (!prop.enabled) return null
+    return propSetup({ prop, symbol: dataset?.symbol ?? (plane === 'live' ? liveSymbol : researchSymbol), costs, risk })
+  },
+
+  setProp(patch) {
+    const turningOn = patch.enabled && !get().prop.enabled
+    const prop = { ...get().prop, ...patch }
+    set({ prop })
+    // Prop results live in the advanced view's prop tab — open it, or the
+    // switch would look like it did nothing from the simple view.
+    if (turningOn) {
+      get().setAdvanced(true)
+      set({ activeTab: 'prop' })
+    }
+    if (prop.enabled && get().plane === 'live' && !FUTURES_LIVE_SYMBOLS.includes(get().liveSymbol)) {
+      get().setLive({ liveSymbol: 'NQ=F' })
+      return
+    }
+    if (prop.enabled) get().fetchRatio()
+    if (get().autoRun) get().run()
+  },
+
+  setPropOverride(key, value) {
+    const overrides = { ...get().prop.overrides }
+    if (value === null || value === undefined || value === '') delete overrides[key]
+    else overrides[key] = value
+    get().setProp({ overrides })
+  },
+
+  /** Seeds the ETF→futures ratio from the latest GEX snapshot — the ratio the
+   *  dashboard already uses to put QQQ strikes on the NQ chart. A value the
+   *  user typed is never replaced. */
+  async fetchRatio() {
+    const symbol = get().dataset?.symbol
+    if (!symbolFamily(symbol)?.proxy || get().prop.ratio?.[symbol]) return
+    try {
+      const res = await fetch(`/api/gamma?symbol=${encodeURIComponent(symbol)}`)
+      if (!res.ok) return
+      const r = Number((await res.json())?.conversionRatio)
+      const plausible = symbol === 'QQQ' ? r > 20 && r < 80 : r > 5 && r < 20
+      if (!plausible || get().prop.ratio?.[symbol] || !get().prop.enabled) return
+      set({ prop: { ...get().prop, ratio: { ...get().prop.ratio, [symbol]: Number(r.toFixed(4)) } } })
+      if (get().autoRun) get().run()
+    } catch { /* The default ratio stands. */ }
   },
 
   // ── run ────────────────────────────────────────────────────────────────
@@ -269,7 +352,13 @@ export const useBacktest = create((rawSet, get) => {
     if (!dataset || get().datasetLoading || get().running) return
     if (!strategyAvailable(getStrategy(get().strategyId), dataset)) return
     const token = revision
-    const config = get().runConfig()
+    let config
+    try {
+      config = get().runConfig()
+    } catch (e) {
+      set({ runError: e.message || String(e) })
+      return
+    }
     set({ running: true, runError: null })
     try {
       await runner.ensureDataset(dataset)
@@ -321,7 +410,8 @@ export const useBacktest = create((rawSet, get) => {
     const { dataset, sweep, strategyId } = get()
     if (!dataset || get().datasetLoading || sweep.running) return
     const token = revision
-    const config = get().runConfig()
+    const config = get().tryRunConfig((error) => set({ sweep: { ...sweep, error } }))
+    if (!config) return
     const params = getStrategy(strategyId).params
     const xParam = params.find((p) => p.key === sweep.xKey)
     const yParam = params.find((p) => p.key === sweep.yKey)
@@ -365,7 +455,8 @@ export const useBacktest = create((rawSet, get) => {
     const { dataset, sweep, strategyId, wf } = get()
     if (!dataset || get().datasetLoading || wf.running) return
     const token = revision
-    const config = get().runConfig()
+    const config = get().tryRunConfig((error) => set({ wf: { ...wf, error } }))
+    if (!config) return
     set({ wf: { ...wf, running: true, progress: 0, error: null } })
     try {
       await runner.ensureDataset(dataset)
@@ -416,7 +507,7 @@ export const useBacktest = create((rawSet, get) => {
         trades: result.trades.map((t) => ({ pnlPct: t.pnlPct })),
         paths: mc.paths,
         blockSize: mc.blockSize,
-        initialCapital: costs.initialCapital,
+        initialCapital: result.config?.costs?.initialCapital ?? costs.initialCapital,
       })
       if (token !== revision || generation !== mcGeneration || get().result !== result) return
       set((s) => ({ mc: { ...s.mc, running: false, data } }))
@@ -431,7 +522,8 @@ export const useBacktest = create((rawSet, get) => {
     const { dataset } = get()
     if (!dataset) return
     const token = revision
-    const config = get().runConfig()
+    const config = get().tryRunConfig(() => set({ costCurve: null }))
+    if (!config) return
     try {
       await runner.ensureDataset(dataset)
       if (token !== revision) return
@@ -461,6 +553,7 @@ export const useBacktest = create((rawSet, get) => {
           benchmarkSymbol: get().benchmarkSymbol,
           costs: { ...get().costs },
           risk: { ...get().risk },
+          prop: { ...get().prop },
           rule: get().rule,
           period: get().livePeriod,
           interval: get().liveInterval,
@@ -503,6 +596,13 @@ export const useBacktest = create((rawSet, get) => {
   toggleAutoRun() {
     set({ autoRun: !get().autoRun })
   },
+  setAdvanced(advanced) {
+    set({ advanced })
+    try { localStorage.setItem('backtest:advanced', advanced ? '1' : '0') } catch { /* Storage is optional. */ }
+  },
+  restoreUi() {
+    try { set({ advanced: localStorage.getItem('backtest:advanced') === '1' }) } catch { /* Storage is optional. */ }
+  },
 
   /** Restores a shared configuration before the first dataset load. */
   hydrate(config) {
@@ -534,6 +634,9 @@ export const useBacktest = create((rawSet, get) => {
     if (config.costs) patch.costs = { ...get().costs, ...config.costs }
     if (config.risk) patch.risk = { ...get().risk, ...config.risk }
     if (config.rule) patch.rule = config.rule
+    patch.prop = config.prop ? { ...DEFAULT_PROP, ...config.prop } : { ...DEFAULT_PROP }
+    // Prop accounts and custom rules only have controls in the advanced view.
+    if (patch.prop.enabled || patch.strategyId === 'custom') patch.advanced = true
     set(patch)
   },
 })})

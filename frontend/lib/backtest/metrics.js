@@ -8,21 +8,54 @@
  */
 
 import { sharpeInference } from './stats'
+import { tradingDay } from './series'
 
 const TRADING_DAYS = 252
 const RTH_MINUTES = 390
+const INTRADAY_MINUTES = {
+  '1m': 1, '2m': 2, '5m': 5, '15m': 15, '30m': 30, '60m': 60, '1h': 60, '4h': 240,
+}
 
 /** Bars per year for an interval label, matching the ML harness's convention
  *  of counting only regular-hours bars. */
 export function periodsPerYear(interval) {
-  const m = {
-    '1m': 1, '2m': 2, '5m': 5, '15m': 15, '30m': 30, '60m': 60, '1h': 60, '4h': 240,
-  }[interval]
+  const m = INTRADAY_MINUTES[interval]
   if (m) return TRADING_DAYS * Math.max(1, Math.round(RTH_MINUTES / m))
   if (interval === '1d') return TRADING_DAYS
   if (interval === '1wk') return 52
   if (interval === '1mo') return 12
   return TRADING_DAYS
+}
+
+const ppyCache = new WeakMap()
+
+/**
+ * Bars per year for a dataset. Intraday data is annualised on the median
+ * number of bars per trading day it actually has, so a 23-hour futures series
+ * (~276 5m bars a day) and an RTH equity series (78) each get their own clock;
+ * the interval label alone would understate futures Sharpe by ~1.9x.
+ */
+export function datasetPeriodsPerYear(ds) {
+  const fallback = periodsPerYear(ds.interval)
+  if (!INTRADAY_MINUTES[ds.interval] || !ds.time?.length) return fallback
+  if (ppyCache.has(ds)) return ppyCache.get(ds)
+  const counts = []
+  let day = tradingDay(ds.time[0])
+  let c = 0
+  for (let i = 0; i < ds.time.length; i++) {
+    const d = tradingDay(ds.time[i])
+    if (d !== day) {
+      counts.push(c)
+      day = d
+      c = 0
+    }
+    c++
+  }
+  counts.push(c)
+  // Too few days to trust a median: the first and last day are often partial.
+  const ppy = counts.length >= 3 ? TRADING_DAYS * percentile(counts.sort((a, b) => a - b), 0.5) : fallback
+  ppyCache.set(ds, ppy)
+  return ppy
 }
 
 function mean(a) {
@@ -80,8 +113,8 @@ export function drawdown(equity) {
   return { maxDd, curve, duration: longest, troughIdx }
 }
 
-export function computeMetrics({ equity, returns, trades, barsInMarket, interval, initialCapital }) {
-  const ppy = periodsPerYear(interval)
+export function computeMetrics({ equity, returns, trades, barsInMarket, interval, periodsPerYear: ppyIn, initialCapital }) {
+  const ppy = ppyIn ?? periodsPerYear(interval)
   const n = equity.length
   const last = equity[n - 1] ?? initialCapital
   const totalReturn = initialCapital > 0 ? last / initialCapital - 1 : 0
@@ -108,12 +141,13 @@ export function computeMetrics({ equity, returns, trades, barsInMarket, interval
   }
   const nTrades = trades.length
   const losses = nTrades - wins
+  const inference = sharpeInference(returns, ppy)
 
   return {
     totalReturn,
     finalEquity: last,
     cagr,
-    sharpe: sharpe(returns, ppy),
+    sharpe: inference.sharpe,
     sortino: sortino(returns, ppy),
     volAnn: std(returns) * Math.sqrt(ppy),
     maxDd,
@@ -130,7 +164,7 @@ export function computeMetrics({ equity, returns, trades, barsInMarket, interval
     turnover: years > 0 ? nTrades / years : 0,
     ddCurve: curve,
     periodsPerYear: ppy,
-    inference: sharpeInference(returns, ppy),
+    inference,
   }
 }
 
@@ -207,7 +241,7 @@ export function fanChart(curves, quantiles = [0.05, 0.25, 0.5, 0.75, 0.95]) {
   return { steps, quantiles, bands }
 }
 
-function mulberry32(a) {
+export function mulberry32(a) {
   return function rand() {
     a |= 0
     a = (a + 0x6d2b79f5) | 0

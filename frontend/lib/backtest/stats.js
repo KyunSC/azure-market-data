@@ -15,6 +15,8 @@
  * intervals further, so these are optimistic bounds, not pessimistic ones.
  */
 
+import { tradingDay } from './series'
+
 const EULER_GAMMA = 0.5772156649015329
 
 /** Standard normal CDF (Abramowitz & Stegun 7.1.26 via erf). */
@@ -136,17 +138,26 @@ export function deflatedSharpe(inference, trialSrs) {
 }
 
 /**
- * Where the locked holdout starts. The split snaps forward to the next session
- * boundary so no trading day is split between research and holdout.
+ * Where the locked holdout starts. The split snaps to a trading-day boundary
+ * (see `tradingDay`: a Globex session counts as one day even though it spans
+ * UTC midnight) so no trading day is split between research and holdout —
+ * forward to the next day if that leaves a holdout, otherwise back to the start
+ * of the current day. Data covering a single day has no clean split, so it gets
+ * no holdout rather than a mid-session one.
  */
 export function holdoutSplit(time, pct) {
   const n = time?.length ?? 0
-  if (!(pct > 0) || n < 4) return { cut: n, researchEnd: n - 1, holdoutBars: 0 }
+  const none = { cut: n, researchEnd: n - 1, holdoutBars: 0 }
+  if (!(pct > 0) || n < 4) return none
   const target = Math.min(n - 1, Math.max(1, Math.floor(n * (1 - pct / 100))))
+  const sameDay = (i) => tradingDay(time[i]) === tradingDay(time[i - 1])
   let cut = target
-  const day = (t) => Math.floor(t / 86400)
-  while (cut < n && day(time[cut]) === day(time[cut - 1])) cut++
-  if (cut >= n - 1) cut = target
+  while (cut < n && sameDay(cut)) cut++
+  if (cut >= n - 1) {
+    cut = target
+    while (cut > 0 && sameDay(cut)) cut--
+    if (cut < 1) return none
+  }
   return { cut, researchEnd: cut - 1, holdoutBars: n - cut }
 }
 

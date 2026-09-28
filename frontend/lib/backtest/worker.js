@@ -13,6 +13,7 @@ import * as Comlink from 'comlink'
 import { runBacktest, summarize } from './engine'
 import { getStrategy } from './strategies'
 import { runSweep, runWalkForward, runMonteCarlo, runCostCurve } from './analytics'
+import { attachProp } from './prop'
 
 const datasets = new Map()
 
@@ -34,15 +35,17 @@ const api = {
     return true
   },
 
-  run({ datasetId, strategyId, params, costs, risk, window }) {
-    const result = runBacktest({
-      dataset: resolve(datasetId),
+  run(config) {
+    const { datasetId, strategyId, params, costs, risk, window } = config
+    const dataset = resolve(datasetId)
+    const result = attachProp(runBacktest({
+      dataset,
       strategy: getStrategy(strategyId),
       params,
       costs,
       risk,
       window,
-    })
+    }), dataset, config)
     // Drop the memoised series cache from the reply path by returning only
     // plain arrays and the trade list.
     return {
@@ -56,6 +59,7 @@ const api = {
       windowEnd: result.windowEnd,
       elapsedMs: result.elapsedMs,
       config: result.config,
+      prop: result.prop,
     }
   },
 

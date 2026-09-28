@@ -108,3 +108,98 @@ test('a stop in one session does not veto entries in the next', () => {
   const r = runBacktest({ dataset: ds, strategy: always(1), params: {}, costs: frictionless, risk: { stopPct: 2, flatAtSessionEnd: true } })
   assert.deepEqual(r.trades.map(t => [t.entryIdx, t.reason]), [[1, 'stop'], [4, 'session']])
 })
+
+test('walk-forward leaves an embargo between every training window and its test slice', async () => {
+  const { runWalkForward } = await jiti.import('./analytics.js')
+  const rows = Array.from({ length: 900 }, (_, i) => {
+    const p = 100 + 5 * Math.sin(i / 25)
+    return [p, p + 0.2, p - 0.2, p]
+  })
+  const ds = dataset(rows)
+  const params = { fast: 5, slow: 20, maType: 'sma', shortSide: true }
+  const costs = { ...frictionless, initialCapital: 100000 }
+  const wf = runWalkForward({ dataset: ds, strategyId: 'smaCross', params, costs, risk: {}, nSplits: 3 })
+  assert.equal(wf.embargoBars, 78) // one 5m session by default
+  for (const f of wf.folds) assert.equal(f.testStart - f.trainEnd - 1, 78)
+
+  const none = runWalkForward({ dataset: ds, strategyId: 'smaCross', params, costs, risk: {}, nSplits: 3, embargoBars: 0 })
+  for (const f of none.folds) assert.equal(f.trainEnd, f.testStart - 1)
+})
+
+test('a stop in one session does not veto the next even when positions carry overnight', () => {
+  const day = 86400
+  const rows = [
+    [100, 100, 100, 100],
+    [100, 100, 97, 97], // stopped at 98 (2%)
+    [97, 97, 96, 96], // last bar of session 1
+    [96, 96.5, 95.5, 96], // session 2: re-entry allowed from here
+    [96, 96.5, 95.5, 96],
+    [96, 96.5, 95.5, 96],
+  ]
+  const ds = dataset(rows)
+  ds.time = ds.time.map((t, i) => (i >= 3 ? t + day : t))
+  const r = runBacktest({ dataset: ds, strategy: always(1), params: {}, costs: frictionless, risk: { stopPct: 2 } })
+  assert.deepEqual(r.trades.map(t => [t.entryIdx, t.reason]), [[1, 'stop'], [3, 'end-of-data']])
+})
+
+test('futures are annualised on their own bars per day, not the RTH count', async () => {
+  const { datasetPeriodsPerYear, periodsPerYear } = await jiti.import('./metrics.js')
+  // Five 23-hour Globex sessions of 5m bars: 18:00–17:00 ET (22:00–21:00 UTC in EDT).
+  const start = Date.parse('2026-06-07T22:00:00Z') / 1000
+  const time = []
+  for (let d = 0; d < 5; d++) for (let b = 0; b < 276; b++) time.push(start + d * 86400 + b * 300)
+  assert.equal(datasetPeriodsPerYear({ interval: '5m', time }), 252 * 276)
+  const rth = dataset(Array.from({ length: 10 }, () => [100, 100, 100, 100]))
+  assert.equal(datasetPeriodsPerYear(rth), periodsPerYear('5m')) // too few days: label fallback
+})
+
+test('holdout split never cuts a Globex session at UTC midnight', async () => {
+  const { holdoutSplit } = await jiti.import('./stats.js')
+  const { tradingDay } = await jiti.import('./series.js')
+  const start = Date.parse('2026-06-07T22:00:00Z') / 1000
+  const time = []
+  for (let d = 0; d < 4; d++) for (let b = 0; b < 276; b++) time.push(start + d * 86400 + b * 300)
+  const { cut, holdoutBars } = holdoutSplit(time, 25)
+  assert.ok(holdoutBars > 0)
+  assert.notEqual(tradingDay(time[cut]), tradingDay(time[cut - 1]))
+  assert.equal(new Date(time[cut] * 1000).getUTCHours(), 22) // a session open, not 00:00 UTC
+  // One session only: no clean split, so no holdout rather than a mid-day one.
+  assert.equal(holdoutSplit(time.slice(0, 276), 25).holdoutBars, 0)
+})
+
+test('walk-forward folds stay inside the window and after the longest warmup', async () => {
+  const { runWalkForward } = await jiti.import('./analytics.js')
+  const rows = Array.from({ length: 1200 }, (_, i) => {
+    const p = 100 + 5 * Math.sin(i / 25)
+    return [p, p + 0.2, p - 0.2, p]
+  })
+  const ds = dataset(rows)
+  const params = { fast: 5, slow: 20, maType: 'sma', shortSide: true }
+  const costs = { ...frictionless, initialCapital: 100000 }
+  const wf = runWalkForward({
+    dataset: ds, strategyId: 'smaCross', params, costs, risk: {}, nSplits: 3, embargoBars: 0,
+    xKey: 'slow', xValues: [20, 300], window: { start: 400, end: 1100 },
+  })
+  for (const f of wf.folds) {
+    assert.ok(f.trainStart >= 400 && f.trainStart >= 300, `trainStart ${f.trainStart}`)
+    assert.ok(f.trainEnd > f.trainStart)
+    assert.ok(f.testEnd <= 1100)
+  }
+  assert.throws(() => runWalkForward({
+    dataset: ds, strategyId: 'smaCross', params, costs, risk: {}, nSplits: 3,
+    xKey: 'slow', xValues: [20, 300], window: { start: 0, end: 380 },
+  }), /too short/)
+})
+
+test('futures VWAP anchors at the Globex open, not UTC midnight', async () => {
+  const { vwap } = await jiti.import('./series.js')
+  // 22:00 UTC (18:00 ET open) through 02:00 UTC, then the next session's open.
+  const start = Date.parse('2026-06-07T22:00:00Z') / 1000
+  const time = [0, 1, 2, 3, 4].map((h) => start + h * 3600).concat(start + 86400)
+  const px = [100, 102, 104, 106, 108, 120]
+  const ds = { time, high: px, low: px, close: px, volume: px.map(() => 1) }
+  const v = vwap(ds)
+  assert.equal(v[3], 103) // 01:00 UTC still averages from 22:00, no midnight reset
+  assert.equal(v[4], 104)
+  assert.equal(v[5], 120) // next session starts fresh
+})

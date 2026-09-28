@@ -7,6 +7,11 @@
 import { runBacktest, summarize } from './engine'
 import { getStrategy } from './strategies'
 import { blockBootstrapPaths, fanChart, percentile } from './metrics'
+import { barsPerDay } from './datasets'
+import { attachProp } from './prop'
+
+// Every runner takes a registry `strategyId`, or a `strategy` object directly
+// (the strategy lab's specs live outside the registry).
 
 /** Inclusive linear axis of `steps` values, integer-snapped when the param is. */
 export function axisValues(param, steps) {
@@ -33,8 +38,8 @@ export function axisValues(param, steps) {
  * maximum over 500 draws, not an estimate of the strategy's edge — the median
  * is the number that survives the multiple-testing correction in spirit.
  */
-export function runSweep({ dataset, strategyId, params, costs, risk, xKey, yKey, xValues, yValues, window }, onProgress) {
-  const strategy = getStrategy(strategyId)
+export function runSweep({ dataset, strategyId, strategy: strategyObj, params, costs, risk, xKey, yKey, xValues, yValues, window, prop }, onProgress) {
+  const strategy = strategyObj ?? getStrategy(strategyId)
   const cells = []
   const total = xValues.length * yValues.length
   let done = 0
@@ -44,6 +49,13 @@ export function runSweep({ dataset, strategyId, params, costs, risk, xKey, yKey,
       const p = { ...params, [xKey]: xValues[xi], [yKey]: yValues[yi] }
       const res = runBacktest({ dataset, strategy, params: p, costs, risk, window })
       const s = summarize(res)
+      // Prop cells replay historical starts only; the bootstrap would make a
+      // 144-cell sweep ~1000× slower for a colour scale.
+      if (prop) {
+        const h = attachProp(res, dataset, { prop, costs }, { bootstrap: false, keepAttempts: false }).prop.historical
+        s.propEv = h.ev
+        s.passRate = h.passRate
+      }
       cells.push({ xi, yi, x: xValues[xi], y: yValues[yi], ...s })
       done++
       if (onProgress && (done % 8 === 0 || done === total)) onProgress(done, total)
@@ -52,7 +64,15 @@ export function runSweep({ dataset, strategyId, params, costs, risk, xKey, yKey,
 
   const sharpes = cells.map((c) => c.sharpe).filter(Number.isFinite).sort((a, b) => a - b)
   const best = cells.reduce((a, b) => (b.sharpe > (a?.sharpe ?? -Infinity) ? b : a), null)
+  const evs = cells.map((c) => c.propEv).filter(Number.isFinite).sort((a, b) => a - b)
+  const propSummary = evs.length ? {
+    best: cells.reduce((a, b) => (b.propEv > (a?.propEv ?? -Infinity) ? b : a), null),
+    median: percentile(evs, 0.5),
+    min: evs[0],
+    max: evs[evs.length - 1],
+  } : null
   return {
+    prop: propSummary,
     cells,
     xKey,
     yKey,
@@ -73,36 +93,55 @@ export function runSweep({ dataset, strategyId, params, costs, risk, xKey, yKey,
  * on everything before its test slice, never on the slice itself.
  *
  * Each fold optimises the chosen axes in-sample, then trades the winning
- * parameters out-of-sample. The stitched OOS equity is the only curve here that
+ * parameters out-of-sample. `embargoBars` (default one session) are skipped
+ * between the training window and each test slice, so a regime or a position
+ * still open at the end of training can't flatter the first OOS bars:
+ *
+ *   [ train ........ ][ embargo ][ test ]
+ * The stitched OOS equity is the only curve here that
  * anyone should quote — the IS numbers are shown purely so the gap between them
  * is visible.
  */
-export function runWalkForward({ dataset, strategyId, params, costs, risk, xKey, xValues, yKey, yValues, nSplits = 5, window }, onProgress) {
-  const strategy = getStrategy(strategyId)
-  // Folds tile only the research window — the locked holdout stays unseen.
-  const n = Math.min(dataset.close.length, (window?.end ?? dataset.close.length - 1) + 1)
-  const testSize = Math.floor(n / (nSplits + 1))
-  const firstTest = n - nSplits * testSize
-  const folds = []
+export function runWalkForward({ dataset, strategyId, strategy: strategyObj, params, costs, risk, xKey, xValues, yKey, yValues, nSplits = 5, embargoBars, window }, onProgress) {
+  const strategy = strategyObj ?? getStrategy(strategyId)
+  const embargo = Math.max(0, embargoBars ?? barsPerDay(dataset.interval))
   const grid = []
   const xs = xValues?.length ? xValues : [null]
   const ys = yValues?.length ? yValues : [null]
-  for (const x of xs) for (const y of ys) grid.push({ x, y })
+  for (const x of xs) {
+    for (const y of ys) {
+      const p = { ...params }
+      if (xKey && x !== null) p[xKey] = x
+      if (yKey && y !== null) p[yKey] = y
+      grid.push(p)
+    }
+  }
+
+  // Folds tile only the requested window — the locked holdout stays unseen —
+  // and start after the longest warmup any grid cell needs. Tiling from bar 0
+  // instead let a short window hand fold 1 a training range that ended before
+  // the warmup did, so "optimising" silently picked the first grid cell.
+  const lo = Math.max(0, window?.start ?? 0)
+  const hi = Math.min(dataset.close.length - 1, window?.end ?? dataset.close.length - 1)
+  const warmup = strategy.warmup ? Math.max(...grid.map((p) => strategy.warmup(p, dataset))) : 0
+  const trainStart = Math.max(lo, warmup)
+  const testSize = Math.floor((hi - trainStart + 1 - embargo) / (nSplits + 1))
+  if (testSize < 2) {
+    throw new Error(`Window too short for ${nSplits} walk-forward folds after a ${warmup}-bar warmup and ${embargo}-bar embargo`)
+  }
+  const firstTest = hi + 1 - nSplits * testSize
+  const folds = []
 
   const stitched = new Float64Array(dataset.close.length).fill(Number.NaN)
   let carry = costs.initialCapital
 
   for (let k = 0; k < nSplits; k++) {
     const testStart = firstTest + k * testSize
-    const testEnd = Math.min(n - 1, testStart + testSize - 1)
-    const trainStart = Math.max(0, strategy.warmup ? strategy.warmup(params, dataset) : 0)
-    const trainEnd = testStart - 1
+    const testEnd = testStart + testSize - 1
+    const trainEnd = testStart - 1 - embargo
 
     let bestIs = null
-    for (const g of grid) {
-      const p = { ...params }
-      if (xKey && g.x !== null) p[xKey] = g.x
-      if (yKey && g.y !== null) p[yKey] = g.y
+    for (const p of grid) {
       const res = runBacktest({ dataset, strategy, params: p, costs, risk, window: { start: trainStart, end: trainEnd } })
       const sh = res.metrics.sharpe
       if (!bestIs || sh > bestIs.sharpe) bestIs = { sharpe: sh, params: p, metrics: res.metrics }
@@ -147,6 +186,7 @@ export function runWalkForward({ dataset, strategyId, params, costs, risk, xKey,
     stitched,
     firstTest,
     testSize,
+    embargoBars: embargo,
     trialsPerFold: grid.length,
     avgIsSharpe: avg(isSharpes),
     avgOosSharpe: avg(oosSharpes),
@@ -194,10 +234,14 @@ export function runMonteCarlo({ trades, paths = 1000, blockSize = 5, seed = 42, 
  * Cost sensitivity: the same strategy re-run across a slippage ladder. If an
  * edge only exists at zero slippage it does not exist.
  */
-export function runCostCurve({ dataset, strategyId, params, costs, risk, window, ladder = [0, 0.5, 1, 2, 3, 5, 8, 12] }) {
-  const strategy = getStrategy(strategyId)
+export function runCostCurve({ dataset, strategyId, strategy: strategyObj, params, costs, risk, window, ladder = [0, 0.5, 1, 2, 3, 5, 8, 12] }) {
+  const strategy = strategyObj ?? getStrategy(strategyId)
+  // Futures runs price slippage in ticks, so the same ladder is read as ticks.
   return ladder.map((bps) => {
-    const res = runBacktest({ dataset, strategy, params, costs: { ...costs, slippageBps: bps }, risk, window })
+    const laddered = costs.instrument
+      ? { ...costs, instrument: { ...costs.instrument, slippageTicks: bps } }
+      : { ...costs, slippageBps: bps }
+    const res = runBacktest({ dataset, strategy, params, costs: laddered, risk, window })
     return { slippageBps: bps, sharpe: res.metrics.sharpe, totalReturn: res.metrics.totalReturn, nTrades: res.metrics.nTrades }
   })
 }

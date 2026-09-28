@@ -12,6 +12,7 @@ import { runBacktest, summarize } from './engine'
 import { getStrategy } from './strategies'
 import { runSweep, runWalkForward, runMonteCarlo, runCostCurve } from './analytics'
 import { serializeDataset } from './datasets'
+import { attachProp } from './prop'
 
 let workerApi = null
 let workerHandle = null
@@ -61,14 +62,15 @@ function local(datasetId) {
 export async function run(config) {
   const api = getWorker()
   if (!api) {
-    return runBacktest({
-      dataset: local(config.datasetId),
+    const dataset = local(config.datasetId)
+    return attachProp(runBacktest({
+      dataset,
       strategy: getStrategy(config.strategyId),
       params: config.params,
       costs: config.costs,
       risk: config.risk,
       window: config.window,
-    })
+    }), dataset, config)
   }
   return api.run(config)
 }

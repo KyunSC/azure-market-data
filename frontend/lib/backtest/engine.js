@@ -14,8 +14,8 @@
  * than left to each strategy.
  */
 
-import { computeMetrics, buyHoldCurve } from './metrics'
-import { sessionEndFlags } from './series'
+import { computeMetrics, buyHoldCurve, datasetPeriodsPerYear } from './metrics'
+import { sessionEndFlags, flatByFlags } from './series'
 
 export const DEFAULT_COSTS = {
   initialCapital: 100000,
@@ -30,6 +30,7 @@ export const DEFAULT_RISK = {
   maxBars: 0,      // 0 = disabled
   flatAtSessionEnd: false,
   allowShort: true,
+  flatByEt: 0,     // minutes after midnight ET to be flat by; 0 = disabled
 }
 
 const EXIT_REASON = {
@@ -42,6 +43,19 @@ const EXIT_REASON = {
 }
 
 /**
+ * `costs.instrument` switches sizing from "fraction of equity" to a fixed
+ * number of futures contracts: `{ pointValue, tickSize, contracts,
+ * commissionPerSide, slippageTicks, priceScale }`. `priceScale` turns ETF bars
+ * into futures points (QQQ → NQ) on the research plane; it is 1 on real
+ * futures bars. Slippage is then in ticks and commission is per contract per
+ * side. Percent stops and targets are scale-free, so they need no change.
+ *
+ * With an instrument the result also carries `barLo` / `barHi` / `barOpen`:
+ * equity at the adverse and favourable extremes of each bar and just after its
+ * open. Prop-firm rules (see `prop/account.js`) replay those instead of
+ * re-running the simulation — with a fixed contract count the orders never
+ * depend on the account balance, so every rule reduces to reading them.
+ *
  * `window` restricts trading to a contiguous bar range without slicing the
  * dataset. Indicators still see the full history, so a walk-forward fold gets
  * the same SMA-200 the full run would — slicing first would silently hand each
@@ -56,15 +70,29 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
   const wStart = Math.max(0, window?.start ?? 0)
   const wEnd = Math.min(n - 1, window?.end ?? n - 1)
 
+  const inst = c.instrument && c.instrument.contracts > 0 && c.instrument.pointValue > 0 ? c.instrument : null
   const slip = c.slippageBps / 10000
+  const slipPts = inst ? (inst.slippageTicks || 0) * (inst.tickSize || 0) : 0
+  const commission = inst ? (inst.commissionPerSide || 0) * inst.contracts : c.commissionPerTrade
+  const scale = inst?.priceScale > 0 ? inst.priceScale : 1
+  const scaled = (arr) => (scale === 1 ? arr : Float64Array.from(arr, (v) => v * scale))
+  const O = scaled(ds.open)
+  const H = scaled(ds.high)
+  const L = scaled(ds.low)
+  const C = scaled(ds.close)
   const state = strategy.prepare ? strategy.prepare(ds, params) : null
   const warmup = Math.max(wStart, strategy.warmup ? strategy.warmup(params, ds) : 0)
-  const sessionEnd = r.flatAtSessionEnd ? sessionEndFlags(ds.time) : null
+  const sessionBreak = sessionEndFlags(ds.time)
+  const sessionEnd = r.flatAtSessionEnd ? sessionBreak : null
+  const flatBy = r.flatByEt > 0 ? flatByFlags(ds.time, r.flatByEt) : null
 
   const equity = new Float64Array(n).fill(c.initialCapital)
   const returns = new Float64Array(n)
   const posSeries = new Int8Array(n)
   const trades = []
+  const barLo = inst ? new Float64Array(n).fill(c.initialCapital) : null
+  const barHi = inst ? new Float64Array(n).fill(c.initialCapital) : null
+  const barOpen = inst ? new Float64Array(n).fill(c.initialCapital) : null
 
   let cash = c.initialCapital
   let eq = c.initialCapital
@@ -81,23 +109,23 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
   let barsInMarket = 0
   let prevTarget = 0
   // Direction closed by a stop, target or time exit. Re-entry that way waits
-  // until the strategy stops asking for it — otherwise a regime strategy whose
-  // condition is still true buys straight back in on the next open and the
-  // "stop" becomes one-bar churn.
+  // until the strategy stops asking for it or the session ends — otherwise a
+  // regime strategy whose condition is still true buys straight back in on the
+  // next open and the "stop" becomes one-bar churn.
   let lockout = 0
 
-  const buyFill = (px) => px * (1 + slip)
-  const sellFill = (px) => px * (1 - slip)
+  const buyFill = inst ? (px) => px + slipPts : (px) => px * (1 + slip)
+  const sellFill = inst ? (px) => Math.max(0, px - slipPts) : (px) => px * (1 - slip)
 
   const closePosition = (i, rawPrice, reason) => {
     const fill = pos > 0 ? sellFill(rawPrice) : buyFill(rawPrice)
     const gross = pos > 0 ? (fill - entryPrice) * qty : (entryPrice - fill) * qty
     cash += pos > 0 ? fill * qty : -fill * qty
-    cash -= c.commissionPerTrade
+    cash -= commission
     // Both legs are commissioned, and slippage is already inside the fills, so
     // `pnl` and `pnlPct` are what actually landed in the account. The Monte
     // Carlo resamples `pnlPct`, which would flatter the fan if it were gross.
-    const fees = entryFee + c.commissionPerTrade
+    const fees = entryFee + commission
     const net = gross - fees
     const notional = entryPrice * qty
     trades.push({
@@ -128,15 +156,14 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
   const openPosition = (i, dir, rawPrice) => {
     const fill = dir > 0 ? buyFill(rawPrice) : sellFill(rawPrice)
     if (!(fill > 0)) return
-    const notional = Math.max(0, eq * c.sizePct)
-    qty = notional / fill
+    qty = inst ? inst.contracts * inst.pointValue : Math.max(0, eq * c.sizePct) / fill
     if (!(qty > 0)) {
       qty = 0
       return
     }
     cash -= dir > 0 ? fill * qty : -fill * qty
-    cash -= c.commissionPerTrade
-    entryFee = c.commissionPerTrade
+    cash -= commission
+    entryFee = commission
     pos = dir
     entryPrice = fill
     entryIdx = i
@@ -152,10 +179,15 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
       const want = pending
       pending = null
       if (want !== pos) {
-        if (pos !== 0) closePosition(i, ds.open[i], EXIT_REASON.SIGNAL)
+        if (pos !== 0) closePosition(i, O[i], EXIT_REASON.SIGNAL)
         eq = cash
-        if (want !== 0) openPosition(i, want, ds.open[i])
+        if (want !== 0) openPosition(i, want, O[i])
       }
+    }
+    let lo = 0
+    let hi = 0
+    if (inst) {
+      lo = hi = barOpen[i] = cash + pos * qty * O[i]
     }
 
     // 2 — intrabar risk exits. A bar that opens beyond a level fills at the
@@ -164,17 +196,22 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
     // worse fill is the only defensible assumption.
     if (pos !== 0) {
       const excursion = pos > 0
-        ? { fav: ds.high[i] / entryPrice - 1, adv: ds.low[i] / entryPrice - 1 }
-        : { fav: entryPrice / ds.low[i] - 1, adv: entryPrice / ds.high[i] - 1 }
+        ? { fav: H[i] / entryPrice - 1, adv: L[i] / entryPrice - 1 }
+        : { fav: entryPrice / L[i] - 1, adv: entryPrice / H[i] - 1 }
       mfe = Math.max(mfe, excursion.fav)
       mae = Math.min(mae, excursion.adv)
 
-      const stopHit = stopPrice > 0 && (pos > 0 ? ds.low[i] <= stopPrice : ds.high[i] >= stopPrice)
-      const targetHit = targetPrice > 0 && (pos > 0 ? ds.high[i] >= targetPrice : ds.low[i] <= targetPrice)
-      const o = ds.open[i]
+      const stopHit = stopPrice > 0 && (pos > 0 ? L[i] <= stopPrice : H[i] >= stopPrice)
+      const targetHit = targetPrice > 0 && (pos > 0 ? H[i] >= targetPrice : L[i] <= targetPrice)
+      const o = O[i]
       const gapStop = stopHit && (pos > 0 ? o <= stopPrice : o >= stopPrice)
       const gapTarget = targetHit && (pos > 0 ? o >= targetPrice : o <= targetPrice)
       const dir = pos
+      // Bar extremes for the prop replay. A stop caps the adverse side at its
+      // fill; when stop and target share a bar the stop is assumed first, so
+      // the favourable side is never credited.
+      const advEq = cash + pos * qty * (pos > 0 ? L[i] : H[i])
+      const favEq = cash + pos * qty * (pos > 0 ? H[i] : L[i])
       if (gapStop) {
         closePosition(i, o, EXIT_REASON.STOP)
       } else if (gapTarget) {
@@ -183,6 +220,10 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
         closePosition(i, stopPrice, EXIT_REASON.STOP)
       } else if (targetHit) {
         closePosition(i, targetPrice, EXIT_REASON.TARGET)
+      }
+      if (inst) {
+        lo = Math.min(lo, stopHit ? cash : advEq)
+        if (!stopHit) hi = Math.max(hi, targetHit ? cash : favEq)
       }
       if (pos === 0) {
         eq = cash
@@ -194,27 +235,35 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
     // 3 — time and session exits, filled at this bar's close
     if (pos !== 0 && r.maxBars > 0 && i - entryIdx >= r.maxBars) {
       lockout = pos
-      closePosition(i, ds.close[i], EXIT_REASON.TIME)
+      closePosition(i, C[i], EXIT_REASON.TIME)
       eq = cash
       prevTarget = 0
     }
-    if (sessionEnd && sessionEnd[i]) {
+    const flatNow = (sessionEnd && sessionEnd[i]) || (flatBy && flatBy.end[i])
+    if (flatNow) {
       if (pos !== 0) {
-        closePosition(i, ds.close[i], EXIT_REASON.SESSION)
+        closePosition(i, C[i], EXIT_REASON.SESSION)
         eq = cash
       }
-      // A new session is a fresh start: yesterday's stop does not veto today.
       prevTarget = 0
-      lockout = 0
     }
+    // A new session is a fresh start: yesterday's stop does not veto today,
+    // whether or not positions are flattened overnight. Without this a regime
+    // strategy stopped out once would sit flat until its signal flipped, which
+    // can be weeks.
+    if (sessionBreak[i]) lockout = 0
     if (pos !== 0 && i === wEnd) {
-      closePosition(i, ds.close[i], EXIT_REASON.END)
+      closePosition(i, C[i], EXIT_REASON.END)
       eq = cash
     }
 
     // 4 — mark to market
-    eq = cash + pos * qty * ds.close[i]
+    eq = cash + pos * qty * C[i]
     equity[i] = eq
+    if (inst) {
+      barLo[i] = Math.min(lo, eq)
+      barHi[i] = Math.max(hi, eq)
+    }
     returns[i] = i > wStart && equity[i - 1] > 0 ? equity[i] / equity[i - 1] - 1 : 0
     posSeries[i] = pos
     if (pos !== 0) barsInMarket++
@@ -225,7 +274,7 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
       if (!Number.isFinite(target)) target = prevTarget
       target = Math.max(-1, Math.min(1, Math.round(target)))
       if (target < 0 && !r.allowShort) target = 0
-      if (sessionEnd && sessionEnd[i]) target = 0
+      if (flatNow || (flatBy && flatBy.blocked[i])) target = 0
       prevTarget = target
       if (lockout !== 0) {
         if (target === lockout) target = 0
@@ -241,6 +290,7 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
     trades,
     barsInMarket,
     interval: ds.interval,
+    periodsPerYear: datasetPeriodsPerYear(ds),
     initialCapital: c.initialCapital,
   })
 
@@ -253,6 +303,9 @@ export function runBacktest({ dataset, strategy, params, costs, risk, window }) 
     trades,
     metrics,
     buyHold: buyHoldCurve(ds, c.initialCapital, wStart),
+    barLo,
+    barHi,
+    barOpen,
     windowStart: wStart,
     windowEnd: wEnd,
     elapsedMs: t1 - t0,

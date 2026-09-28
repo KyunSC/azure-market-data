@@ -95,3 +95,23 @@ test('outages use a labeled cache; missing versions never use cache', async () =
     else delete globalThis.localStorage
   }
 })
+
+test('a failing dataset service falls back to the bundled sample with a notice', async () => {
+  const original = globalThis.fetch
+  const read = async (path) => JSON.parse(await readFile(new URL(`../../public${path}`, import.meta.url), 'utf8'))
+  try {
+    globalThis.fetch = async (url) => url.startsWith('/api/')
+      ? { ok: false, status: 500 }
+      : { ok: true, json: async () => read(url) }
+    useBacktest.setState({ plane: 'research', researchSymbol: 'QQQ', example: false, researchDatasetId: null })
+    await useBacktest.getState().loadDataset()
+    const s = useBacktest.getState()
+    assert.equal(s.datasetError, null)
+    assert.equal(s.example, true)
+    assert.equal(s.dataset?.example, true)
+    assert.match(s.datasetNotice, /500.*bundled sample/)
+  } finally {
+    globalThis.fetch = original
+    useBacktest.setState({ example: false, datasetNotice: null })
+  }
+})
