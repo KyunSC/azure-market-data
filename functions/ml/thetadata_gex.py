@@ -10,6 +10,14 @@ using the live calculator's own constants, Black-Scholes gamma and _identify_key
   - levels: call wall, put wall, zero gamma, up to 3 more significant strikes per side
   - aggregates over those levels only, exactly as build_dataset's SQL/REST readers do
 
+Dealer vanna/charm exposure (research only; no live counterpart) over the SAME windowed,
+filtered contracts, T, OI, mid IV and sign (+1 calls / -1 puts) as GEX, but summed over the
+WHOLE chain in the window, not just the key levels (there is no live reader to mirror):
+  - net_vex = sum greeks.vanna(spot, K, T, IV) * OI * 100 * spot * sign   (per 1.00 vol)
+  - net_cex = sum greeks.charm(spot, K, T, IV, right) * OI * 100 * sign    (delta shares / year)
+  - net_vex_0dte, net_cex_0dte: the same sums over contracts expiring that day only
+Adding VEX/CEX to the live calculator (functions/GEXCalculator) and the DB schema is a follow-up.
+
 Point in time: an IV row stamped T uses quotes and underlying price as of T
 (underlying_timestamp == timestamp), and OI is the prior close, published ~06:30 ET.
 So computed_at = T. Spot is the snapshot's underlying_price.
@@ -19,7 +27,8 @@ writes <symbol>_gex_snapshots_0dte.parquet. Caveat: OI is the prior close, so 0D
 the gamma of positions carried into expiration day, not of same-day opened 0DTE flow.
 
 Output: data/thetadata_gex/<symbol>_gex_snapshots.parquet, one row per snapshot, with the
-same raw columns build_dataset.finish_gex_snapshots expects. ThetaData-derived: keep it
+same raw columns build_dataset.finish_gex_snapshots expects (older files without the
+VEX/CEX columns still load there, with NaN features). ThetaData-derived: keep it
 private (never in frontend/public), delete with the rest on cancellation.
 
 Run: python functions/ml/thetadata_gex.py --symbol QQQ
@@ -44,12 +53,14 @@ sys.path.insert(0, str(HERE.parent / "GEXCalculator"))
 from gex_calculator import (  # noqa: E402  — the live calculator is the spec
     MAX_DAYS_OUT, MAX_EXPIRATIONS, MIN_IV, MIN_T_YEARS, RISK_FREE_RATE, _identify_key_levels,
 )
+from greeks import charm, vanna  # noqa: E402
 from thetadata_fetch import KEYS, OUT_ROOT as TD_ROOT, contract_keys  # noqa: E402
 
 OUT_DIR = HERE / "data" / "thetadata_gex"
 COLUMNS = ["computed_at", "spot", "call_wall", "put_wall", "zero_gamma",
            "call_wall_gex", "put_wall_gex", "call_wall_0dte_gex", "put_wall_0dte_gex",
-           "net_gex", "abs_gex_total", "sum_gex_squared", "net_gex_0dte_raw", "abs_gex_0dte_total"]
+           "net_gex", "abs_gex_total", "sum_gex_squared", "net_gex_0dte_raw", "abs_gex_0dte_total",
+           "net_vex", "net_cex", "net_vex_0dte", "net_cex_0dte"]
 
 
 def bs_gamma(S, K, T, r, sigma) -> np.ndarray:
@@ -84,6 +95,10 @@ def snapshot(chain: pd.DataFrame, spot: float, day: date, expiries: str = "neare
     per = pd.DataFrame({"strike": c["strike"].to_numpy(), "gex": gex,
                         "gex_call": np.where(sign > 0, gex, 0.0), "gex_put": np.where(sign < 0, gex, 0.0),
                         "gex_0dte": np.where(days <= 0, gex, 0.0)}).groupby("strike").sum().sort_index()
+    vex = vanna(spot, c["strike"].to_numpy(), T, c["implied_vol"].to_numpy()) \
+        * c["open_interest"].to_numpy() * 100 * spot * sign
+    cex = charm(spot, c["strike"].to_numpy(), T, c["implied_vol"].to_numpy(), sign > 0) \
+        * c["open_interest"].to_numpy() * 100 * sign
     strikes = [{"strike_etf": round(k, 2), "strike_futures": round(k, 2), "gex": round(r.gex, 2),
                 "gex_call": round(r.gex_call, 2), "gex_put": round(r.gex_put, 2), "gex_0dte": round(r.gex_0dte, 2)}
                for k, r in zip(per.index, per.itertuples())]
@@ -94,6 +109,8 @@ def snapshot(chain: pd.DataFrame, spot: float, day: date, expiries: str = "neare
     g0 = np.array([lv.get("gex_0dte", 0.0) for lv in levels], dtype=float)
     out = {"spot": spot, "net_gex": g.sum(), "abs_gex_total": np.abs(g).sum(), "sum_gex_squared": (g ** 2).sum(),
            "net_gex_0dte_raw": g0.sum(), "abs_gex_0dte_total": np.abs(g0).sum(),
+           "net_vex": vex.sum(), "net_cex": cex.sum(),
+           "net_vex_0dte": vex[days <= 0].sum(), "net_cex_0dte": cex[days <= 0].sum(),
            "call_wall": np.nan, "put_wall": np.nan, "zero_gamma": np.nan,
            "call_wall_gex": np.nan, "put_wall_gex": np.nan, "call_wall_0dte_gex": np.nan, "put_wall_0dte_gex": np.nan}
     for lv in levels:

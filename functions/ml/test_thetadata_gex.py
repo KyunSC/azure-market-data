@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 import build_dataset as bd
+import greeks
 import thetadata_gex as g
 from gex_calculator import MIN_T_YEARS, RISK_FREE_RATE, _identify_key_levels, black_scholes_gamma
 
@@ -63,6 +64,53 @@ class Snapshot(unittest.TestCase):
         self.assertIsNone(g.snapshot(c, 740.0, DAY))
 
 
+class VannaCharm(unittest.TestCase):
+    C = chain([("2026-09-25", 740.0, "C", 0.20, 1000), ("2026-09-25", 750.0, "C", 0.20, 5000),
+               ("2026-09-25", 730.0, "P", 0.25, 4000), ("2026-09-28", 745.0, "P", 0.22, 800),
+               ("2026-09-28", 760.0, "C", 0.18, 300), ("2026-10-02", 700.0, "P", 0.30, 2500)])
+
+    @staticmethod
+    def manual(c, spot, same_day_only=False):
+        vex = cex = 0.0
+        for e, k, r, iv, oi in c.itertuples(index=False):
+            days = (pd.Timestamp(e) - pd.Timestamp(DAY)).days
+            if same_day_only and days > 0:
+                continue
+            T, sign = max(days / 365, MIN_T_YEARS), (1 if r == "C" else -1)
+            vex += float(greeks.vanna(spot, k, T, iv)) * oi * 100 * spot * sign
+            cex += float(greeks.charm(spot, k, T, iv, r)) * oi * 100 * sign
+        return vex, cex
+
+    def test_whole_chain_matches_manual_loop(self):
+        s = g.snapshot(self.C, 743.6, DAY)
+        vex, cex = self.manual(self.C, 743.6)
+        self.assertAlmostEqual(s["net_vex"], vex, delta=1e-9 * abs(vex))
+        self.assertAlmostEqual(s["net_cex"], cex, delta=1e-9 * abs(cex))
+        # Dealer long OTM calls (vanna > 0) and short OTM puts (vanna < 0, negated): both add positive VEX.
+        self.assertGreater(s["net_vex"], 0)
+        self.assertLess(s["net_cex"], 0)  # OTM call deltas and short-put deltas decay toward 0
+
+    def test_otm_calls_positive_vex(self):
+        c = chain([("2026-09-28", k, "C", 0.2, 500) for k in (750.0, 760.0, 780.0)])
+        s = g.snapshot(c, 740.0, DAY)
+        self.assertGreater(s["net_vex"], 0)
+        self.assertLess(s["net_cex"], 0)
+
+    def test_0dte_split_sums_same_day_only(self):
+        s = g.snapshot(self.C, 743.6, DAY)
+        vex0, cex0 = self.manual(self.C, 743.6, same_day_only=True)
+        self.assertAlmostEqual(s["net_vex_0dte"], vex0, delta=1e-9 * abs(vex0))
+        self.assertAlmostEqual(s["net_cex_0dte"], cex0, delta=1e-9 * abs(cex0))
+        self.assertNotAlmostEqual(s["net_vex_0dte"], s["net_vex"], delta=1.0)
+        s0 = g.snapshot(self.C, 743.6, DAY, expiries="0dte")
+        self.assertAlmostEqual(s0["net_vex"], vex0, delta=1e-9 * abs(vex0))
+        self.assertEqual(s0["net_vex_0dte"], s0["net_vex"])
+
+    def test_columns_appended(self):
+        self.assertEqual(g.COLUMNS[-4:], ["net_vex", "net_cex", "net_vex_0dte", "net_cex_0dte"])
+        self.assertLessEqual(set(g.COLUMNS) - {"computed_at"}, set(g.snapshot(self.C, 743.6, DAY)))
+
+
 class Bars(unittest.TestCase):
     def test_rth_5min_bars_stamped_at_start(self):
         idx = pd.date_range("2024-06-10 13:25", "2024-06-10 20:05", freq="1min", tz="UTC")  # 09:25-16:05 EDT
@@ -95,6 +143,35 @@ class Finish(unittest.TestCase):
         self.assertAlmostEqual(f.put_wall_strength, 0.4)
         self.assertAlmostEqual(f.gex_concentration, 0.52)
         self.assertTrue(np.isnan(f.pcr_volume))
+
+    RAW = {"computed_at": "2026-09-25 13:35:00+00:00", "call_wall": 750.0, "put_wall": 730.0,
+           "zero_gamma": 749.2, "call_wall_gex": 60.0, "put_wall_gex": -40.0, "call_wall_0dte_gex": 30.0,
+           "put_wall_0dte_gex": -10.0, "net_gex": 20.0, "abs_gex_total": 100.0, "sum_gex_squared": 5200.0,
+           "net_gex_0dte_raw": 20.0, "abs_gex_0dte_total": 40.0}
+
+    @staticmethod
+    def features(gex):
+        bars = pd.DataFrame({"date": pd.to_datetime(["2026-09-25 13:40:00+00:00"]), "close": [745.0],
+                             "atr_14": [2.0]})
+        return bd.compute_gex_features(bd.asof_join_gex(bars, gex)).iloc[0]
+
+    def test_vex_cex_signed_log(self):
+        raw = pd.DataFrame([{**self.RAW, "net_vex": -1e9, "net_cex": "2.5e6", "net_vex_0dte": 0.0,
+                             "net_cex_0dte": None}])
+        f = self.features(bd.finish_gex_snapshots(raw))
+        self.assertAlmostEqual(f.vex_signed_log, -np.log1p(1e9))
+        self.assertAlmostEqual(f.cex_signed_log, np.log1p(2.5e6))
+        self.assertEqual(f.vex_0dte_signed_log, 0.0)
+        self.assertTrue(np.isnan(f.cex_0dte_signed_log))
+
+    def test_old_sources_without_vex_cex_give_nan(self):
+        f = self.features(bd.finish_gex_snapshots(pd.DataFrame([self.RAW])))  # old parquet / REST rows
+        self.assertTrue(all(np.isnan(f[c]) for c in bd.FEATURE_COLS_VEX_CEX))
+        self.assertAlmostEqual(f.gamma_regime_strength, 0.2)
+        sql = pd.DataFrame([{"computed_at": pd.Timestamp("2026-09-25 13:35", tz="UTC"), "call_wall": 750.0,
+                             "put_wall": 730.0, "zero_gamma": 749.2, "net_gex": 20.0, "abs_gex_total": 100.0}])
+        f = self.features(sql)  # fetch_gex_snapshots (SQL) skips finish_gex_snapshots entirely
+        self.assertTrue(all(np.isnan(f[c]) for c in bd.FEATURE_COLS_VEX_CEX))
 
 
 if __name__ == "__main__":

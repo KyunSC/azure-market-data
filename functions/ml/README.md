@@ -352,6 +352,70 @@ volatility regime features:
 Short return lags (`log_return_5m`, `log_return_15m`) rank dead last — consistent with the
 finding that short-horizon noise does not help predict 2-hour returns.
 
+### 6.8 Delta-hedged straddle study
+
+A companion study on the dealer side of the trade. It uses the same ThetaData backfill: real
+5-minute QQQ/SPY option quotes from 2022-01-03 to 2026-09-25.
+
+**Method** (`delta_hedge.py`, Greeks in `greeks.py`):
+- **Trade.** Each day, sell one ATM straddle (×100) at the 09:35 bid. Buy it back at the 16:00
+  ask, or settle at intrinsic on 0DTE.
+- **Hedge.** Hedge with shares every 5 min, every 30 min, every 60 min, every 60 min with a
+  charm pre-shift, once at entry, or never. Each hedge trade costs 0.5 bp.
+- **IV.** Each leg's IV is re-implied from its own mid on a calendar clock to the 16:00 expiry.
+  ThetaData's own IV floors T at about 1 h, which misprices the last hour of a 0DTE.
+- **Attribution.** Each bar's P&L is attributed with Greeks from the start of the bar:
+  - first order: delta mismatch, gamma ½ΓdS², theta Θdt, vega νdσ;
+  - second order: vanna dS·dσ, volga ½dσ², charm dt·dS;
+  - residual: whatever is left.
+- **Theory check.** Hedged P&L is compared with ½ΓS²(σ²_imp dt − r²).
+
+![Delta-hedged QQQ 0DTE straddle](plots/delta_hedge_qqq_dte0.png)
+
+| | QQQ 0DTE | SPY 0DTE | QQQ 1DTE* | SPY 1DTE* |
+|---|---|---|---|---|
+| days | 1,097 | 1,097 | 1,178 | 1,178 |
+| mean premium ($/straddle) | 369 | 318 | 612 | 536 |
+| 5-min hedged P&L, net of costs | **+$18.9 (5.5%)** | **+$13.3 (4.2%)** | −$7.0 (−0.6%) | −$2.7 (−0.6%) |
+| annualized Sharpe (5-min) | 3.4 | 2.7 | −1.3 | −0.6 |
+| mean entry IV − realized (vol pts) | +4.0 | +3.0 | −8.9 | −6.5 |
+| R², P&L vs ½ΓS²(σ²_imp − σ²_real) | 0.49 | 0.51 | 0.33 | 0.36 |
+| variance cut vs unhedged: 5m / 30m / 60m | 92 / 83 / 74% | 91 / 84 / 73% | 85 / 76 / 67% | 85 / 78 / 68% |
+| 60m + charm pre-shift | 74.3% | 73.4% | 67.0% | 67.7% |
+| \|residual\| cut by 2nd-order terms (daily / per bar) | 38 / 16% | 22 / 15% | 83 / 46% | 75 / 48% |
+
+\* 1DTE is held intraday only. A calendar-clock IV spreads overnight and weekend variance over
+24 h, so intraday realized vol runs above it. The negative IV − RV is therefore a clock effect,
+not a missing variance risk premium.
+
+What it shows:
+- **The variance risk premium is real on 0DTE and survives costs.** Implied beats realized by
+  3–4 vol points on average. The hedged short straddle keeps 4–6% of premium after bid/ask and
+  hedge costs, and P&L lines up with the implied − realized spread (panel a).
+- **Hedge frequency is a variance-vs-cost trade.** Hourly hedging keeps about 80% of the
+  5-minute variance reduction and costs half as much ($7.6 vs $15.6 per straddle on QQQ). Its
+  mean P&L is higher, but so is its std.
+- **Second-order Greeks matter most away from expiry.** Vanna and volga remove 75–83% of the
+  unexplained daily P&L on 1DTE, but only 22–38% on 0DTE. In the last hour of a 0DTE, IV swings
+  10+ points with minutes left and the Taylor expansion in σ stops converging.
+- **The charm pre-shift barely helps, contrary to the prior.** It moves hourly hedging's
+  variance cut by only 0.1–0.3 points, even on 0DTE. Charm is delta decay at a fixed spot. On a
+  random-walk path, spot moving through a convex delta cancels most of that decay, so the
+  pre-shift only pays when spot stays pinned (realized < implied). `test_delta_hedge.py` has a
+  synthetic test for each case.
+
+Caveats: RISK_FREE_RATE is a constant 5%. Deep-ITM legs are quoted wide, which adds mark noise
+to the residual. NYSE half days are skipped. Only aggregates are plotted or tabulated, per the
+ThetaData license.
+
+**Dealer vanna and charm exposure.** `thetadata_gex.py` now writes `net_vex` =
+Σ vanna·OI·100·spot·sign and `net_cex` = Σ charm·OI·100·sign next to GEX, plus 0DTE splits.
+The sign convention matches GEX (calls +, puts −). These sums cover the whole chain in the
+window, while GEX sums only the key levels. `build_dataset.py` turns them into signed-log
+features (`vex_signed_log`, `cex_signed_log`, …). They are NaN for older snapshot files and the
+DB source, and they are not yet in any model's feature list. Adding them to the live
+calculator and DB is a follow-up.
+
 ## 7. Discussion
 
 The finding is a **horizon- and architecture-dependent picture, not a clean universal
@@ -446,6 +510,15 @@ done
 
 # 7. Final exam — run ONCE per frozen config; every run is logged in data/verify_log.jsonl
 .venv/bin/python final_verify.py --symbol QQQ --horizon-bars 3
+
+# 8. Delta-hedged straddle study (ThetaData iv_5m) → data/delta_hedge/, plots/delta_hedge_<sym>_dte<d>.png
+for SYM in QQQ SPY; do
+  for D in 0 1; do
+    .venv/bin/python delta_hedge.py --symbol $SYM --dte $D      # --mid, --hedge-cost-bps, --start/--end
+    .venv/bin/python plot_delta_hedge.py --symbol $SYM --dte $D
+  done
+done
+.venv/bin/python -m unittest test_greeks test_delta_hedge test_thetadata_gex
 ```
 
 All random seeds fixed to `42`. RF results are deterministic; FT-Transformer results have
@@ -463,6 +536,10 @@ functions/ml/
   shap_analysis.py        # SHAP bar + beeswarm plots for key configs
   shap_dependence.py      # SHAP dependence (what the model learned at GEX levels)
   plot_horizons.py        # IC vs horizon, per-symbol + cross-symbol
+  greeks.py               # Vectorized Black-Scholes price + 1st/2nd-order Greeks (vanna, volga, charm)
+  thetadata_gex.py        # Historical GEX (+ dealer VEX/CEX) snapshots from the ThetaData backfill
+  delta_hedge.py          # Delta-hedged short straddle study with Greek P&L attribution
+  plot_delta_hedge.py     # Four-panel summary plot of a delta_hedge.py run
   sync_to_azure.py        # Key-less backup of data/<provider>/ to private Azure Blob
   notebooks/eda.ipynb     # Pre-training exploratory analysis
   plots/                  # Tracked PNGs referenced from this README

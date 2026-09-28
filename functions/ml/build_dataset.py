@@ -68,6 +68,10 @@ FEATURE_COLS_0DTE = [
     "gex_0dte_fraction", "gex_0dte_polarity",
     "call_wall_0dte_share", "put_wall_0dte_share",
 ]
+# Dealer vanna/charm exposure — only in thetadata_gex.py snapshots (whole-chain sums, no live
+# counterpart), so NaN for the db source and older snapshot files. Kept out of training sets.
+VEX_CEX_RAW = ["net_vex", "net_cex", "net_vex_0dte", "net_cex_0dte"]
+FEATURE_COLS_VEX_CEX = ["vex_signed_log", "cex_signed_log", "vex_0dte_signed_log", "cex_0dte_signed_log"]
 
 META_COLS = ["date", "computed_at", "target_time"]
 TARGET_COL = "target_return"
@@ -216,7 +220,7 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
 def finish_gex_snapshots(df: pd.DataFrame) -> pd.DataFrame:
     """Per-snapshot level aggregates -> the GEX feature columns (shared by REST and ThetaData)."""
     df = df.copy()
-    for col in FEATURE_COLS_FLOW:
+    for col in FEATURE_COLS_FLOW + VEX_CEX_RAW:
         if col not in df:
             df[col] = np.nan
     df["computed_at"] = pd.to_datetime(df["computed_at"], utc=True)
@@ -224,7 +228,7 @@ def finish_gex_snapshots(df: pd.DataFrame) -> pd.DataFrame:
                 "call_wall_gex", "put_wall_gex",
                 "call_wall_0dte_gex", "put_wall_0dte_gex",
                 "net_gex", "abs_gex_total", "sum_gex_squared",
-                "net_gex_0dte_raw", "abs_gex_0dte_total"):
+                "net_gex_0dte_raw", "abs_gex_0dte_total", *VEX_CEX_RAW):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     # Flow cols: None for pre-migration rows → NaN (errors='coerce' handles None/str gracefully)
     for col in ("pcr_volume", "pcr_oi", "iv_atm", "iv_skew"):
@@ -430,6 +434,10 @@ def compute_gex_features(df: pd.DataFrame) -> pd.DataFrame:
     # Normalized regime polarity: +1 = deep positive gamma (suppression),
     # -1 = deep negative gamma (amplification), ~0 = near the flip.
     df["gamma_regime_strength"] = df["net_gex"] / (df["abs_gex_total"] + 1e-8)
+    # Signed log1p of dealer vanna/charm exposure; NaN where the source has no VEX/CEX columns.
+    for raw, feat in zip(VEX_CEX_RAW, FEATURE_COLS_VEX_CEX):
+        x = pd.to_numeric(df[raw], errors="coerce") if raw in df else pd.Series(np.nan, index=df.index)
+        df[feat] = np.sign(x) * np.log1p(x.abs())
     return df
 
 
@@ -495,9 +503,9 @@ def main() -> None:
     joined = compute_target(joined, horizon_bars)
 
     all_features = FEATURE_COLS_BASELINE + FEATURE_COLS_GEX
-    # Include flow + 0DTE cols in parquet (with NaN for pre-migration rows) but
+    # Include flow + 0DTE + VEX/CEX cols in parquet (with NaN for pre-migration rows) but
     # exclude them from the dropna guard — they'll be NaN until data accumulates.
-    keep_cols = META_COLS + [TARGET_COL] + all_features + FEATURE_COLS_FLOW + FEATURE_COLS_0DTE
+    keep_cols = META_COLS + [TARGET_COL] + all_features + FEATURE_COLS_FLOW + FEATURE_COLS_0DTE + FEATURE_COLS_VEX_CEX
     final = joined[keep_cols].copy()
 
     before = len(final)
