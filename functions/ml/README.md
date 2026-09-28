@@ -115,11 +115,50 @@ estimator class changes.
 
 ## 5. Evaluation
 
-Time-respecting walk-forward CV ([`eval.py`](eval.py)):
-[`sklearn.model_selection.TimeSeriesSplit`](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html)
-with `n_splits=5`, `test_size=100` — i.e. 5 expanding-window folds, with each fold's test
-set strictly later than its training set. The final five test folds concatenate to 500
-held-out predictions.
+Three layers, each answering a different question:
+
+```
+[ research: walk-forward folds (purged + embargoed) ][ 1-week gap ][ verify: scored once ]
+```
+
+**Walk-forward CV** ([`eval.py`](eval.py) `walk_forward`, default `split="sessions"`):
+5 expanding-window folds cut on **trading-session boundaries**. Each test fold is
+`n_sessions // 6` sessions; training uses every earlier session except the one
+immediately before the test block (**embargo**). Because `compute_target` never lets a
+target cross a session, session-aligned cuts leave no label overlap; a purge step and an
+assertion (`train.target_time.max() < test.date.min()`) enforce it anyway.
+
+> Sections 6.1–6.7 were produced with the earlier `split="rows"` harness
+> (`TimeSeriesSplit(n_splits=5, test_size=100)`, 500 OOS rows). It cut folds mid-session, so
+> the last `horizon` training targets overlapped each test fold. It is kept for
+> reproducibility. On the Sept-2026 QQQ 15-min research set, switching to session folds
+> moved RF-base IC from −0.058 to +0.017 and ΔIC(GEX) from +0.054 to +0.016, with 3,839
+> OOS rows instead of 500 and CIs about half as wide.
+
+**Sealed verify set** ([`holdout.py`](holdout.py)): everything from `VERIFY_START`
+(2026-08-24) on is verify data, and the 5 sessions before it are dropped as a one-week gap.
+All training/SHAP scripts load data through `load_research`, which never returns verify
+rows. [`final_verify.py`](final_verify.py) fits once on all research data, scores verify,
+and appends the result to `data/verify_log.jsonl`. It refuses to re-score a config it
+has already scored unless you pass `--force`, and it prints how many times that
+symbol/horizon has been looked at.
+
+**GEX null test** ([`null_test.py`](null_test.py)): answers whether *aligned* GEX beats GEX
+taken from the wrong days. The whole GEX feature block is circularly rolled by every whole-session
+shift from 5 to `n_sessions − 5` (an exact permutation distribution, one run each) and
+RF-GEX is refit. The p-value is the share of shifted runs whose ΔIC over RF-base is at least
+the real ΔIC. The shift keeps GEX's own distribution and autocorrelation, so the test
+separates "GEX information" from "extra GEX-shaped columns".
+
+| 15-min, research set (78 sessions, 69 shifts) | real ΔIC | null median | null 90% range | p |
+|---|---|---|---|---|
+| QQQ | +0.0084 | −0.0008 | [−0.034, +0.031] | 0.34 |
+| SPY | +0.0054 | −0.0127 | [−0.045, +0.012] | 0.13 |
+
+At 15 minutes, neither symbol's real GEX beats GEX shifted to the wrong days: the small
+positive ΔIC is within what misaligned GEX earns by chance ([`plots/gex_null_qqq_h3.png`](plots/gex_null_qqq_h3.png),
+[`plots/gex_null_spy_h3.png`](plots/gex_null_spy_h3.png)). With 69 shifts the smallest
+possible p is 1/70 ≈ 0.014.
 
 Metrics:
 
@@ -400,6 +439,13 @@ done
 # 5. SHAP + horizon plots (per-symbol + cross-symbol)
 .venv/bin/python shap_analysis.py
 .venv/bin/python plot_horizons.py
+
+# 6. GEX null test (research data only) → plots/gex_null_<sym>_h<h>.png
+.venv/bin/python null_test.py --symbol QQQ --horizon-bars 3
+.venv/bin/python null_test.py --symbol SPY --horizon-bars 3
+
+# 7. Final exam — run ONCE per frozen config; every run is logged in data/verify_log.jsonl
+.venv/bin/python final_verify.py --symbol QQQ --horizon-bars 3
 ```
 
 All random seeds fixed to `42`. RF results are deterministic; FT-Transformer results have
@@ -417,8 +463,74 @@ functions/ml/
   shap_analysis.py        # SHAP bar + beeswarm plots for key configs
   shap_dependence.py      # SHAP dependence (what the model learned at GEX levels)
   plot_horizons.py        # IC vs horizon, per-symbol + cross-symbol
+  sync_to_azure.py        # Key-less backup of data/<provider>/ to private Azure Blob
   notebooks/eda.ipynb     # Pre-training exploratory analysis
   plots/                  # Tracked PNGs referenced from this README
   data/                   # Parquets + CSVs (gitignored)
   requirements.txt
 ```
+
+## 11. Cloud storage
+
+`data/` exists only on this laptop, so paid provider data is backed up to a private
+Azure Blob Storage account (`market-research-rg`, `canadacentral`, Standard_LRS, Hot).
+It is separate from the storage accounts that back the Azure Functions.
+
+| Container | Holds |
+|-----------|-------|
+| `databento` | mirror of `data/databento/` (`.dbn.zst`, `.parquet`, `.request.json`, `ledger.jsonl`, audits) |
+| `thetadata` | mirror of `data/thetadata/<dataset>/symbol=<SYM>/date=<YYYY-MM-DD>/part.parquet` |
+
+**Key-less auth.** The account has shared-key access and public blob access disabled.
+`sync_to_azure.py` authenticates with `DefaultAzureCredential` (your `az login`), which
+needs the *Storage Blob Data Contributor* role on the account. No keys, connection strings
+or SAS tokens exist anywhere in the repo. The account name is not a secret and is read
+from `--account` or `RESEARCH_STORAGE_ACCOUNT`.
+
+```bash
+export RESEARCH_STORAGE_ACCOUNT=<account name>   # see: az storage account list -g market-research-rg -o table
+.venv/bin/python functions/ml/sync_to_azure.py functions/ml/data/databento databento           # dry run
+.venv/bin/python functions/ml/sync_to_azure.py functions/ml/data/databento databento --upload  # new/changed only
+.venv/bin/python functions/ml/sync_to_azure.py functions/ml/data/databento databento --verify  # exit 3 on mismatch
+.venv/bin/python functions/ml/sync_to_azure.py functions/ml/data/thetadata thetadata --upload
+```
+
+Blob names mirror local relative paths. Each blob stores its sha256 as metadata, and
+unchanged files are skipped. `manifest.json` (path, size, sha256, mtime) is written at the
+local root and uploaded last. Remote blobs are never deleted by the tool, and `*.tmp` or
+partial downloads are ignored.
+
+### ThetaData options backfill
+
+`thetadata_fetch.py` downloads the raw inputs for historical GEX: daily open interest
+(`oi`, one `expiration="*"` call per day) and 5-minute bid/mid/ask implied volatility with
+`underlying_price` (`iv_5m`, one call per expiration with 0–30 DTE, all strikes). Roots are
+QQQ, SPY, SPX + SPXW and NDX + NDXP; each root gets its own `symbol=` partition. IV rows for
+contracts with zero OI that day are dropped (`--keep-zero-oi` keeps them). Vendor timestamps
+are stored untouched, and point-in-time alignment happens later in `build_dataset.py`.
+
+```bash
+.venv/bin/python functions/ml/thetadata_fetch.py probe                           # earliest date + permissions per root/job
+.venv/bin/python functions/ml/thetadata_fetch.py oi iv_5m                        # dry run: pending partitions
+.venv/bin/python functions/ml/thetadata_fetch.py oi iv_5m --download --limit 10  # pilot on the newest days
+.venv/bin/python functions/ml/thetadata_fetch.py oi iv_5m --download --workers 2 --max-gb 400
+.venv/bin/python functions/ml/sync_to_azure.py functions/ml/data/thetadata thetadata --upload   # periodic backup
+```
+
+`probe` caches its table in `data/thetadata/_probe.json`, and `--start` defaults to the probed
+earliest date. Downloads run newest first and are resumable: a partition with `part.parquet`
+or `_empty` is skipped, and writes go through `part.parquet.tmp`. Each partition appends a line
+to `fetch_log.jsonl`, and the end-of-run summary extrapolates hours and GB for the rest.
+The script prints only counts, sizes and timings. Exit codes: 0 ok, 1 provider/auth failure,
+2 usage, 4 every root denied, 5 disk guard (`--max-gb` or less than 20 GB free).
+
+**ThetaData deletion obligation.** The ThetaData license requires the data to stay private,
+never be redistributed, and be deleted, including cloud copies, within 30 days of
+cancelling. On cancellation, delete the container and the local copy:
+
+```bash
+az storage container delete --account-name "$RESEARCH_STORAGE_ACCOUNT" -n thetadata --auth-mode login
+rm -rf functions/ml/data/thetadata
+```
+
+Soft delete is not enabled on the account, so the container deletion is final.

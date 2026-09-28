@@ -28,6 +28,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval import FEATURES_BASELINE_PLUS_GEX, FEATURES_GEX, TARGET  # noqa: E402
+from holdout import load_research
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 PLOTS_DIR = Path(__file__).resolve().parent / "plots"
@@ -46,7 +47,7 @@ TARGET_FEATURES = [
 
 
 def run_for(parquet_name: str, label: str) -> None:
-    df = pd.read_parquet(DATA_DIR / parquet_name)
+    df = load_research(DATA_DIR / parquet_name)
     features = FEATURES_BASELINE_PLUS_GEX
     n_train = int(0.8 * len(df))
     X_train = df[features].iloc[:n_train].to_numpy()

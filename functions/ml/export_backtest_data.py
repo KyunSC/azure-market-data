@@ -18,6 +18,17 @@ objects: ~4x smaller over the wire and already the shape the engine wants.
 Run:
     python functions/ml/export_backtest_data.py
     python functions/ml/export_backtest_data.py --symbols QQQ --horizon-bars 3
+    python functions/ml/export_backtest_data.py --research-only --out frontend/lab/data
+    python functions/ml/export_backtest_data.py --verify-only
+
+`--research-only` is what the strategy lab consumes: rows from the sealed
+verify block (and the gap before it) are cut before anything is fit or written,
+and the forward-return target is blanked so no strategy can read the future.
+
+`--verify-only` is the other side of that cut, for `strategy-lab.mjs verify`:
+only bars on/after VERIFY_START, with `ml.pred` from one RF fit on the research
+rows. It writes under functions/ml/data/ (never frontend/), so the lab's `run`
+and `finalize` cannot load it, and it computes no metric on the verify target.
 """
 from __future__ import annotations
 
@@ -43,9 +54,12 @@ from eval import (  # noqa: E402
     TARGET,
     compute_metrics,
 )
+from holdout import VERIFY_START, split_holdout  # noqa: E402
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
-DEFAULT_OUT_DIR = Path(__file__).resolve().parents[2] / "frontend" / "public" / "backtest"
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+DEFAULT_OUT_DIR = FRONTEND_DIR / "public" / "backtest"
+VERIFY_OUT_DIR = DATA_DIR / "lab_verify"
 DEFAULT_API = "https://azure-market-data.onrender.com"
 
 # Feature columns shipped to the browser. Everything the rule builder, the GEX
@@ -151,6 +165,19 @@ def walk_forward_predictions(df: pd.DataFrame, features: list[str], test_size: i
     }
 
 
+def verify_predictions(research: pd.DataFrame, verify: pd.DataFrame, features: list[str]) -> dict:
+    """One RF fit on every research row, predicting the verify block. No metric
+    is computed on the verify target: scoring is `strategy-lab.mjs verify`'s job,
+    and it logs every look."""
+    model = RandomForestRegressor(
+        n_estimators=300, min_samples_leaf=10, max_features="sqrt",
+        n_jobs=-1, random_state=42,
+    )
+    model.fit(research[features].values, research[TARGET].values)
+    logging.info("verify RF: fit on %d research rows, predicting %d verify rows", len(research), len(verify))
+    return {"pred": model.predict(verify[features].values), "foldId": np.ones(len(verify)), "folds": [], "overall": {}}
+
+
 def _round(x, dp=None, sig=None):
     if x is None:
         return None
@@ -165,13 +192,25 @@ def _round(x, dp=None, sig=None):
     return round(v, max(0, sig - 1 - mag))
 
 
-def build_symbol(symbol: str, horizon_bars: int, api_base: str, period: str, skip_ml: bool) -> dict:
+def build_symbol(symbol: str, horizon_bars: int, api_base: str, period: str, skip_ml: bool,
+                 research_only: bool = False, verify_only: bool = False) -> dict:
     parquet = DATA_DIR / f"{symbol.lower()}_5m_features_h{horizon_bars}.parquet"
     if not parquet.exists():
         raise SystemExit(f"Missing {parquet}. Run build_dataset.py --symbol {symbol} --horizon-bars {horizon_bars}")
 
     feat = pd.read_parquet(parquet)
     feat["date"] = pd.to_datetime(feat["date"], utc=True)
+    research_feat = None
+    if verify_only:
+        research_feat, feat = split_holdout(feat)
+        if feat.empty:
+            raise SystemExit(f"{symbol}: no rows on/after {VERIFY_START.date()} — rebuild the parquet first")
+        assert feat["date"].min() >= VERIFY_START, "verify export starts before VERIFY_START"
+    elif research_only:
+        # Cut before the bar merge and the RF fit, so neither the exported bars
+        # nor the walk-forward predictions have ever seen the verify block.
+        feat = split_holdout(feat)[0]
+        assert feat["date"].max() < VERIFY_START, "LEAK: research export reaches verify"
     logging.info("%s: %d feature rows %s -> %s", symbol, len(feat),
                  feat["date"].min().date(), feat["date"].max().date())
 
@@ -179,23 +218,30 @@ def build_symbol(symbol: str, horizon_bars: int, api_base: str, period: str, ski
     logging.info("%s: %d OHLCV bars %s -> %s", symbol, len(bars),
                  bars["date"].min().date(), bars["date"].max().date())
 
-    df = feat.merge(bars, on="date", how="inner").sort_values("date").reset_index(drop=True)
-    dropped = len(feat) - len(df)
-    if dropped:
-        logging.warning("%s: %d feature rows had no matching bar and were dropped", symbol, dropped)
-    if df.empty:
-        raise SystemExit(f"{symbol}: feature dates and bar dates do not overlap")
+    def with_bars(f: pd.DataFrame) -> pd.DataFrame:
+        df = f.merge(bars, on="date", how="inner").sort_values("date").reset_index(drop=True)
+        dropped = len(f) - len(df)
+        if dropped:
+            logging.warning("%s: %d feature rows had no matching bar and were dropped", symbol, dropped)
+        if df.empty:
+            raise SystemExit(f"{symbol}: feature dates and bar dates do not overlap")
+        # The engine needs a clean matrix — drop rows where a model feature is NaN
+        # (early warm-up bars, and the pre-migration rows for flow/0DTE columns
+        # which we do not export anyway). Dropping on the target too keeps the
+        # verify bars shaped like the research bars (no last-15m-of-session rows).
+        before = len(df)
+        df = df.dropna(subset=FEATURES_BASELINE_PLUS_GEX + [TARGET]).reset_index(drop=True)
+        if len(df) != before:
+            logging.info("%s: dropped %d rows with NaN model features", symbol, before - len(df))
+        return df
 
-    # The engine needs a clean matrix — drop rows where a model feature is NaN
-    # (early warm-up bars, and the pre-migration rows for flow/0DTE columns
-    # which we do not export anyway).
-    before = len(df)
-    df = df.dropna(subset=FEATURES_BASELINE_PLUS_GEX + [TARGET]).reset_index(drop=True)
-    if len(df) != before:
-        logging.info("%s: dropped %d rows with NaN model features", symbol, before - len(df))
+    df = with_bars(feat)
 
     ml = None
-    if not skip_ml:
+    if verify_only:
+        if not skip_ml:
+            ml = verify_predictions(with_bars(research_feat), df, FEATURES_BASELINE_PLUS_GEX)
+    elif not skip_ml:
         test_size = max(120, len(df) // 10)
         ml = walk_forward_predictions(df, FEATURES_BASELINE_PLUS_GEX, test_size, horizon_bars)
 
@@ -206,6 +252,8 @@ def build_symbol(symbol: str, horizon_bars: int, api_base: str, period: str, ski
         "horizonMinutes": horizon_bars * 5,
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source": f"{parquet.name} + /api/historical",
+        "split": "verify" if verify_only else "research" if research_only else "all",
+        "verifyStart": str(VERIFY_START.date()),
         "bars": len(df),
         "start": df["date"].min().isoformat(),
         "end": df["date"].max().isoformat(),
@@ -228,10 +276,14 @@ def build_symbol(symbol: str, horizon_bars: int, api_base: str, period: str, ski
     if ml is not None:
         out["ml"] = {
             "purgeMinutes": horizon_bars * 5,
-            "model": "RandomForest(300, leaf=10, sqrt) on baseline+GEX",
+            "model": ("RandomForest(300, leaf=10, sqrt) on baseline+GEX, fit once on all research rows"
+                      if verify_only else "RandomForest(300, leaf=10, sqrt) on baseline+GEX"),
             "target": f"forward log return, {horizon_bars * 5}m",
             "pred": [_round(v, sig=FEATURE_SIG) for v in ml["pred"]],
-            "target_return": [_round(v, sig=FEATURE_SIG) for v in df[TARGET]],
+            # The forward return sits at bar i, so exposing it would be look-ahead
+            # that no truncation test can catch. Kept as nulls for schema shape.
+            "target_return": ([None] * len(df) if research_only or verify_only
+                              else [_round(v, sig=FEATURE_SIG) for v in df[TARGET]]),
             "fold": [None if math.isnan(f) else int(f) for f in ml["foldId"]],
             "folds": ml["folds"],
             "overall": ml["overall"],
@@ -246,17 +298,34 @@ def main() -> None:
     ap.add_argument("--horizon-bars", type=int, default=3)
     ap.add_argument("--api", default=DEFAULT_API, help="Spring Boot base URL for OHLCV")
     ap.add_argument("--period", default="6mo", help="period passed to /api/historical")
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT_DIR)
+    ap.add_argument("--out", type=Path, default=None,
+                    help=f"output dir (default {DEFAULT_OUT_DIR}; {VERIFY_OUT_DIR} with --verify-only)")
     ap.add_argument("--skip-ml", action="store_true", help="skip the walk-forward RF fit")
     ap.add_argument("--publish-out", type=Path, help="Validate and publish immutable backend artifacts after export")
+    ap.add_argument("--research-only", action="store_true",
+                    help="drop the sealed verify block + gap and blank the target (strategy lab)")
+    ap.add_argument("--verify-only", action="store_true",
+                    help="export only the sealed verify block, for `strategy-lab.mjs verify` (never under frontend/)")
     args = ap.parse_args()
+    if args.research_only and args.verify_only:
+        ap.error("--research-only and --verify-only are opposite sides of the cut; pick one")
+    if args.research_only and args.out is None:
+        ap.error("--research-only writes lab data; pass --out (e.g. frontend/lab/data)")
+    if args.verify_only:
+        args.out = (args.out or VERIFY_OUT_DIR).resolve()
+        if args.out.is_relative_to(FRONTEND_DIR.resolve()):
+            ap.error(f"--verify-only must not write under {FRONTEND_DIR}: lab runs, the app and git can all see it")
+        if args.publish_out:
+            ap.error("--verify-only data is never published")
+    args.out = args.out or DEFAULT_OUT_DIR
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     args.out.mkdir(parents=True, exist_ok=True)
 
     manifest = []
     for symbol in (s.upper() for s in args.symbols):
-        payload = build_symbol(symbol, args.horizon_bars, args.api, args.period, args.skip_ml)
+        payload = build_symbol(symbol, args.horizon_bars, args.api, args.period, args.skip_ml,
+                               args.research_only, args.verify_only)
         path = args.out / f"{symbol.lower()}_5m.json"
         path.write_text(json.dumps(payload, separators=(",", ":")))
         kb = path.stat().st_size / 1024

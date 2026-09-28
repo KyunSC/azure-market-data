@@ -21,6 +21,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval import walk_forward, FEATURES_BASELINE, FEATURES_BASELINE_PLUS_GEX  # noqa: E402
+from holdout import load_research
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
@@ -52,7 +53,7 @@ def main() -> None:
     rows = []
     for h_bars, h_label in HORIZONS:
         path = DATA_DIR / f"{symbol}_5m_features_h{h_bars}.parquet"
-        df = pd.read_parquet(path)
+        df = load_research(path)
         print(f"\n=== {symbol.upper()}  Horizon {h_label}  (h={h_bars} bars,  n={len(df)}) ===")
 
         for variant, features in [

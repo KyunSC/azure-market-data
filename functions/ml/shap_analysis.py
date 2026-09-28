@@ -20,6 +20,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval import FEATURES_BASELINE, FEATURES_BASELINE_PLUS_GEX, FEATURES_GEX, TARGET  # noqa: E402
+from holdout import load_research
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 PLOTS_DIR = Path(__file__).resolve().parent / "plots"
@@ -33,7 +34,7 @@ def make_rf() -> RandomForestRegressor:
 
 
 def shap_analyze(parquet_name: str, features: list[str], plot_stem: str, title: str) -> None:
-    df = pd.read_parquet(DATA_DIR / parquet_name)
+    df = load_research(DATA_DIR / parquet_name)
     n_train = int(0.8 * len(df))
     X_train = df[features].iloc[:n_train].to_numpy()
     X_test  = df[features].iloc[n_train:].to_numpy()

@@ -34,6 +34,7 @@ from eval import (
     FEATURES_BASELINE_PLUS_GEX_PLUS_0DTE, FEATURES_0DTE,
     TARGET,
 )
+from holdout import load_research
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 MIN_ROWS_FOR_TRAIN = 200  # below this the 5-fold CV is meaningless
@@ -64,7 +65,7 @@ def main() -> None:
     if not data_path.exists():
         raise SystemExit(f"Missing dataset: {data_path}. Run build_dataset.py first.")
 
-    df_all = pd.read_parquet(data_path)
+    df_all = load_research(data_path)
     logging.info("Loaded %d rows from %s", len(df_all), data_path.name)
 
     df = df_all.dropna(subset=FEATURES_0DTE).reset_index(drop=True)
@@ -79,17 +80,9 @@ def main() -> None:
             len(df), MIN_ROWS_FOR_TRAIN)
         return
 
-    # TimeSeriesSplit needs (n_splits+1)*test_size + gap <= n. Downscale test_size
-    # so preview runs succeed on the ~300-400-row post-migration samples that
-    # accumulate in the first few weeks; the main harness's 5x100 assumes the
-    # much bigger, pre-migration-inclusive datasets used in train_rf_horizons.
-    n_splits, test_size = 5, 100
-    if len(df) < (n_splits + 1) * test_size:
-        test_size = max(30, len(df) // (n_splits + 1))
-        logging.info("Small sample: reducing test_size to %d to fit %d rows across %d folds",
-                     test_size, len(df), n_splits)
-
-    kw = dict(model_factory=rf_factory, n_splits=n_splits, test_size=test_size)
+    # Session folds size themselves (n_sessions // 6 per test fold), so the
+    # small post-migration sample needs no manual downscaling.
+    kw = dict(model_factory=rf_factory)
 
     print(f"\n[1/3] RF-base — baseline features only ({len(FEATURES_BASELINE)} features)")
     res_base = walk_forward(df, features=FEATURES_BASELINE, **kw)
