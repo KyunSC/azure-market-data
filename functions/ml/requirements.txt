@@ -10,3 +10,7 @@ matplotlib
 seaborn
 shap
 jupyter
+databento
+thetadata
+azure-identity
+azure-storage-blob

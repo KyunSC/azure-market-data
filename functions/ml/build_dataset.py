@@ -7,8 +7,17 @@ with a forward log return target whose horizon is controlled by --horizon-bars (
 
 Output: functions/ml/data/{symbol_lower}_5m_features_h{N}.parquet
 
+--source thetadata swaps both inputs for the 2022+ history and writes
+{symbol_lower}_5m_features_h{N}_td.parquet instead (the live-data files are left alone):
+  - bars: Databento XNAS.ITCH 1-min bars (databento_fetch.py eq-ohlcv-1m), aggregated to
+    the same 5-min RTH grid as historical_data (bar stamped at its start, 09:30-15:55 ET)
+  - GEX: snapshots rebuilt from ThetaData by thetadata_gex.py with the live calculator's logic
+Features, target and leakage assertions are identical for both sources.
+
 Run: python functions/ml/build_dataset.py --symbol QQQ --horizon-bars 3
      python functions/ml/build_dataset.py --symbol SPY --horizon-bars 12
+     python functions/ml/build_dataset.py --symbol QQQ --horizon-bars 3 --source thetadata
+     python functions/ml/build_dataset.py --symbol QQQ --horizon-bars 3 --source thetadata --gex-expiries 0dte  # -> _td0dte
 """
 from __future__ import annotations
 
@@ -64,6 +73,8 @@ META_COLS = ["date", "computed_at", "target_time"]
 TARGET_COL = "target_return"
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "data"
+DATABENTO_BARS_DIR = OUTPUT_DIR / "databento" / "eq-ohlcv-1m"
+THETADATA_GEX_DIR = OUTPUT_DIR / "thetadata_gex"
 
 
 def load_supabase_rest_creds() -> Optional[tuple[str, str]]:
@@ -87,8 +98,12 @@ def _rest_get(base: str, key: str, table: str, params: dict, page_size: int = 10
     # Offset pagination is only a partition of the table under a total order.
     # Without one, Postgres may return pages in different physical orders, so
     # rows are silently duplicated across pages and others never returned.
-    if "order" not in params:
-        raise ValueError(f"_rest_get({table}) needs an 'order' param with a unique tiebreaker")
+    # Every table here has a unique `id`, so require it as the last sort key
+    # and in the select: that makes the order total and lets the result be
+    # checked for pagination duplicates below, whatever the table.
+    order_keys = [k.split(".")[0] for k in params.get("order", "").split(",")]
+    if order_keys[-1] != "id" or "id" not in params.get("select", "").split(","):
+        raise ValueError(f"_rest_get({table}) needs 'order' ending in id and 'id' in 'select'")
     rows: list = []
     offset = 0
     while True:
@@ -105,18 +120,22 @@ def _rest_get(base: str, key: str, table: str, params: dict, page_size: int = 10
             page = json.loads(resp.read())
         rows.extend(page)
         if len(page) < page_size:
-            return rows
+            break
         offset += page_size
+    dupes = len(rows) - len({r["id"] for r in rows})
+    if dupes:
+        raise RuntimeError(f"REST pagination returned {dupes} duplicate {table} rows")
+    return rows
 
 
 def fetch_bars_rest(base: str, key: str, symbol: str, interval: str) -> pd.DataFrame:
     rows = _rest_get(base, key, "historical_data", {
         "symbol": f"eq.{symbol}",
         "interval_type": f"eq.{interval}",
-        "select": "date,open,high,low,close_price,volume",
+        "select": "id,date,open,high,low,close_price,volume",
         "order": "date.asc,id.asc",
     })
-    df = pd.DataFrame(rows).rename(columns={"close_price": "close"})
+    df = pd.DataFrame(rows).drop(columns="id", errors="ignore").rename(columns={"close_price": "close"})
     df["date"] = pd.to_datetime(df["date"], utc=True)
     for col in ("open", "high", "low", "close", "volume"):
         df[col] = df[col].astype(float)
@@ -139,9 +158,6 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
         "gamma_exposure.symbol": f"eq.{symbol}",
         "order": "id.asc",
     })
-    level_ids = [lvl["id"] for lvl in gl_rows]
-    if len(level_ids) != len(set(level_ids)):
-        raise RuntimeError(f"REST pagination returned {len(level_ids) - len(set(level_ids))} duplicate gamma_levels rows")
     logging.info("REST: fetched %d exposures, %d levels", len(ge_rows), len(gl_rows))
 
     levels_by_id: dict = {}
@@ -194,7 +210,15 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
                 agg["abs_gex_0dte_total"] += abs(g_0dte)
         out.append(agg)
 
-    df = pd.DataFrame(out)
+    return finish_gex_snapshots(pd.DataFrame(out))
+
+
+def finish_gex_snapshots(df: pd.DataFrame) -> pd.DataFrame:
+    """Per-snapshot level aggregates -> the GEX feature columns (shared by REST and ThetaData)."""
+    df = df.copy()
+    for col in FEATURE_COLS_FLOW:
+        if col not in df:
+            df[col] = np.nan
     df["computed_at"] = pd.to_datetime(df["computed_at"], utc=True)
     for col in ("call_wall", "put_wall", "zero_gamma",
                 "call_wall_gex", "put_wall_gex",
@@ -216,6 +240,35 @@ def fetch_gex_snapshots_rest(base: str, key: str, symbol: str) -> pd.DataFrame:
     return df.drop(columns=["sum_gex_squared", "call_wall_gex", "put_wall_gex",
                             "call_wall_0dte_gex", "put_wall_0dte_gex",
                             "net_gex_0dte_raw", "abs_gex_0dte_total"])
+
+
+def load_databento_bars(symbol: str) -> pd.DataFrame:
+    """1-min bars -> 5-min RTH bars stamped at their start, like historical_data's 5m rows."""
+    files = sorted((DATABENTO_BARS_DIR / symbol).glob("*.parquet"))
+    if not files:
+        raise FileNotFoundError(f"no Databento bars for {symbol}; run databento_fetch.py eq-ohlcv-1m")
+    m = pd.concat([pd.read_parquet(f, columns=["open", "high", "low", "close", "volume"]) for f in files])
+    m = m[~m.index.duplicated()].sort_index()
+    et = m.index.tz_convert("America/New_York")
+    minute = et.hour * 60 + et.minute
+    m = m[(minute >= 9 * 60 + 30) & (minute < 16 * 60)]
+    m.index = m.index.tz_convert("America/New_York")
+    bars = m.resample("5min", label="left", closed="left").agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna(subset=["close"])
+    bars.index = bars.index.tz_convert("UTC")
+    bars = bars.rename_axis("date").reset_index()
+    bars["date"] = bars["date"].astype("datetime64[ns, UTC]")
+    bars["volume"] = bars["volume"].astype(float)
+    return bars
+
+
+def load_thetadata_gex(symbol: str, expiries: str = "nearest4") -> pd.DataFrame:
+    path = THETADATA_GEX_DIR / f"{symbol.lower()}_gex_snapshots{'_0dte' if expiries == '0dte' else ''}.parquet"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} missing; run thetadata_gex.py --symbol {symbol} --expiries {expiries}")
+    gex = finish_gex_snapshots(pd.read_parquet(path).drop(columns=["spot"], errors="ignore"))
+    gex["computed_at"] = gex["computed_at"].astype("datetime64[ns, UTC]")
+    return gex
 
 
 def load_database_url() -> str:
@@ -402,6 +455,10 @@ def main() -> None:
                         help="Ticker symbol present in both historical_data and gamma_exposure tables (default QQQ).")
     parser.add_argument("--horizon-bars", type=int, default=3,
                         help="Forward-return horizon in 5-min bars (default 3 = 15min).")
+    parser.add_argument("--source", choices=["db", "thetadata"], default="db",
+                        help="db = live tables (default); thetadata = Databento bars + rebuilt ThetaData GEX.")
+    parser.add_argument("--gex-expiries", choices=["nearest4", "0dte"], default="nearest4",
+                        help="thetadata only: live-style 4 nearest expirations, or same-day (0DTE) only.")
     args = parser.parse_args()
     symbol = args.symbol.upper()
     horizon_bars = args.horizon_bars
@@ -411,8 +468,12 @@ def main() -> None:
     logging.info("Building dataset for symbol=%s, horizon = %d bars = %d minutes",
                  symbol, horizon_bars, horizon_min)
 
-    rest = load_supabase_rest_creds()
-    if rest is not None:
+    rest = load_supabase_rest_creds() if args.source == "db" else None
+    if args.source == "thetadata":
+        logging.info("Using Databento bars + ThetaData-rebuilt GEX")
+        bars = load_databento_bars(symbol)
+        gex = load_thetadata_gex(symbol, args.gex_expiries)
+    elif rest is not None:
         base, key = rest
         logging.info("Using Supabase REST API (bypasses Supavisor pooler)")
         bars = fetch_bars_rest(base, key, symbol, INTERVAL)
@@ -459,7 +520,8 @@ def main() -> None:
                  final[TARGET_COL].mean(), final[TARGET_COL].std(),
                  final[TARGET_COL].min(), final[TARGET_COL].max())
 
-    output_path = OUTPUT_DIR / f"{symbol.lower()}_5m_features_h{horizon_bars}.parquet"
+    suffix = "" if args.source == "db" else ("_td0dte" if args.gex_expiries == "0dte" else "_td")
+    output_path = OUTPUT_DIR / f"{symbol.lower()}_5m_features_h{horizon_bars}{suffix}.parquet"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     final.to_parquet(output_path, index=False)
     logging.info("Wrote %s (%d rows, %d cols)", output_path, len(final), len(final.columns))
