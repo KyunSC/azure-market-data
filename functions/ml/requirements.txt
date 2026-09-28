@@ -1,9 +1,12 @@
 psycopg2-binary
 pandas
 numpy
+scipy
 pyarrow
 python-dotenv
 scikit-learn
+yfinance
+pytz
 torch
 rtdl-revisiting-models
 matplotlib
