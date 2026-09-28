@@ -3,6 +3,7 @@
 Reads the OOS predictions train_rf.py saved and reports RF-base IC, RF-GEX IC and dIC,
 each with a 95% block-bootstrap CI. The dIC CI is paired: both models are scored on the
 same resampled blocks, so it reflects the uncertainty of the difference, not of each IC.
+null_p is null_test.py's session-shift p-value where that cell has been run (td, td0dte).
 
 Variants:
   td          nearest-4-expiry GEX (live logic)            train_rf.py --tag td
@@ -13,6 +14,7 @@ Run: python functions/ml/td_results.py      # -> data/td_results.csv
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -57,24 +59,29 @@ def main() -> None:
                 oos = pd.read_parquet(path).sort_values("date")
                 y, b, g = (oos[c].to_numpy() for c in ("y_true", "rf_base_pred", "rf_gex_pred"))
                 ci = paired_block_bootstrap(y, b, g)
+                null_path = DATA_DIR / f"gex_null_{sym.lower()}_h{h}{suffix}.json"
+                null = json.loads(null_path.read_text()) if null_path.exists() else None
                 rows.append({
                     "symbol": sym, "horizon_min": 5 * h, "variant": name,
                     "oos_sessions": len(np.unique(session_ids(oos["date"]))), "oos_rows": len(oos),
                     "base_ic": _ic(y, b), "base_lo": ci[0, 0], "base_hi": ci[1, 0],
                     "gex_ic": _ic(y, g), "gex_lo": ci[0, 1], "gex_hi": ci[1, 1],
                     "d_ic": _ic(y, g) - _ic(y, b), "d_lo": ci[0, 2], "d_hi": ci[1, 2],
+                    "null_p": null["p_value"] if null else np.nan,
+                    "null_shifts": null["n_shifts"] if null else np.nan,
                 })
     df = pd.DataFrame(rows)
     df.to_csv(DATA_DIR / "td_results.csv", index=False)
 
-    print("| symbol | horizon | variant | OOS sessions | base IC [95% CI] | GEX IC [95% CI] | dIC [95% CI] |")
-    print("|---|---|---|---|---|---|---|")
+    print("| symbol | horizon | variant | OOS sessions | base IC [95% CI] | GEX IC [95% CI] | dIC [95% CI] | null p (shifts) |")
+    print("|---|---|---|---|---|---|---|---|")
     for r in df.itertuples():
         flag = " **" if r.d_lo > 0 else (" *" if r.d_ic > 0 else "")
+        null = "" if np.isnan(r.null_p) else f"{r.null_p:.3f} ({int(r.null_shifts)})"
         print(f"| {r.symbol} | {r.horizon_min}m | {r.variant} | {r.oos_sessions} "
               f"| {r.base_ic:+.4f} [{r.base_lo:+.3f}, {r.base_hi:+.3f}] "
               f"| {r.gex_ic:+.4f} [{r.gex_lo:+.3f}, {r.gex_hi:+.3f}] "
-              f"| {r.d_ic:+.4f} [{r.d_lo:+.3f}, {r.d_hi:+.3f}]{flag} |")
+              f"| {r.d_ic:+.4f} [{r.d_lo:+.3f}, {r.d_hi:+.3f}]{flag} | {null} |")
     print("\n* dIC > 0 (candidate for null_test.py); ** paired CI excludes 0")
     print(f"Saved {DATA_DIR / 'td_results.csv'}")
 
