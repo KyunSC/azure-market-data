@@ -32,12 +32,10 @@ for (let day=0; day<60; day++) {
     time.push(Date.UTC(2024,0,2+day,14,30+5*bar)/1000)
   }
 }
+const opts={initialCapital:50000,paths:200,seed:42,horizon:250,blockSize:5}
 const cases=[]
-for (const plan of plans) {
-  const input={result,time,plan,initialCapital:50000,paths:200,seed:42,horizon:250,blockSize:5,keepAttempts:true}
-  cases.push({plan,output:runProp(input)})
-}
-write('prop_parity.json',{result,time,initialCapital:50000,paths:200,seed:42,horizon:250,blockSize:5,cases})
+for (const plan of plans) cases.push({plan,output:runProp({result,time,plan,...opts,keepAttempts:true})})
+write('prop_parity.json',{result,time,...opts,cases})
 const stats=[]
 for (const returns of [[],[0],[0,0,0],Array.from({length:1000},()=>rng()*.002-.00095),[-.2,0,0,.1,.02,.05]]) {
   const inference=sharpeInference(returns,78*252)

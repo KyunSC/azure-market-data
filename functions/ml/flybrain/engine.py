@@ -19,23 +19,23 @@ class Result:
         return np.r_[0., np.divide(self.equity[1:], self.equity[:-1], out=np.ones(len(self.equity)-1), where=self.equity[:-1] > 0) - 1]
 
 
-def backtest(df, signal, symbol, contract, n_contracts, max_hold, slippage_ticks=config.SLIPPAGE_TICKS, initial_capital=None, entry_holds=None):
+def backtest(df, signal, symbol, max_hold, n_contracts=config.N_CONTRACTS, slippage_ticks=config.SLIPPAGE_TICKS, initial_capital=None, entry_holds=None):
     if len(df) != len(signal) or max_hold < 1 or n_contracts < 1:
         raise ValueError('Invalid signal length, hold or contract count')
     if initial_capital is None:
         from .prop import resolve_plan
-        initial_capital = resolve_plan(config.PROP['plan'], config.PROP['size'], config.PROP['dll'])['startBalance']
-    spec = config.CONTRACTS[contract]
+        initial_capital = resolve_plan()['startBalance']
+    spec = config.CONTRACTS[config.SYMBOLS[symbol]]
     scale = config.RATIO[symbol]
     qty = spec['point_value'] * n_contracts
     slip = slippage_ticks * spec['tick']
     fee = config.COMMISSION_PER_SIDE * n_contracts
     n = len(df)
-    arrays = [np.zeros(n) for _ in range(4)]
-    equity, lo, hi, opening = arrays
+    equity, lo, hi, opening = np.zeros((4, n))
     positions = np.zeros(n, dtype=np.int8)
-    O,H,L,C = [df[c].to_numpy(float) * scale for c in ('open','high','low','close')]
-    sessions = df.session.to_numpy()
+    # Python lists: per-element numpy scalar access dominates this loop.
+    O,H,L,C = [(df[c].to_numpy(float) * scale).tolist() for c in ('open','high','low','close')]
+    sessions = df.session.to_numpy().tolist()
     cash, side, pending, entry, entry_price = initial_capital, 0, 0, -1, 0.
     trades=[]
     for i in range(n):

@@ -1,7 +1,6 @@
 import unittest
 import numpy as np
 import pandas as pd
-from scipy import sparse
 from flybrain import config
 from flybrain.connectome import *
 
@@ -16,7 +15,7 @@ class ConnectomeTests(unittest.TestCase):
         return signed_weights(edges, ids, neurons), edges, neurons
 
     def test_signs(self):
-        W, edges, neurons = self.fixture()
+        W, _, neurons = self.fixture()
         for i in range(30):
             self.assertTrue(np.all(np.sign(W[:, i].data) == SIGNS[neurons.top_nt[i]]))
             if SIGNS[neurons.top_nt[i]] == 0:

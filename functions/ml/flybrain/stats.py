@@ -1,6 +1,5 @@
 """Numerical port of frontend/lib/backtest/stats.js."""
 import math
-import numpy as np
 from . import config
 
 
@@ -66,20 +65,20 @@ def deflated_sharpe(inference, trial_srs):
     return dict(trials=n,sr0=sr0,dsr=norm_cdf((inference['sr']-sr0)/se) if math.isfinite(se) and se>0 else math.nan)
 
 
-def bonferroni_ci(inference, family_size, alpha=config.GATES['family_alpha']):
+def bonferroni_ci(inference, family_size, alpha=config.GATES['family_alpha'], ppy=config.PPY):
     z=norm_inv(1-alpha/(2*max(1,family_size)))
-    return [(inference['sr']+s*z*inference['se'])*math.sqrt(config.PPY) for s in (-1,1)]
+    return [(inference['sr']+s*z*inference['se'])*math.sqrt(ppy) for s in (-1,1)]
 
 
-def break_even_cost(df, signal, symbol, contract, n_contracts, max_hold):
+def break_even_cost(df, signal, symbol, max_hold):
     from .engine import backtest
-    curve=[]
+    prev=None
     for ticks in range(5):
-        r=backtest(df,signal,symbol,contract,n_contracts,max_hold,slippage_ticks=ticks)
+        r=backtest(df,signal,symbol,max_hold,slippage_ticks=ticks)
         pnl=float(r.equity[-1]-r.initial_capital)
-        curve.append(pnl)
         if not pnl>0:
             if ticks==0: return 0.
             if not math.isfinite(pnl): return float(ticks-1)
-            return ticks-1+curve[-2]/(curve[-2]-pnl)
+            return ticks-1+prev/(prev-pnl)
+        prev=pnl
     return math.inf

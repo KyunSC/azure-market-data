@@ -3,7 +3,6 @@ from datetime import date, datetime, timezone
 import hashlib
 import json
 from pathlib import Path
-import numpy as np
 from . import config
 from .connectome import build_circuit
 from .features import load_research_frame, split_discovery_holdout
@@ -12,14 +11,14 @@ from .readout import fit_frozen, frozen_signals
 from .engine import backtest
 from .prop import resolve_plan, prop_lift
 from .stats import bonferroni_ci, break_even_cost
-from .search import ledger_lock, read_ledger, refresh_deflation, complete_groups, dump, result_metrics, code_version, leaderboard
+from .search import (ledger_lock, read_ledger, refresh_deflation, complete_groups, dump, durable_write, result_metrics,
+                     code_version, leaderboard, passes_edge_gates)
 
 
 def verdict(metrics,research_dsr,lift):
     if metrics['n_trades']<config.GATES['min_holdout_trades']: return 'INSUFFICIENT'
     if not metrics['total_pnl']>0: return 'NO EDGE'
-    if (metrics['family_ci'][0]>0 and (research_dsr or 0)>=config.GATES['dsr_min']
-        and float(metrics['break_even'])>config.SLIPPAGE_TICKS and lift['lift_ci'][0] is not None and lift['lift_ci'][0]>0):
+    if metrics['family_ci'][0]>0 and passes_edge_gates(metrics,research_dsr,lift):
         return 'CANDIDATE'
     return 'WEAK'
 
@@ -39,7 +38,7 @@ def report(payload,paired):
     return '\n'.join(lines)+'\n'
 
 
-def finalize(night,top=5,runs_dir=config.RUNS_DIR,frame_loader=load_research_frame):
+def finalize(night,top=config.TOP_K,runs_dir=config.RUNS_DIR,frame_loader=load_research_frame):
     date.fromisoformat(night)
     if top<1: raise ValueError('top must be positive')
     root=Path(runs_dir)
@@ -54,7 +53,8 @@ def finalize(night,top=5,runs_dir=config.RUNS_DIR,frame_loader=load_research_fra
                        key=lambda r:r['score'],reverse=True)[:top]
         group_ids={r['group_id'] for r in leaders}
         selected=[r for r in rows if r['group_id'] in group_ids and not r.get('rejected')]
-        if any(r['code_version']!=code_version() for r in selected):
+        version=code_version()
+        if any(r['code_version']!=version for r in selected):
             raise ValueError('Code changed since discovery; frozen configuration is not reproducible')
         previous=[]
         for path in (root/'nights').glob('*/preregistered.json'):
@@ -62,30 +62,32 @@ def finalize(night,top=5,runs_dir=config.RUNS_DIR,frame_loader=load_research_fra
         family=(len(previous)+len(selected))*len(config.SYMBOLS)
         prereg=dict(night=night,family_size=family,created_at=datetime.now(timezone.utc).isoformat(),variants=selected)
         # Exclusive writes and fsync make the one-look guard survive interrupted scoring.
-        import os
-        for name,content in [('preregistered.json',dump(prereg)+'\n'),('finalize.lock','locked\n')]:
-            with (folder/name).open('x') as f: f.write(content); f.flush(); os.fsync(f.fileno())
+        durable_write(folder/'preregistered.json',dump(prereg)+'\n',mode='x')
+        durable_write(folder/'finalize.lock','locked\n',mode='x')
         output=dict(night=night,family_size=family,variants=[])
         if selected:
             frames={s:frame_loader(s) for s in config.SYMBOLS}
-            plan=resolve_plan(config.PROP['plan'],config.PROP['size'],config.PROP['dll'])
+            splits={}
+            for s,df in frames.items():
+                discovery,holdout=split_discovery_holdout(df)
+                discovery['session_end']=discovery.session.ne(discovery.session.shift(-1))
+                splits[s]=(df,discovery,holdout)
+            plan=resolve_plan()
             for row in selected:
-                p=row['params']; circuit=None if row['circuit']=='none' else build_circuit(row['circuit'],p['hemisphere'],p['seed'])
+                p=row['params']; circuit=build_circuit(row['circuit'],p['hemisphere'],p['seed'])
                 outcome=dict(hash=row['hash'],circuit=row['circuit'],params=p,code_version=row['code_version'],per_symbol={})
-                for s,df in frames.items():
-                    discovery,holdout=split_discovery_holdout(df)
-                    discovery['session_end']=discovery.session.ne(discovery.session.shift(-1))
+                for s,(df,discovery,holdout) in splits.items():
                     fitted=fit_frozen(discovery,cached_states(circuit,discovery,p),p)
                     frozen=dict(readout=fitted,normalizer=df.attrs['normalizer'],features=df.attrs['features'],
                                 params=p,circuit=row['circuit'],code_version=row['code_version'],symbol=s)
                     artifact=folder/f"{row['hash']}-{s}-frozen.json"
                     artifact.write_text(dump(frozen)+'\n')
                     signal=frozen_signals(cached_states(circuit,holdout,p),p,fitted)
-                    result=backtest(holdout,signal,s,config.SYMBOLS[s],config.N_CONTRACTS,p['horizon_bars'])
-                    m=result_metrics(result,np.zeros(len(holdout),dtype=int))
+                    result=backtest(holdout,signal,s,p['horizon_bars'])
+                    m=result_metrics(result)
                     m['family_ci']=bonferroni_ci(m['inference'],family)
-                    m['break_even']=break_even_cost(holdout,signal,s,config.SYMBOLS[s],config.N_CONTRACTS,p['horizon_bars'])
-                    prop=prop_lift(result,holdout,plan,p['seed'],s,p['horizon_bars'],eval_fee=p.get('eval_fee',0))
+                    m['break_even']=break_even_cost(holdout,signal,s,p['horizon_bars'])
+                    prop=prop_lift(result,holdout,plan,p['seed'],s,p['horizon_bars'],eval_fee=p.get('eval_fee',config.EVAL_FEE))
                     outcome['per_symbol'][s]=dict(metrics=m,prop=prop,verdict=verdict(m,row['per_symbol'][s]['dsr']['dsr'],prop),
                         frozen_file=artifact.name,frozen_sha256=hashlib.sha256(artifact.read_bytes()).hexdigest())
                 passed=sum(v['verdict']=='CANDIDATE' for v in outcome['per_symbol'].values())

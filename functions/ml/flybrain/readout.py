@@ -38,7 +38,7 @@ def signals_from_predictions(pred, threshold):
     return np.where(pred > threshold, 1, np.where(pred < -threshold, -1, 0)).astype(np.int8)
 
 
-def dan_path(df, X, params, initial=None, learning=True, thresholds=None):
+def dan_path(df, X, params, initial=None):
     """Reward arrives only at an actual next-open trade's closing bar.
 
     Seeded small initial weights break the zero-weight/no-trade fixed point.
@@ -47,7 +47,7 @@ def dan_path(df, X, params, initial=None, learning=True, thresholds=None):
     taken, so the update is lr * side * pattern * reward: a winning short pushes w.s
     further negative and a losing long weakens w.s, with no side-dependent asymmetry.
     """
-    w = np.random.default_rng(params.get('seed', 0)).normal(0, 1e-4, X.shape[1]) if initial is None else initial.copy()
+    w = np.random.default_rng(params['seed']).normal(0, 1e-4, X.shape[1]) if initial is None else initial.copy()
     predictions = np.zeros(len(df)); signal = np.zeros(len(df), dtype=np.int8)
     position = None
     pending = 0
@@ -63,14 +63,11 @@ def dan_path(df, X, params, initial=None, learning=True, thresholds=None):
         if position is not None:
             entry, price, side, pattern, scale = position
             if i - entry + 1 >= params['horizon_bars'] or end:
-                if learning:
-                    reward = side * (close[i] - price) / scale
-                    w = (1 - config.DAN_DECAY) * w + params['dan_lr'] * side * pattern * reward
+                reward = side * (close[i] - price) / scale
+                w = (1 - config.DAN_DECAY) * w + params['dan_lr'] * side * pattern * reward
                 position = None
         predictions[i] = X[i] @ w
-        if thresholds is not None:
-            thr = thresholds[i]
-        elif history:
+        if history:
             q = (len(history) - 1) * params['threshold_q']
             lo = int(q); hi = min(lo + 1, len(history) - 1)
             thr = history[lo] + (q - lo) * (history[hi] - history[lo])

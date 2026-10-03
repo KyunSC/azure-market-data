@@ -65,7 +65,33 @@ Documented implementation choices:
 
 `leaderboard --all` produces the main scientific output: all circuit rows, a per-group table with all four circuits side by side (both symbols and their median), paired group counts, median Sharpe and prop lift, and bootstrap CIs for fly-minus-control differences, overall and per symbol. Each walk-forward fold entry reports Sharpe inference, trades, P&L and max drawdown. Both symbols are summarized within each group before bootstrapping groups, so they are not treated as independent trials. The `gex_ablation` field has descriptive GEX-on/GEX-off strata plus a `matched` section that only uses groups whose sampled parameters are identical except `gex_off`; random sampling rarely produces such pairs, and an empty `matched` section means no pair exists, not no effect. Unmatched or rejected groups are excluded from paired comparisons.
 
-No production-budget search or sealed verification has been run as part of implementation. The implementation smoke results are recorded below after validation; they are not evidence of a trading edge.
+No production-budget search or sealed verification has been run as part of implementation. No production ledger exists.
+
+### Implementation smoke evidence (not a discovered edge)
+
+Command: `.venv/bin/python -m flybrain.search run --trials 3 --night 2000-01-01 --runs-dir <fresh tmp dir>`, discovery data only (QQQ 61,194 rows / 795 sessions; SPY 61,271 / 796), seed 42, all four circuits on both symbols. Three groups, 12 ledger rows, none rejected, none eligible. All three seeded draws happened to sample the `dan` readout, so nothing here says anything about ridge.
+
+| Group | Wall time | Notes |
+|---|---:|---|
+| 1 (first of night; every circuit prefix-guarded) | 197 s | reservoir states generated, ~4–5 s per circuit/symbol |
+| 2 | 130 s | top-five guards fired for some variants |
+| 3 | 103 s | no prefix guards fired for fly, shuffle or random |
+| Total | 392 s | |
+
+The brief's target of under 60 s per group once states are cached is **not met**: even with cached states a group takes roughly 100 s, dominated by the DAN readout path (about 3–10 s per circuit/symbol), break-even reruns, and the 50-seed prop-lift control replays. Prefix guards add roughly 5 s per variant-symbol when they fire.
+
+Paired result over 3 groups (median across both symbols; the CI is a bootstrap of fly minus control over only 3 groups, so it is not meaningful):
+
+| Circuit | Median OOS Sharpe | Median prop lift |
+|---|---:|---:|
+| fly | -1.79 | 0.009 |
+| shuffle | -1.65 | 0.016 |
+| random | -0.87 | 0.001 |
+| none | -1.02 | 0.013 |
+
+Every variant had negative P&L and break-even of 0 ticks; the sampled configurations trade 4k–30k times over discovery, so costs dominate. Fly was not distinguishable from controls and none passed the gates. The GEX ablation has no matched pair (parameters differing only in `gex_off`), so it is descriptive only: GEX-off median fly Sharpe -0.93 (1 group), GEX-on -2.02 (2 groups), with no inference possible at this sample size. These runs exercise the plumbing; they are not an estimate of anything.
+
+Reading Sharpe next to P&L: the Sharpe uses the JavaScript convention `equity[i]/equity[i-1]-1`, with returns forced to 0 once equity is non-positive. A cost-dominated variant that takes the $50k account below zero can therefore show a small positive Sharpe beside a large negative P&L. Eligibility is protected because break-even above one tick requires positive P&L at the modelled cost.
 
 ## Caveats and licensing
 

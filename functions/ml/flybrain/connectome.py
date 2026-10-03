@@ -23,8 +23,8 @@ SIGNS = {'acetylcholine': 1, 'gaba': -1, 'glutamate': -1, 'dopamine': 0, 'seroto
 _RADIUS = {}
 
 
-def fetch(force=False):
-    """Populate missing files only. force validates again, never overwrites source data."""
+def fetch():
+    """Populate missing files only and validate cached ones; never overwrites source data."""
     import pyarrow.parquet as pq
     base = config.DATA_DIR / 'flywire'
     base.mkdir(parents=True, exist_ok=True)
@@ -155,8 +155,11 @@ class Circuit:
 
 
 def build_circuit(kind, hemisphere='right', seed=0):
-    if kind not in ('fly', 'shuffle', 'random'):
+    """The circuit for one variant kind; the no-reservoir control has none."""
+    if kind not in config.CIRCUITS:
         raise ValueError(kind)
+    if kind == 'none':
+        return None
     base = config.DATA_DIR / 'circuits'
     base.mkdir(parents=True, exist_ok=True)
     provenance = (config.DATA_DIR / 'flywire' / 'manifest.json').read_bytes()
@@ -172,8 +175,9 @@ def build_circuit(kind, hemisphere='right', seed=0):
     ids = np.concatenate(list(selected.values()))
     if len(np.unique(ids)) != len(ids):
         raise ValueError('MB groups overlap')
-    lookup = {int(v): i for i, v in enumerate(ids)}
-    groups = {k: np.array([lookup[int(v)] for v in values]) for k, values in selected.items()}
+    # ids concatenates the groups in order, so each group is a contiguous index range.
+    offsets = np.cumsum([0] + [len(v) for v in selected.values()])
+    groups = {k: np.arange(a, b) for k, a, b in zip(selected, offsets, offsets[1:])}
     W = signed_weights(edges, ids, neurons)
     if kind == 'shuffle':
         W = shuffle_control(W, seed)

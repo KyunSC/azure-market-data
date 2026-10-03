@@ -14,13 +14,13 @@ from . import config
 
 def _load_verify_frame(symbol,frozen):
     from holdout import VERIFY_START
-    from gex_vol_study import BARS_DIR,GEX_DIR,TD_ROOT,aggregate_5m,day_iv,lagged_log_rv,lagged_returns
+    from gex_vol_study import BARS_DIR,ET,GEX_DIR,TD_ROOT,aggregate_5m,day_iv,lagged_log_rv,lagged_returns
     from .features import assemble_frame, normalize_sessions, OPTIONAL_FEATURES
     iv_root=TD_ROOT/'iv_5m'/f'symbol={symbol}'
     days=sorted(date.fromisoformat(p.name[5:]) for p in iv_root.glob('date=*') if (p/'part.parquet').exists())
     before=[d for d in days if d<VERIFY_START.date()]
     if len(before)<config.WARMUP_SESSIONS: raise ValueError('Insufficient verify warmup sessions')
-    lower=pd.Timestamp(before[-config.WARMUP_SESSIONS],tz='America/New_York').tz_convert('UTC')
+    lower=pd.Timestamp(before[-config.WARMUP_SESSIONS],tz=ET).tz_convert('UTC')
     # Row-level lower-bound filters apply before any file's rows are materialized.
     files=sorted((BARS_DIR/symbol).glob('*.parquet'))
     m=pd.concat([pd.read_parquet(f,columns=['open','high','low','close','volume'],filters=[('ts_event','>=',lower)]) for f in files])
@@ -33,9 +33,8 @@ def _load_verify_frame(symbol,frozen):
         t=snaps.sort_values('computed_at').computed_at.reset_index(drop=True)
         optional=pd.concat([pd.DataFrame({'date':t}),lagged_log_rv(bars,t),lagged_returns(bars,t)],axis=1)
         if any(c.startswith('log_iv') for c in frozen['features']):
-            rows=[]
-            for d in days:
-                if d>=lower.tz_convert('America/New_York').date(): rows.extend(day_iv(symbol,d))
+            first=lower.tz_convert(ET).date()
+            rows=[r for d in days if d>=first for r in day_iv(symbol,d)]
             if not rows: raise ValueError('Verify IV features required by frozen schema are missing')
             iv=pd.DataFrame(rows).set_index('computed_at').reindex(pd.DatetimeIndex(t))
             optional['log_iv_front']=np.log(iv.iv_front.to_numpy())
@@ -51,11 +50,11 @@ def _load_verify_frame(symbol,frozen):
 
 
 def verify(config_hash,runs_dir=config.RUNS_DIR,loader=None,scorer=None):
-    from .search import ledger_lock,dump,code_version
+    from .search import ledger_lock,dump,code_version,durable_write,read_jsonl
     root=Path(runs_dir)
     with ledger_lock(root):
         log=root/'verify_log.jsonl'
-        attempts=[json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+        attempts=read_jsonl(log)
         if any(r['hash']==config_hash for r in attempts): raise ValueError('Verify already attempted for this hash')
         match=None; folder=None
         for path in (root/'nights').glob('*/holdout.json'):
@@ -71,9 +70,7 @@ def verify(config_hash,runs_dir=config.RUNS_DIR,loader=None,scorer=None):
             if path.parent!=folder or hashlib.sha256(path.read_bytes()).hexdigest()!=r['frozen_sha256']:
                 raise ValueError('Frozen artifact integrity check failed')
             artifacts[s]=json.loads(path.read_text())
-        import os
-        def append(row):
-            with log.open('a') as f: f.write(dump(row)+'\n'); f.flush(); os.fsync(f.fileno())
+        def append(row): durable_write(log,dump(row)+'\n')
         append(dict(hash=config_hash,ts=datetime.now(timezone.utc).isoformat(),status='started'))
         try:
             outcomes={}
@@ -95,12 +92,11 @@ def _score_verify(df,frozen):
     from .engine import backtest
     from .search import result_metrics
     from .prop import resolve_plan,run_prop
-    p=frozen['params']; s=frozen['symbol']
-    c=None if frozen['circuit']=='none' else build_circuit(frozen['circuit'],p['hemisphere'],p['seed'])
+    p=frozen['params']
+    c=build_circuit(frozen['circuit'],p['hemisphere'],p['seed'])
     signal=frozen_signals(cached_states(c,df,p),p,frozen['readout'])
-    r=backtest(df,signal,s,config.SYMBOLS[s],config.N_CONTRACTS,p['horizon_bars'])
-    replay=run_prop(r,plan=resolve_plan(),paths=config.PROP['paths'],block_size=config.PROP['block'],horizon=config.PROP['horizon'],seed=p['seed'],keep_attempts=False)
-    return dict(metrics=result_metrics(r,np.zeros(len(df),dtype=int)),prop=replay)
+    r=backtest(df,signal,frozen['symbol'],p['horizon_bars'])
+    return dict(metrics=result_metrics(r),prop=run_prop(r,plan=resolve_plan(),seed=p['seed'],keep_attempts=False))
 
 
 if __name__=='__main__':

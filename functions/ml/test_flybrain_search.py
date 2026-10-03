@@ -4,7 +4,7 @@ import tempfile
 import unittest
 import numpy as np
 from flybrain import config
-from flybrain.search import append_record, read_ledger, run, lookahead_check, refresh_deflation, result_metrics, config_hash
+from flybrain.search import append_record, read_ledger, run, lookahead_check, refresh_deflation, result_metrics
 from flybrain.readout import oos_signals, fold_schedule
 from flybrain.engine import backtest
 from flybrain.stats import sharpe_inference, deflated_sharpe
@@ -39,7 +39,7 @@ class SearchTests(unittest.TestCase):
         p=params(); p['horizon_bars']=1
         df.attrs['fold_schedule']=fold_schedule(df,1)
         signal,fold=oos_signals(df,{'kc':x[:,None]},p)
-        result=backtest(df,signal,'QQQ','MNQ',2,1)
+        result=backtest(df,signal,'QQQ',1,n_contracts=2)
         m=result_metrics(result,fold); m['break_even']=2.
         return m,df,result
 
@@ -68,8 +68,8 @@ class SearchTests(unittest.TestCase):
     def test_control_matches_trade_count_and_holds(self):
         _,df,r=self.signals(2,True)
         for seed in range(5):
-            signal,holds=random_entry_signal(df,r.trades,seed,return_holds=True)
-            c=backtest(df,signal,'QQQ','MNQ',2,1,entry_holds=holds)
+            signal,holds=random_entry_signal(df,r.trades,seed)
+            c=backtest(df,signal,'QQQ',1,n_contracts=2,entry_holds=holds)
             self.assertEqual(len(c.trades),len(r.trades))
             self.assertEqual(sorted(t['hold'] for t in c.trades),sorted(t['hold'] for t in r.trades))
 
@@ -80,7 +80,6 @@ class SearchTests(unittest.TestCase):
         from flybrain.verify import verify
         from flybrain.search import code_version, dump
         from flybrain.features import normalize_sessions
-        from flybrain.readout import fit_frozen
         with tempfile.TemporaryDirectory() as d:
             df=frame(n=60,bars=20)
             df['x']=df.z_x

@@ -6,13 +6,14 @@ import fcntl
 import hashlib
 import json
 import math
+import os
 from functools import partial
 from pathlib import Path
 import time
 import numpy as np
 from . import config
 from .connectome import build_circuit
-from .features import load_research_frame, GEX_FEATURES
+from .features import load_research_frame
 from .reservoir import cached_states, run_reservoir, pack_sessions
 from .readout import fold_schedule, oos_signals
 from .engine import backtest
@@ -43,8 +44,8 @@ def code_version():
     return h.hexdigest()
 
 
-def config_hash(params,circuit,version=None):
-    return hashlib.sha256(dump(dict(params=params,circuit=circuit,code_version=version or code_version())).encode()).hexdigest()
+def config_hash(params,circuit,version):
+    return hashlib.sha256(dump(dict(params=params,circuit=circuit,code_version=version)).encode()).hexdigest()
 
 
 @contextmanager
@@ -57,20 +58,28 @@ def ledger_lock(runs_dir):
         finally: fcntl.flock(f,fcntl.LOCK_UN)
 
 
-def read_ledger(runs_dir):
-    p=Path(runs_dir)/'ledger.jsonl'
+def read_jsonl(path):
+    p=Path(path)
     return [json.loads(line) for line in p.read_text().splitlines() if line.strip()] if p.exists() else []
 
 
+def durable_write(path,text,mode='a'):
+    """Write and fsync before returning, so one-look and budget records survive a crash."""
+    with Path(path).open(mode) as f:
+        f.write(text); f.flush(); os.fsync(f.fileno())
+
+
+def read_ledger(runs_dir):
+    return read_jsonl(Path(runs_dir)/'ledger.jsonl')
+
+
 def append_record(runs_dir,row,cap=None):
-    import os
     cap=config.MAX_TRIALS_LIFETIME if cap is None else cap
     rows=read_ledger(runs_dir)
     if len(rows)>=cap: raise ValueError('Lifetime trial cap exhausted')
     if any(r['hash']==row['hash'] for r in rows): raise ValueError('Duplicate configuration hash')
     root=Path(runs_dir); root.mkdir(parents=True,exist_ok=True)
-    with (root/'ledger.jsonl').open('a') as f:
-        f.write(dump(row)+'\n'); f.flush(); os.fsync(f.fileno())
+    durable_write(root/'ledger.jsonl',dump(row)+'\n')
 
 
 def lookahead_check(df,signal_fn,probes=config.LOOKAHEAD_PROBES):
@@ -82,7 +91,9 @@ def lookahead_check(df,signal_fn,probes=config.LOOKAHEAD_PROBES):
     return dict(ok=True)
 
 
-def result_metrics(result,fold_id):
+def result_metrics(result,fold_id=None):
+    """fold_id=None scores the whole result as a single fold."""
+    fold_id=np.zeros(len(result.equity),dtype=int) if fold_id is None else fold_id
     mask=fold_id>=0
     inference=sharpe_inference(result.returns[mask])
     entries=np.array([t['entry_idx'] for t in result.trades],dtype=int)
@@ -103,11 +114,22 @@ def result_metrics(result,fold_id):
                 max_drawdown=float(np.max(peak-result.equity)))
 
 
+def passes_edge_gates(metrics,dsr,prop):
+    """Cost, deflation and prop-lift gates shared by research eligibility and the holdout verdict."""
+    lower=prop['lift_ci'][0]
+    return (float(metrics['break_even'])>config.SLIPPAGE_TICKS and (dsr or 0)>=config.GATES['dsr_min']
+        and lower is not None and lower>0)
+
+
 def eligible_symbol(row):
-    m=row['metrics']; p=row['prop']; g=config.GATES
+    m=row['metrics']; g=config.GATES
     return (m['n_trades']>=g['min_trades'] and m['pos_folds']>=g['min_pos_folds']
-        and float(m['break_even'])>config.SLIPPAGE_TICKS and (row['dsr'].get('dsr') or 0)>=g['dsr_min']
-        and p['lift_ci'][0] is not None and p['lift_ci'][0]>0)
+        and passes_edge_gates(m,row['dsr'].get('dsr'),row['prop']))
+
+
+def score_of(per_symbol):
+    """A variant scores its weakest symbol's Sharpe."""
+    return min((v['metrics']['inference']['sharpe'] for v in per_symbol.values()),default=-math.inf)
 
 
 def refresh_deflation(rows):
@@ -123,9 +145,9 @@ def refresh_deflation(rows):
     return rows
 
 
-def evaluate_variant(kind,params,frames,circuit_factory=build_circuit,check_guard=False,prop_settings=None,metric_cache=None):
-    circuit=None if kind=='none' else circuit_factory(kind,params['hemisphere'],params.get('seed',0))
-    per_symbol={}; plan=resolve_plan(config.PROP['plan'],config.PROP['size'],config.PROP['dll'])
+def evaluate_variant(kind,params,frames,circuit_factory=build_circuit,check_guard=False,metric_cache=None):
+    circuit=circuit_factory(kind,params['hemisphere'],params['seed'])
+    per_symbol={}; plan=resolve_plan()
     for symbol,frame in frames.items():
         df=frame.copy(); df.attrs=frame.attrs.copy()
         df['session_end']=df.session.ne(df.session.shift(-1))
@@ -140,10 +162,8 @@ def evaluate_variant(kind,params,frames,circuit_factory=build_circuit,check_guar
                 if len(prefix)==len(df): return signal
                 # Completed sessions are unchanged cache entries. Recompute the partial session.
                 start=int(np.flatnonzero(prefix.session.to_numpy()==prefix.session.iloc[-1])[0])
-                partial=prefix.iloc[start:].copy()
-                X,mask=pack_sessions(partial)
-                p=dict(params,gex_indices=[i for i,c in enumerate(df.attrs['features']) if c in GEX_FEATURES])
-                tail=run_reservoir(circuit,X,mask,p)
+                X,mask=pack_sessions(prefix.iloc[start:],params['gex_off'])
+                tail=run_reservoir(circuit,X,mask,params)
                 st={k:np.concatenate((states[k][:start],tail[k])) for k in states}
                 return oos_signals(prefix,st,params,model_cache=model_cache)[0]
             guard=lookahead_check(df,signal_fn)
@@ -153,15 +173,14 @@ def evaluate_variant(kind,params,frames,circuit_factory=build_circuit,check_guar
         if metric_cache is not None and cache_key in metric_cache:
             per_symbol[symbol]=metric_cache[cache_key]
             continue
-        result=backtest(df,signal,symbol,config.SYMBOLS[symbol],config.N_CONTRACTS,params['horizon_bars'])
+        result=backtest(df,signal,symbol,params['horizon_bars'])
         metrics=result_metrics(result,fold_id)
-        metrics['break_even']=break_even_cost(df,signal,symbol,config.SYMBOLS[symbol],config.N_CONTRACTS,params['horizon_bars'])
+        metrics['break_even']=break_even_cost(df,signal,symbol,params['horizon_bars'])
         # Prop replay uses only the stitched OOS period, including genuinely flat OOS days.
         first=int(np.flatnonzero(fold_id>=0)[0])
         oos=df.iloc[first:].reset_index(drop=True)
-        scored=backtest(oos,signal[first:],symbol,config.SYMBOLS[symbol],config.N_CONTRACTS,params['horizon_bars'])
-        lift=prop_lift(scored,oos,plan,params.get('seed',0),symbol,params['horizon_bars'],
-                       eval_fee=params.get('eval_fee',config.EVAL_FEE),settings=prop_settings)
+        scored=backtest(oos,signal[first:],symbol,params['horizon_bars'])
+        lift=prop_lift(scored,oos,plan,params['seed'],symbol,params['horizon_bars'],eval_fee=params['eval_fee'])
         per_symbol[symbol]=dict(metrics=metrics,prop=lift)
         if metric_cache is not None: metric_cache[cache_key]=per_symbol[symbol]
         print(f"  {kind:7} {symbol}: SR={metrics['inference']['sharpe']:.3f} trades={metrics['n_trades']} P&L={metrics['total_pnl']:.2f} lift={lift['lift']:.3f}",flush=True)
@@ -191,17 +210,17 @@ def run(trials=config.TRIALS_PER_NIGHT,night=None,seed=42,runs_dir=config.RUNS_D
             start=time.monotonic(); first=not any(r['night']==night for r in rows)
             for kind,h in zip(config.CIRCUITS,hashes):
                 guarded=first
+                base=dict(id=len(rows)+1,hash=h,group_id=group_id,night=night,circuit=kind,params=params,code_version=version)
                 try:
                     per,rejected,guard=evaluator(kind,params,frames,circuit_factory=circuit_factory,check_guard=guarded)
-                    score=min((v['metrics']['inference']['sharpe'] for v in per.values()),default=-math.inf)
-                    # All potential top-five configurations receive a prefix guard before ledger acceptance.
+                    score=score_of(per)
+                    # All potential top-K configurations receive a prefix guard before ledger acceptance.
                     previous=sorted((r['score'] for r in rows if not r.get('rejected') and isinstance(r.get('score'),(int,float))),reverse=True)
-                    if not rejected and not guarded and (len(previous)<5 or score>=previous[4]):
+                    if not rejected and not guarded and (len(previous)<config.TOP_K or score>=previous[config.TOP_K-1]):
                         per,rejected,guard=evaluator(kind,params,frames,circuit_factory=circuit_factory,check_guard=True)
                         guarded=True
-                        score=min((v['metrics']['inference']['sharpe'] for v in per.values()),default=-math.inf)
-                    row=dict(id=len(rows)+1,hash=h,group_id=group_id,night=night,circuit=kind,params=params,
-                             per_symbol=per,score=score,eligible=False,rejected=rejected,guard=guard,code_version=version,
+                        score=score_of(per)
+                    row=dict(base,per_symbol=per,score=score,eligible=False,rejected=rejected,guard=guard,
                              created_at=datetime.now(timezone.utc).isoformat())
                     # Deflate against every earlier recorded variant, not merely the night's winners.
                     row=refresh_deflation(rows+[row])[-1]
@@ -210,9 +229,8 @@ def run(trials=config.TRIALS_PER_NIGHT,night=None,seed=42,runs_dir=config.RUNS_D
                     # An interrupted or failed variant still spends one lifetime slot, so aborting
                     # after peeking at partial progress cannot reset the budget.
                     if not any(r['hash']==h for r in read_ledger(root)):
-                        failed=dict(id=len(rows)+1,hash=h,group_id=group_id,night=night,circuit=kind,params=params,
-                            per_symbol={},score=None,eligible=False,rejected='error:'+type(exc).__name__,
-                            code_version=version,created_at=datetime.now(timezone.utc).isoformat())
+                        failed=dict(base,per_symbol={},score=None,eligible=False,rejected='error:'+type(exc).__name__,
+                            created_at=datetime.now(timezone.utc).isoformat())
                         try: append_record(root,failed,cap)
                         except ValueError: pass
                     raise
@@ -249,7 +267,7 @@ def paired_table(rows,symbol=None):
                 if math.isfinite(v) and math.isfinite(fly): vals.append(v); diffs.append(fly-v)
             ci=[math.nan,math.nan]
             if diffs:
-                boot=np.median(rng.choice(diffs,size=(2000,len(diffs)),replace=True),axis=1)
+                boot=np.median(rng.choice(diffs,size=(config.BOOTSTRAP_SAMPLES,len(diffs)),replace=True),axis=1)
                 ci=np.quantile(boot,[.025,.975]).tolist()
             out.append(dict(metric=metric,circuit=circuit,groups=len(vals),median=float(np.median(vals)) if vals else math.nan,
                             fly_minus_control_ci=ci))
@@ -306,13 +324,13 @@ def status(runs_dir=config.RUNS_DIR):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='command',required=True)
-    for name in ('run','leaderboard','status','finalize','verify'):
-        p=sub.add_parser(name); p.add_argument('--runs-dir',type=Path,default=config.RUNS_DIR)
-        if name=='run':
-            p.add_argument('--trials',type=int,default=config.TRIALS_PER_NIGHT); p.add_argument('--night',default=date.today().isoformat()); p.add_argument('--seed',type=int,default=42); p.add_argument('--eval-fee',type=float,default=config.EVAL_FEE)
-        if name=='leaderboard': p.add_argument('--all',action='store_true')
-        if name=='finalize': p.add_argument('--night',required=True); p.add_argument('--top',type=int,default=5)
-        if name=='verify': p.add_argument('hash')
+    cmd={name:sub.add_parser(name) for name in ('run','leaderboard','status','finalize','verify')}
+    for p in cmd.values(): p.add_argument('--runs-dir',type=Path,default=config.RUNS_DIR)
+    cmd['run'].add_argument('--trials',type=int,default=config.TRIALS_PER_NIGHT); cmd['run'].add_argument('--night')
+    cmd['run'].add_argument('--seed',type=int,default=42); cmd['run'].add_argument('--eval-fee',type=float,default=config.EVAL_FEE)
+    cmd['leaderboard'].add_argument('--all',action='store_true')
+    cmd['finalize'].add_argument('--night',required=True); cmd['finalize'].add_argument('--top',type=int,default=config.TOP_K)
+    cmd['verify'].add_argument('hash')
     args=parser.parse_args()
     if args.command=='run': run(args.trials,args.night,args.seed,args.runs_dir,eval_fee=args.eval_fee)
     elif args.command=='leaderboard': print(dump(leaderboard(args.runs_dir,args.all)))

@@ -12,7 +12,8 @@ from .features import GEX_FEATURES, input_matrix
 RESERVOIR_KEYS = ('rho', 'leak', 'input_gain', 'kc_sparsity', 'gex_off', 'hemisphere', 'seed')
 
 
-def pack_sessions(df):
+def pack_sessions(df, gex_off):
+    """Session-batched inputs; GEX-off zeroes the dealer/wall inputs but keeps their dimensions."""
     X = input_matrix(df)
     sessions = list(df.groupby('session', sort=False).indices.values())
     width = max(map(len, sessions))
@@ -21,6 +22,8 @@ def pack_sessions(df):
     for i, idx in enumerate(sessions):
         packed[i, :len(idx)] = X[idx]
         mask[i, :len(idx)] = True
+    if gex_off:
+        packed[:, :, [i for i, c in enumerate(df.attrs['features']) if c in GEX_FEATURES]] = 0
     return packed, mask
 
 
@@ -39,33 +42,34 @@ def input_weights(circuit, n_features, seed):
 
 
 def run_reservoir(circuit, X_by_session, mask, params):
-    X = np.array(X_by_session, dtype=float, copy=True)
-    if params.get('gex_off'):
-        X[:, :, params.get('gex_indices', [])] = 0
-    if circuit is None or circuit == 'none':
-        flat = X[mask]
-        return {'kc': flat, 'mbon': flat}
+    """States of the read-out group only, one row per unmasked bar."""
+    group = params['readout_from']
+    X = np.asarray(X_by_session, dtype=float)
+    if circuit is None:
+        return {group: X[mask]}
     W = scale_spectral_radius(circuit.W, params['rho'])
-    Win = sparse.csr_matrix(input_weights(circuit, X.shape[2], params.get('seed', 0)) * params['input_gain'])
+    Win = sparse.csr_matrix(input_weights(circuit, X.shape[2], params['seed']) * params['input_gain'])
     state = np.zeros((W.shape[0], len(X)))
-    outputs = {k: np.zeros((*mask.shape, len(circuit.groups[k]))) for k in ('kc', 'mbon')}
+    rows = np.cumsum(mask.ravel()).reshape(mask.shape) - 1
+    out = np.zeros((int(mask.sum()), len(circuit.groups[group])))
     kc = circuit.groups['kc']
     leak = params['leak']
+    sparsity = params.get('kc_sparsity')
+    keep = None if sparsity is None else int(np.ceil(sparsity * len(kc)))
     for t in range(X.shape[1]):
         u = np.concatenate((np.maximum(X[:, t], 0), np.maximum(-X[:, t], 0)), axis=1).T
         state = (1 - leak) * state + leak * np.maximum(W @ state + Win @ u, 0)
-        if params.get('kc_sparsity') is not None:
-            keep = int(np.ceil(params['kc_sparsity'] * len(kc)))
-            values = state[kc].copy()
+        if keep is not None:
+            values = state[kc]
             losers = np.argsort(values, axis=0, kind='stable')[:len(kc) - keep]
-            values[losers, np.arange(len(X))[None, :]] = 0
+            np.put_along_axis(values, losers, 0, axis=0)
             state[kc] = values
         state[:, ~mask[:, t]] = 0
         if not np.isfinite(state).all():
             raise ValueError('Unstable reservoir')
-        for k in outputs:
-            outputs[k][:, t] = state[circuit.groups[k]].T
-    return {k: v[mask] for k, v in outputs.items()}
+        live = mask[:, t]
+        out[rows[live, t]] = state[circuit.groups[group]][:, live].T
+    return {group: out}
 
 
 def _load_valid(paths, shapes):
@@ -81,8 +85,7 @@ def _load_valid(paths, shapes):
 
 def cached_states(circuit, df, params):
     columns = df.attrs['features']
-    p = dict(params, gex_indices=[i for i, c in enumerate(columns) if c in GEX_FEATURES])
-    X, mask = pack_sessions(df)
+    X, mask = pack_sessions(df, params.get('gex_off'))
     meta = dict(circuit=circuit.hash if circuit else 'none', symbol=df.attrs.get('symbol'),
                 columns=columns, params={k: params.get(k) for k in RESERVOIR_KEYS})
     h = hashlib.sha256(json.dumps(meta, sort_keys=True).encode())
@@ -92,13 +95,13 @@ def cached_states(circuit, df, params):
     h.update(X.tobytes()); h.update(mask.tobytes()); h.update(df.date.astype('int64').to_numpy().tobytes())
     base = config.DATA_DIR / 'states'
     base.mkdir(parents=True, exist_ok=True)
-    paths = {k: base / f'{h.hexdigest()}-{k}.npy' for k in ('kc', 'mbon')}
-    width = {k: (len(circuit.groups[k]) if circuit else X.shape[2]) for k in paths}
-    shapes = {k: (int(mask.sum()), width[k]) for k in paths}
+    group = params['readout_from']
+    paths = {group: base / f'{h.hexdigest()}-{group}.npy'}
+    shapes = {k: (int(mask.sum()), len(circuit.groups[k]) if circuit else X.shape[2]) for k in paths}
     hit = _load_valid(paths, shapes)
     if hit is not None:
         return hit
-    states = run_reservoir(circuit, X, mask, p)
+    states = run_reservoir(circuit, X, mask, params)
     for k, path in paths.items():
         # Write beside the target and rename: an interrupted run never leaves a truncated cache file.
         tmp = path.with_name(path.name + f'.{os.getpid()}.tmp')

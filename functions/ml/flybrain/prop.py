@@ -1,17 +1,23 @@
 """Faithful Lucid replay port. Rule values come only from exported JS fixtures."""
+from collections import Counter
+from functools import lru_cache
+from itertools import accumulate
 import json
 import math
 from pathlib import Path
 import numpy as np
-import pandas as pd
 from . import config
 
 EPS=1e-9
 
 
-def resolve_plan(plan='flex', size='50k', dll=True):
-    plans=json.loads((Path(__file__).parent/'fixtures'/'lucid_plans.json').read_text())['plans']
-    return next(p for p in plans if p['plan']==plan and p['size']==size and p['dll']==dll)
+@lru_cache(maxsize=None)
+def _plans():
+    return json.loads((Path(__file__).parent/'fixtures'/'lucid_plans.json').read_text())['plans']
+
+
+def resolve_plan(plan=config.PROP['plan'], size=config.PROP['size'], dll=config.PROP['dll']):
+    return dict(next(p for p in _plans() if p['plan']==plan and p['size']==size and p['dll']==dll))
 
 
 def mulberry32(a):
@@ -29,29 +35,25 @@ def nth(values,k):
 
 
 def build_day_table(result, time=None, initial_capital=None):
-    def get(camel,snake=None,default=None):
-        if isinstance(result,dict): return result.get(camel,default)
-        return getattr(result,snake or camel,default)
-    equity=np.asarray(get('equity')); n=len(equity)
-    time=np.asarray(time if time is not None else get('time'))
+    def get(camel,snake):
+        if isinstance(result,dict): return result.get(camel)
+        return getattr(result,snake)
+    equity=np.asarray(get('equity','equity')); n=len(equity)
+    time=np.asarray(time if time is not None else get('time','time'))
     capital=initial_capital if initial_capital is not None else get('initialCapital','initial_capital')
-    start=get('windowStart',default=0); end=get('windowEnd',default=n-1)
-    lo=np.empty(end-start+1); hi=lo.copy(); op=lo.copy(); close=lo.copy()
     # Exact time.js convention: roll at 22:00 UTC in either DST regime.
     day=np.floor((time+7200)/86400)
-    starts=[]; ends=[]; active=[]; times=[]; base=capital; day_active=0
-    lows=get('barLo','bar_lo'); highs=get('barHi','bar_hi'); opens=get('barOpen','bar_open')
-    for i in range(start,end+1):
-        j=i-start
-        if i==start or day[i]!=day[i-1]:
-            if i!=start:
-                ends.append(j-1); active.append(day_active); base=equity[i-1]
-            starts.append(j); times.append(time[i]); day_active=0
-        lo[j]=lows[i]-base; hi[j]=highs[i]-base; op[j]=opens[i]-base; close[j]=equity[i]-base
-        if abs(hi[j]-lo[j])>EPS or abs(close[j])>EPS or abs(op[j])>EPS: day_active=1
-    ends.append(len(lo)-1); active.append(day_active)
-    return dict(n=len(starts),start=starts,end=ends,active=active,time=times,lo=lo,hi=hi,open=op,close=close,
-                min_lo=[float(np.min(lo[s:e+1])) for s,e in zip(starts,ends)])
+    starts=np.r_[0,np.flatnonzero(day[1:]!=day[:-1])+1]
+    ends=np.r_[starts[1:]-1,n-1]
+    # Each day's values are relative to the previous day's closing equity.
+    base=np.repeat(np.r_[capital,equity[starts[1:]-1]],ends-starts+1)
+    lo,hi,op,close=(np.asarray(get(camel,snake))-base for camel,snake in
+                    (('barLo','bar_lo'),('barHi','bar_hi'),('barOpen','bar_open'),('equity','equity')))
+    flag=(np.abs(hi-lo)>EPS)|(np.abs(close)>EPS)|(np.abs(op)>EPS)
+    # Lists: run_stage indexes these per bar inside every bootstrap path.
+    return dict(n=len(starts),start=starts.tolist(),end=ends.tolist(),active=np.logical_or.reduceat(flag,starts).astype(int).tolist(),
+                time=time[starts].tolist(),lo=lo.tolist(),hi=hi.tolist(),open=op.tolist(),close=close.tolist(),
+                min_lo=np.minimum.reduceat(lo,starts).tolist())
 
 
 def run_stage(days,next_day,k0,plan,stage):
@@ -133,8 +135,7 @@ def summarize_attempts(attempts,plan):
     pct=lambda a,q:float(np.quantile(a,q)) if len(a) else math.nan
     cost=plan['price']+(plan['activationFee'] or 0)
     resolved=[a for a in attempts if a['outcome']!='eval-open']; passed=[a for a in resolved if a['outcome']!='failed']
-    outcomes={}
-    for a in attempts: outcomes[a['outcome']]=outcomes.get(a['outcome'],0)+1
+    outcomes=dict(Counter(a['outcome'] for a in attempts))
     days=sorted(a['evalDays'] for a in passed); rate=len(passed)/len(resolved) if resolved else math.nan
     take=mean([a['take'] for a in resolved]); nets=sorted(a['take']-cost for a in resolved)
     cash=[a for a in resolved if math.isfinite(a.get('cashPnl',math.nan))]
@@ -146,18 +147,19 @@ def summarize_attempts(attempts,plan):
         dllHitRate=mean([a['dllHits']/max(1,a['daysUsed']) for a in resolved]),nets=nets)
 
 
-def run_prop(result,time=None,plan=None,initial_capital=None,bootstrap=True,paths=1000,block_size=5,horizon=250,seed=42,keep_attempts=True):
+def run_prop(result,time=None,plan=None,initial_capital=None,paths=config.PROP['paths'],block_size=config.PROP['block'],
+             horizon=config.PROP['horizon'],seed=config.PROP['seed'],keep_attempts=True,replay_history=True):
+    """replay_history=False skips the per-start-day replay; the bootstrap is unaffected."""
     plan=plan or resolve_plan()
     days=build_day_table(result,time,initial_capital)
-    cum=[0.]
-    for d in range(days['n']): cum.append(cum[-1]+days['close'][days['end'][d]])
+    cum=[0.,*accumulate(days['close'][e] for e in days['end'])]
     historical=[]
-    for s in range(days['n']):
+    for s in range(days['n']) if replay_history else ():
         a=simulate_account(days,lambda k:s+k if s+k<days['n'] else -1,plan)
         a.update(startDay=s,startTime=days['time'][s],cashPnl=cum[min(days['n'],s+max(1,a['daysUsed']))]-cum[s])
         historical.append(a)
     boot=None
-    if bootstrap and days['n']>=2:
+    if days['n']>=2:
         rng=mulberry32(seed); bl=max(1,min(block_size,days['n'])); attempts=[]
         for _ in range(paths):
             seq=[]
@@ -170,14 +172,14 @@ def run_prop(result,time=None,plan=None,initial_capital=None,bootstrap=True,path
                 return seq[k]
             attempts.append(simulate_account(days,next_day,plan))
         boot=summarize_attempts(attempts,plan); boot.update(paths=paths,blockSize=bl,horizon=horizon)
-    hist=summarize_attempts(historical,plan)
-    if keep_attempts:
+    hist=summarize_attempts(historical,plan) if replay_history else None
+    if replay_history and keep_attempts:
         keys=['startDay','startTime','outcome','reason','evalDays','fundedDays','payouts','take','cashPnl','dllHits']
         hist['list']=[{k:a[k] for k in keys} for a in historical]
     return dict(plan=plan,days=days['n'],activeDays=sum(days['active']),meanDayPnl=cum[-1]/days['n'],cashPnl=cum[-1],historical=hist,bootstrap=boot)
 
 
-def random_entry_signal(df,trades,seed,return_holds=False):
+def random_entry_signal(df,trades,seed):
     """Match each session's count and realized holds without overlapping positions."""
     rng=np.random.default_rng(seed); signal=np.zeros(len(df),dtype=np.int8); entry_holds=np.zeros(len(df),dtype=int)
     by_session={}
@@ -196,21 +198,20 @@ def random_entry_signal(df,trades,seed,return_holds=False):
         cursor=int(idx[0])+int(gaps[0])
         for j,h in enumerate(holds):
             signal[cursor]=rng.choice([-1,1]); entry_holds[cursor]=h; cursor+=h+int(gaps[j+1])
-    return (signal,entry_holds) if return_holds else signal
+    return signal,entry_holds
 
 
-def prop_lift(result,df,plan,seed,symbol=None,max_hold=None,eval_fee=config.EVAL_FEE,settings=None):
+def prop_lift(result,df,plan,seed,symbol,max_hold,eval_fee=config.EVAL_FEE):
     from .engine import backtest
-    cfg=dict(config.PROP,**(settings or {})); symbol=symbol or df.attrs['symbol']
-    max_hold=max_hold or max((t['hold'] for t in result.trades),default=1)
-    opts=dict(plan=plan,paths=cfg['paths'],block_size=cfg['block'],horizon=cfg['horizon'],seed=seed,keep_attempts=False)
+    opts=dict(plan=plan,seed=seed,keep_attempts=False,replay_history=False)
+    nan=dict(p_pass_eval=math.nan,p_payout=math.nan,e_take=math.nan,lift=math.nan,lift_ci=[math.nan,math.nan])
+    if not result.trades: return nan
     actual=run_prop(result,**opts)['bootstrap']
-    if not result.trades or actual is None or not math.isfinite(actual['passRate']):
-        return dict(p_pass_eval=math.nan,p_payout=math.nan,e_take=math.nan,lift=math.nan,lift_ci=[math.nan,math.nan])
+    if actual is None or not math.isfinite(actual['passRate']): return nan
     controls=[]
     for k in range(config.CONTROL_SEEDS):
-        signal,holds=random_entry_signal(df,result.trades,seed+k+1,return_holds=True)
-        control=backtest(df,signal,symbol,config.SYMBOLS[symbol],config.N_CONTRACTS,max_hold,entry_holds=holds)
+        signal,holds=random_entry_signal(df,result.trades,seed+k+1)
+        control=backtest(df,signal,symbol,max_hold,entry_holds=holds)
         assert len(control.trades)==len(result.trades)
         assert sorted(t['hold'] for t in control.trades)==sorted(t['hold'] for t in result.trades)
         replay=run_prop(control,**opts)['bootstrap']
@@ -220,6 +221,6 @@ def prop_lift(result,df,plan,seed,symbol=None,max_hold=None,eval_fee=config.EVAL
     else:
         lift=actual['passRate']-float(np.mean(controls))
         rng=np.random.default_rng(seed)
-        means=np.mean(rng.choice(controls,size=(2000,len(controls)),replace=True),axis=1)
+        means=np.mean(rng.choice(controls,size=(config.BOOTSTRAP_SAMPLES,len(controls)),replace=True),axis=1)
         ci=np.quantile(actual['passRate']-means,[.025,.975]).tolist()
     return dict(p_pass_eval=actual['passRate'],p_payout=actual['pPayout'],e_take=actual['meanTake']-eval_fee,lift=lift,lift_ci=ci)

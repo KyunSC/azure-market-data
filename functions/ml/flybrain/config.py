@@ -20,9 +20,11 @@ GATES = dict(min_trades=30, min_pos_folds=3, dsr_min=0.95, min_holdout_trades=10
 LOOKAHEAD_PROBES = 40
 WARMUP_SESSIONS = 20
 BARS_PER_SESSION = 78
-PPY = 78 * 252
+PPY = BARS_PER_SESSION * 252
 DAN_DECAY = 1e-4
 CONTROL_SEEDS = 50
+BOOTSTRAP_SAMPLES = 2000
+TOP_K = 5
 SEARCH_SPACE = dict(rho=[0.5, 0.8, 0.95, 1.1], leak=[0.1, 0.3, 0.6, 1.0], input_gain=[0.5, 1.0, 2.0],
     kc_sparsity=[None, 0.05, 0.10], readout_from=['kc', 'mbon'], readout=['ridge', 'dan'],
     ridge_lambda=[1.0, 10.0, 100.0], dan_lr=[1e-3, 1e-2], horizon_bars=[1, 3, 6, 12],
