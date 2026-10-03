@@ -207,6 +207,213 @@ class LoadDayTests(unittest.TestCase):
         self.assertEqual(list(s.index), list(dh.VARIANTS))
         self.assertTrue((s["n"] == 2).all())
 
+    def test_frontier_day_and_summary(self):
+        costs = (0.5, 2.0)
+        rows = dh.run_frontier_day("TST", "2026-01-07", 0, costs=costs)
+        self.assertEqual(len(rows), len(dh.FRONTIER) * len(costs))
+        by = {(r["cost_bps"], r["variant"]): r for r in rows}
+        self.assertEqual(by[0.5, "5m"]["n_rebalances"], 77)  # 78 points, 77 bars
+        self.assertEqual(by[0.5, "entry-only"]["n_rebalances"], 1)
+        self.assertAlmostEqual(by[2.0, "5m"]["hedge_cost"], 4 * by[0.5, "5m"]["hedge_cost"])  # same trades
+        self.assertTrue(np.isnan(by[0.5, "30m"]["band_mean"]))
+        self.assertEqual(by[0.5, "band 5"]["band_mean"], 5.0)
+        # the WW band widens with the cost by (2 / 0.5)^(1/3)
+        self.assertAlmostEqual(by[2.0, "ww 1"]["band_mean"] / by[0.5, "ww 1"]["band_mean"], 4 ** (1 / 3))
+        df = pd.DataFrame(rows + dh.run_frontier_day("TST", "2026-01-08", 1, costs=costs))
+        s = dh.frontier_summary(df, n_boot=20, block=1)
+        per = s[~s["kind"].str.endswith("@clock")]
+        self.assertEqual(len(per), len(dh.FRONTIER) * len(costs))
+        self.assertTrue((per["n"] == 2).all())
+        self.assertEqual(set(s["cost_bps"]), set(costs))
+
+
+def smile_paths(n, beta, vol=0.2, span=5 / 365, seed=3):
+    """GBM whose IV follows dsigma = beta * dS / (S sqrt(T)) (spot-vol correlation), with a
+    1-month ATM straddle marked at BS(r=0) on its own IV; T stays far above SMILE_MIN_T."""
+    rng = np.random.default_rng(seed)
+    T = 30 / 365 - np.linspace(0.0, span, BARS + 1)
+    dt = span / BARS
+    out = []
+    for _ in range(n):
+        S = 100.0 * np.exp(np.r_[0.0, np.cumsum(vol * np.sqrt(dt) * rng.standard_normal(BARS))])
+        iv = vol + np.r_[0.0, np.cumsum(beta * np.diff(S) / (S[:-1] * np.sqrt(T[:-1])))]
+        V = g.bs_price(S, 100.0, T, iv, "C", r=0) + g.bs_price(S, 100.0, T, iv, "P", r=0)
+        out.append(dict(S=S, V=V, iv_call=iv, iv_put=iv, T=T, K=100.0))
+    return out
+
+
+class SmileDelta(unittest.TestCase):
+    def test_stats_recover_beta_and_zero_is_bs(self):
+        p = smile_paths(1, beta=-0.02)[0]
+        sxy, sxx, n = dh.smile_stats({**p, "settle": False})
+        self.assertAlmostEqual(sxy / sxx, -0.02, places=3)
+        self.assertEqual(n, BARS)
+        a = dh.hedge_pnl(**p, rebalance_every=6, r=0)
+        b = dh.hedge_pnl(**p, rebalance_every=6, r=0, dsig_dS=0.0)
+        self.assertEqual(a["pnl"], b["pnl"])
+
+    def test_smile_hedge_cuts_variance_under_spot_vol_correlation(self):
+        ps = smile_paths(300, beta=-0.02)
+        d = [{**p, "settle": False} for p in ps]
+        std = lambda xs: np.std([x["pnl"] for x in xs])  # noqa: E731
+        bs = [dh.hedge_pnl(**p, rebalance_every=1, r=0) for p in ps]
+        sm = [dh.hedge_pnl(**p, rebalance_every=1, r=0, dsig_dS=dh.smile_dsig_dS(q, -0.02)) for p, q in zip(ps, d)]
+        self.assertLess(std(sm), std(bs))
+        # The smile hedge's delta_err offsets the spot-driven vega P&L; what's left is gamma noise.
+        vega_leg = lambda xs: np.std([x["vega"] + x["delta_err"] for x in xs])  # noqa: E731
+        self.assertLess(vega_leg(sm), 0.1 * vega_leg(bs))
+
+    def test_betas_are_out_of_sample(self):
+        days = [f"2026-01-{i:02d}" for i in range(1, 31)]
+        stats = {day: ((1.0 if i < 20 else 100.0), 1.0, 10) for i, day in enumerate(days)}
+        b = dh.smile_betas(stats)
+        self.assertIsNone(b[days[dh.SMILE_MIN_DAYS - 1]])
+        self.assertEqual(b[days[20]], 1.0)  # day 20's own stats (100) are not used
+        self.assertAlmostEqual(b[days[21]], (20 * 1.0 + 100.0) / 21)
+
+    def test_no_adjustment_in_last_hour(self):
+        T = np.array([2, 1.5, 1.0, 0.5, 0.0]) / (24 * 365)
+        dsig = dh.smile_dsig_dS({"T": T, "S": np.full(5, 100.0)}, -0.02)
+        self.assertTrue((dsig[:2] < 0).all() and (dsig[2:] == 0).all())
+
+
+class DeltaBands(unittest.TestCase):
+    SCALARS = ("pnl", "hedge_pnl", "hedge_cost", "n_rebalances", *dh.ATTR, "delta_err_charm", "res1", "res2")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fair = paths(300, 0.2, 0.2, seed=11)
+
+    def assert_same(self, a, b):
+        for k in self.SCALARS:
+            self.assertEqual(a[k], b[k], k)
+        for k in ("hedge", "cost", "delta_err", "delta_err_charm"):
+            np.testing.assert_array_equal(a["bars"][k], b["bars"][k], k)
+
+    def test_zero_band_is_the_clock_and_infinite_band_is_entry_only(self):
+        p = self.fair[3]
+        kw = dict(hedge_cost_bps=1.0, fills=(p["V"][0] - 0.02, p["V"][-1] + 0.03), r=0)
+        for every in (1, 6):
+            self.assert_same(dh.hedge_pnl(**p, rebalance_every=every, band=0.0, **kw),
+                             dh.hedge_pnl(**p, rebalance_every=every, **kw))
+        self.assert_same(dh.hedge_pnl(**p, rebalance_every=1, band=np.inf, **kw),
+                         dh.hedge_pnl(**p, rebalance_every=dh.ENTRY_ONLY, **kw))
+        self.assert_same(dh.hedge_pnl(**p, rebalance_every=1, ww_scale=0.0, **kw),
+                         dh.hedge_pnl(**p, rebalance_every=1, **kw))
+        dsig = np.full(len(p["S"]), -0.001)  # the smile target is banded the same way
+        self.assert_same(dh.hedge_pnl(**p, rebalance_every=1, band=0.0, dsig_dS=dsig, **kw),
+                         dh.hedge_pnl(**p, rebalance_every=1, dsig_dS=dsig, **kw))
+
+    def test_band_holds_inside_and_resets_outside(self):
+        p = self.fair[5]
+        r = dh.hedge_pnl(**p, rebalance_every=1, band=3.0, hedge_cost_bps=1.0, r=0)
+        b = r["bars"]
+        tgt = b["hedge"] - b["delta_err"] / np.diff(p["S"])  # 100 * Delta from the attribution
+        moved = np.r_[True, np.diff(b["hedge"]) != 0]
+        np.testing.assert_allclose(b["hedge"][moved], tgt[moved], atol=1e-6)  # resets go to the target
+        self.assertTrue((np.abs(b["hedge"] - tgt)[~moved] <= 3.0 + 1e-6).all())  # held only inside the band
+        self.assertEqual(r["n_rebalances"], moved.sum())
+        attributed = sum(r[k] for k in dh.ATTR) + r["res2"]
+        self.assertAlmostEqual(attributed, r["option_pnl"] + r["hedge_pnl"], places=9)
+        with self.assertRaises(ValueError):
+            dh.hedge_pnl(**p, rebalance_every=1, band=1.0, ww_scale=1.0)
+        with self.assertRaises(ValueError):
+            dh.hedge_pnl(**p, rebalance_every=12, charm_adjust=True, band=1.0)
+
+    def test_ww_band_formula(self):
+        # c * (3/2 * kappa * S * (100 Gamma)^2)^(1/3) with kappa = 1 bp, S = 400, Gamma = 0.3
+        self.assertAlmostEqual(float(dh.ww_band(400.0, 0.3, 1.0, 2.0)), 2 * (1.5e-4 * 400 * 900) ** (1 / 3))
+        # the WW band widens with the cost (kappa^(1/3)); a fixed band does not
+        self.assertAlmostEqual(float(dh.ww_band(400.0, 0.3, 8.0, 1.0) / dh.ww_band(400.0, 0.3, 1.0, 1.0)), 2.0)
+
+    def test_band_cost_not_pathwise_monotone(self):
+        # Neither cost nor trade count is monotone in the band on a single path: the wider band
+        # keeps the stale entry hedge, so a later move crosses its edge while the narrower band had
+        # already re-centred close enough to hold. Targets in shares, one check per bar.
+        tgt = np.array([0.0, 2.1, 2.9, 0.3])
+        h2, reb2 = dh.band_schedule(tgt, 2.0)
+        h25, reb25 = dh.band_schedule(tgt, 2.5)
+        np.testing.assert_array_equal(h2, [0.0, 2.1, 2.1, 2.1])
+        np.testing.assert_array_equal(h25, [0.0, 0.0, 2.9, 0.3])
+        self.assertLess(reb2.sum(), reb25.sum())  # 2 vs 3 resets incl. entry
+        traded = lambda h: np.abs(np.diff(np.r_[0.0, h, 0.0])).sum()  # noqa: E731
+        self.assertLess(traded(h2), traded(h25))  # 4.2 vs 5.8 shares incl. the unwind
+        h, reb = dh.band_schedule(tgt, 0.0, every=2)  # checks on bars 0, 2 only
+        np.testing.assert_array_equal(h, [0.0, 0.0, 2.9, 2.9])
+
+    def test_mean_cost_and_trades_fall_with_band_width(self):
+        # Monotone on AVERAGE over paths (not pathwise, see above), for fixed and WW bands.
+        for key, grid in (("band", (0, 1, 2, 5, 10, 20, np.inf)), ("ww_scale", (0, 0.5, 1, 2, 4))):
+            res = [run(self.fair, 1, hedge_cost_bps=1.0, **{key: b}) for b in grid]
+            cost = [col(r, "hedge_cost").mean() for r in res]
+            trades = [col(r, "n_rebalances").mean() for r in res]
+            self.assertTrue(np.all(np.diff(cost) < 0), (key, cost))
+            self.assertTrue(np.all(np.diff(trades) < 0), (key, trades))
+
+    def test_bands_beat_clocks_at_matched_cost_on_gbm(self):
+        # BS-marked 0DTE ATM straddle, realized = implied. A clock spends trades on bars where delta
+        # barely moved and leaves large gaps unhedged until the next tick; a band trades exactly
+        # when the mismatch is large, so at the same mean cost its P&L std is lower. Both families
+        # sit below the interpolated clock frontier at every matched clock and at every band
+        # inside the clock cost range (chord interpolation flatters bands a little, which is why
+        # the clock grid is dense: 9 clocks from 5m to 120m).
+        bands, scales = (2, 5, 10, 20, 30), (0.5, 1, 2, 4, 6)
+        names = [*dh.FRONTIER_CLOCKS, *(f"band {b:g}" for b in bands), *(f"ww {c:g}" for c in scales)]
+        kinds = ["clock"] * len(dh.FRONTIER_CLOCKS) + ["band"] * len(bands) + ["ww"] * len(scales)
+        kws = [{"rebalance_every": e} for e in dh.FRONTIER_CLOCKS.values()]
+        kws += [{"rebalance_every": 1, "band": b} for b in bands]
+        kws += [{"rebalance_every": 1, "ww_scale": c} for c in scales]
+        res = [[dh.hedge_pnl(**p, hedge_cost_bps=1.0, r=0, **kw) for kw in kws] for p in self.fair]
+        pnl = np.array([[x["pnl"] for x in day] for day in res])
+        cost = np.array([[x["hedge_cost"] for x in day] for day in res])
+        gaps = dh.frontier_gaps(pnl, cost, names, kinds, match=("10m", "15m", "30m"))
+        std_gaps = {k: v for k, v in gaps.items() if k.startswith("std|") and np.isfinite(v)}
+        self.assertEqual(len(std_gaps), 10 + 6 + 3)  # every band in the clock range, 2 families + WW-band x 3 clocks
+        self.assertTrue(all(v < 0 for k, v in std_gaps.items() if "ww-band" not in k), std_gaps)
+        clock_sd = pnl[:, names.index("30m")].std(ddof=1)
+        self.assertLess(gaps["std|band@30m"], -0.05 * clock_sd)  # >5% less std at the 30m clock's cost
+        self.assertLess(gaps["std|ww@30m"], -0.05 * clock_sd)
+        self.assertAlmostEqual(gaps["std|ww-band@30m"], gaps["std|ww@30m"] - gaps["std|band@30m"])
+
+
+class FrontierStats(unittest.TestCase):
+    def test_interp_frontier(self):
+        cost, val = np.array([4.0, 1.0, 2.0]), np.array([1.0, 5.0, 3.0])  # unsorted on purpose
+        np.testing.assert_allclose(dh.interp_frontier(cost, val, [np.sqrt(2.0), 2.0, 4.0]), [4.0, 3.0, 1.0])
+        self.assertTrue(np.isnan(dh.interp_frontier(cost, val, [0.5, 5.0])).all())  # no extrapolation
+
+    def test_frontier_gaps_hand_computed(self):
+        # clocks at costs 1 and 4 with std 2 and 1 -> the clock frontier at cost 2 is 1.5
+        rng = np.random.default_rng(0)
+        z = rng.standard_normal(400)
+        z = (z - z.mean()) / z.std(ddof=1)
+        pnl = np.c_[2 * z, 1 * z, 1.2 * z, 9 * z]
+        cost = np.tile([1.0, 4.0, 2.0, 1.0], (400, 1))
+        g = dh.frontier_gaps(pnl, cost, ["a", "b", "band 1", "entry-only"], ["clock", "clock", "band", "clock"],
+                             match=("a",))
+        self.assertAlmostEqual(g["std|band 1"], 1.2 - 1.5)  # entry-only is not on the clock frontier
+        self.assertTrue(np.isnan(g["std|band@a"]))  # a single band point spans no cost range
+
+    def test_block_boot_idx(self):
+        idx = dh.block_boot_idx(45, 7, 10, np.random.default_rng(1))
+        self.assertEqual(idx.shape, (7, 45))
+        self.assertTrue(((idx >= 0) & (idx < 45)).all())
+        self.assertTrue((np.diff(idx[:, :10], axis=1) == 1).all())  # the first block is consecutive days
+
+
+class TailStats(unittest.TestCase):
+    def test_hand_computed(self):
+        pnl = np.array([10.0, -30.0, 5.0, -20.0, 40.0] + [1.0] * 15)
+        t = dh.tail_stats(pnl)
+        self.assertEqual(t["worst"], -30.0)
+        self.assertEqual(t["max_dd"], 45.0)  # peak 10 -> trough -35
+        self.assertEqual(t["cvar5"], -30.0)  # 5% of 20 days = 1 day
+        self.assertAlmostEqual(dh.tail_stats(np.r_[pnl, -25.0])["cvar5"], -27.5)  # ceil(1.05) = 2 days
+
+    def test_skew_sign_and_no_drawdown(self):
+        self.assertLess(dh.tail_stats(np.r_[np.ones(50), -40.0])["skew"], 0)
+        self.assertEqual(dh.tail_stats(np.ones(10))["max_dd"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,8 +26,41 @@ Rules:
     = implied, E[delta] barely drifts (spot diffusing through a convex delta offsets charm;
     ~N(d2) is a martingale), so the shift only helps when spot is pinned, i.e. realized <
     implied (see test_charm_adjust_helps_only_when_spot_is_pinned).
+  - smile (minimum-variance) delta, Hull & White (2017): index IV falls when spot rises, so the
+    BS delta over-hedges a short straddle's vega exposure to spot. The +smile variants hedge
+    Delta_BS + vega * dsigma/dS with dsigma/dS = beta / (S sqrt(T)), where beta is the pooled OLS
+    slope of the strike's bar-to-bar IV change on dS / (S sqrt(T)) over the PRIOR SMILE_WINDOW
+    traded days (out of sample; beta = 0, i.e. plain BS, until SMILE_MIN_DAYS days exist). Bars
+    with <= 1h to expiry are excluded from the fit and get no adjustment: in a 0DTE's last hour
+    IV jumps on moves either way and has no linear relation to dS. delta_err stays measured
+    against the BS delta, so a smile hedge shows up as delta_err offsetting part of vega.
   - costs: |dh| * S * --hedge-cost-bps / 1e4 on every hedge trade, entry and unwind included.
     The option spread cost is reported separately (spread_cost). No commissions.
+  - delta bands (hedge_pnl band= / ww_scale=, --frontier only): the target 100 * Delta (+ smile,
+    if given) is checked on every `rebalance_every`-th bar (1 = every 5-minute bar) and h is reset
+    to the target only when |h - target| > band shares; entry always hedges at bar 0. band = 0
+    is the clock schedule, band = inf is entry-only. Two band families:
+      fixed:  band shares per straddle, constant all day (does not depend on the cost);
+      WW:     band_t = c * (3/2 * kappa * S_t * (100 Gamma_t)^2)^(1/3), kappa = hedge-cost-bps / 1e4,
+              Gamma_t the straddle gamma at max(T, MIN_T_INTRADAY). This is the Whalley & Wilmott
+              (1997) asymptotic no-trade half-width (3/2 e^{-r(T-t)} kappa S Gamma^2 / gamma)^(1/3)
+              for the position's gamma, with e^{-r(T-t)} ~ 1 intraday and the absolute risk
+              aversion absorbed into the free scale c = gamma^(-1/3) ($^(1/3)). A WW-SHAPED
+              HEURISTIC swept over c, not the utility-optimal solution: WW trade to the near
+              EDGE of the band, this study (like the clock) trades back to the centre.
+    Band resets never carry a charm pre-shift. Rebalance counts (n_rebalances) include entry and
+    exclude the unwind, as for the clocks. Neither family is pathwise monotone in the band: a
+    wider band can hold a stale hedge that a later small move pushes over its edge, while a
+    narrower one had already re-centred inside it (test_band_cost_not_pathwise_monotone).
+  - frontier (--frontier): clocks 5m..120m (every 1..24 bars, FRONTIER_CLOCKS), fixed bands
+    FRONTIER_BANDS, WW scales FRONTIER_WW, each at every --costs level (default 0.5, 1, 2 bp);
+    plain BS delta, no smile. Matched-cost comparison: the clock frontier's daily-P&L std (and
+    CVaR 5%) is interpolated linearly in log(mean hedge cost) at each band's mean cost (NaN
+    outside the clock range; no extrapolation), each band family's frontier at each MATCH_CLOCKS
+    cost, and WW minus fixed at those costs. The chord of a convex frontier lies above it, so
+    interpolation flatters the bands a little; the 10/20/45/90m clocks keep the chords short.
+    Uncertainty: paired moving-block bootstrap over days (all variants resampled with the same
+    days, BOOT_BLOCK consecutive days per block for vol clustering), re-interpolated per resample.
   - marks: per-bar P&L = -100 dV + h dS on mid marks (dte 0: last mark = intrinsic).
     pnl = option_pnl + hedge_pnl - hedge_cost - spread_cost.
 
@@ -78,12 +111,16 @@ Vol accounting: realized vol = sqrt(sum r^2 / window_years) with log returns of 
 -> exit calendar window; theo_vol_pnl = 100 sum 1/2 Gamma S^2 (sigma_imp^2 dt - r^2), which a
 short straddle earns when implied > realized.
 
-Output: data/delta_hedge/<symbol>_dte<d>[_mid].parquet, one row per day x variant. ThetaData-
-derived: keep it private, delete with the rest on cancellation.
+Output: data/delta_hedge/<symbol>_dte<d>[_mid].parquet, one row per day x variant; --frontier
+writes data/delta_hedge/frontier_<symbol>_dte<d>[_mid].parquet instead, one row per day x cost x
+frontier variant. ThetaData-derived: keep it private, delete with the rest on cancellation.
 
 Run: .venv/bin/python delta_hedge.py --symbol QQQ --dte 0
      .venv/bin/python delta_hedge.py --symbol SPY --dte 1 --start 2024-01-01 --workers 8
+     .venv/bin/python delta_hedge.py --symbol QQQ --dte 0 --frontier --costs 0.5,1,2 --workers 4
      .venv/bin/python -m unittest test_delta_hedge -v
+(Two passes over the days: spot-vol statistics for the smile beta first, then the hedges. The
+frontier needs no smile beta and makes one pass.)
 """
 from __future__ import annotations
 
@@ -114,8 +151,23 @@ ENTRY, CLOSE = "09:35", "16:00"
 # NYSE 13:00 early closes in the backfill window (options stop quoting ~13:15, grid runs to 16:00).
 EARLY_CLOSE = {"2022-11-25", "2023-07-03", "2023-11-24", "2024-07-03", "2024-11-29", "2024-12-24",
                "2025-07-03", "2025-11-28", "2025-12-24", "2026-11-27", "2026-12-24"}
-VARIANTS = {"5m": (1, False), "30m": (6, False), "60m": (12, False), "60m+charm": (12, True),
-            "entry-only": (ENTRY_ONLY, False), "none": (None, False)}
+SMILE_WINDOW, SMILE_MIN_DAYS = 60, 20  # prior traded days pooled for the smile beta
+SMILE_MIN_T = 1 / (24 * 365)  # no smile fit or adjustment within 1h of expiry
+# name: (rebalance_every, charm_adjust, smile_delta)
+VARIANTS = {"5m": (1, False, False), "30m": (6, False, False), "60m": (12, False, False),
+            "60m+charm": (12, True, False), "5m+smile": (1, False, True), "60m+smile": (12, False, True),
+            "entry-only": (ENTRY_ONLY, False, False), "none": (None, False, False)}
+# Cost-vs-risk frontier (--frontier), BS delta only. name: (kind, param) with param = bars between
+# resets (clock), band half-width in shares per straddle (band) or the WW scale c (ww).
+FRONTIER_CLOCKS = {"5m": 1, "10m": 2, "15m": 3, "20m": 4, "30m": 6, "45m": 9, "60m": 12, "90m": 18, "120m": 24}
+FRONTIER_BANDS = (1, 2, 3, 5, 7, 10, 15, 20, 30, 40, 60, 80)
+FRONTIER_WW = (0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24)
+FRONTIER = {**{k: ("clock", v) for k, v in FRONTIER_CLOCKS.items()}, "entry-only": ("clock", ENTRY_ONLY),
+            **{f"band {b:g}": ("band", b) for b in FRONTIER_BANDS},
+            **{f"ww {c:g}": ("ww", c) for c in FRONTIER_WW}}
+FRONTIER_COSTS = (0.5, 1.0, 2.0)
+MATCH_CLOCKS = ("15m", "30m", "60m")  # clock costs at which the band families are compared
+BOOT_BLOCK, BOOT_N = 20, 2000  # paired moving-block bootstrap over days: block length, resamples
 COLS = ["expiration", "strike", "right", "timestamp", "bid", "ask", "underlying_price"]
 IV_LO, IV_HI = 1e-4, 5.0  # bisection bracket for implied_vol
 ATTR = ["delta_err", "gamma", "theta", "vega", "vanna", "volga", "charm"]
@@ -214,16 +266,42 @@ def straddle_path(d: dict, mid: bool = False) -> dict:
     return dict(S=S, V=V, iv_call=ivc, iv_put=ivp, T=d["T"], K=K, fills=fills)
 
 
+def band_schedule(target, band, every: int = 1) -> tuple[np.ndarray, np.ndarray]:
+    """Delta-band hedge path: (h, rebalanced) per bar. h starts at target[0]; on every `every`-th
+    bar it is reset to target[i] only when |h - target[i]| > band[i] (band: scalar or per bar, in
+    the target's units). Path-dependent, hence the loop (~78 bars)."""
+    target = np.asarray(target, dtype=float)
+    band = np.broadcast_to(np.asarray(band, dtype=float), target.shape)
+    h, reb = np.empty_like(target), np.zeros(target.shape, bool)
+    cur, reb[0] = target[0], True
+    for i in range(len(target)):
+        if i % every == 0 and abs(target[i] - cur) > band[i]:
+            cur, reb[i] = target[i], True
+        h[i] = cur
+    return h, reb
+
+
+def ww_band(S, gamma, hedge_cost_bps: float, scale: float, multiplier: int = MULTIPLIER) -> np.ndarray:
+    """WW-shaped no-trade half-width in shares: scale * (3/2 * kappa * S * (multiplier * gamma)^2)^(1/3),
+    kappa = hedge_cost_bps / 1e4, gamma the straddle's (per-share) gamma. See the module docstring."""
+    S, gamma = np.asarray(S, dtype=float), np.asarray(gamma, dtype=float)
+    return scale * np.cbrt(1.5 * hedge_cost_bps / 1e4 * S * (multiplier * gamma) ** 2)
+
+
 def hedge_pnl(S, V, iv_call, iv_put, T, K, rebalance_every: int | None, charm_adjust: bool = False,
               hedge_cost_bps: float = 0.0, fills: tuple[float, float] | None = None,
               multiplier: int = MULTIPLIER, r: float = RISK_FREE_RATE, min_t: float = MIN_T_INTRADAY,
-              charm_frac: float = CHARM_FRAC) -> dict:
+              charm_frac: float = CHARM_FRAC, dsig_dS=None, band=None, ww_scale: float | None = None) -> dict:
     """P&L and Greek attribution of a short straddle (x multiplier) hedged with shares.
 
     S, V, iv_call, iv_put, T: per-bar arrays (n points, n-1 bars); V is the straddle mark and T the
     raw calendar time to expiry in years (Greeks use max(T, min_t); elapsed time uses raw T).
     rebalance_every: bars between hedge resets, None for no hedge. fills: (entry, exit) straddle
-    prices; None = V[0], V[-1]. Returns totals plus per-bar arrays under "bars".
+    prices; None = V[0], V[-1]. dsig_dS: per-point (or scalar) IV sensitivity to spot; when given the
+    hedge target is Delta + vega * dsig_dS (smile delta). band (shares per straddle, scalar or per
+    bar) or ww_scale (WW band scale c, band from ww_band at hedge_cost_bps): delta-band mode, the
+    target is checked every rebalance_every bars and reset only outside the band (band_schedule);
+    the per-bar band is returned under bars["band"]. Returns totals plus per-bar arrays under "bars".
     """
     S, V, sc, sp, T = (np.asarray(x, dtype=float) for x in (S, V, iv_call, iv_put, T))
     n, m = len(S), multiplier
@@ -239,18 +317,28 @@ def hedge_pnl(S, V, iv_call, iv_put, T, K, rebalance_every: int | None, charm_ad
     vac, vap = g.vanna(s0, K, Tg, c0, r), g.vanna(s0, K, Tg, p0, r)
     voc, vop = g.volga(s0, K, Tg, c0, r), g.volga(s0, K, Tg, p0, r)
     ch = g.charm(s0, K, Tg, c0, "C", r) + g.charm(s0, K, Tg, p0, "P", r)
+    target = dlt if dsig_dS is None else dlt + (vgc + vgp) * np.broadcast_to(np.asarray(dsig_dS, float), S.shape)[:-1]
 
     h = np.zeros(n - 1)
     shift = np.zeros(n - 1)  # charm pre-shift in shares, per bar (constant within a hold)
     since = np.zeros(n - 1)  # calendar time since the last rebalance
     reb = np.zeros(n - 1, bool)
-    if rebalance_every is not None:
+    bw = None
+    if band is not None or ww_scale is not None:
+        if (band is not None and ww_scale is not None) or rebalance_every is None or charm_adjust:
+            raise ValueError("band and ww_scale are exclusive, need a check interval and take no charm shift")
+        bw = (ww_band(s0, gc + gp, hedge_cost_bps, ww_scale, m) if ww_scale is not None
+              else np.broadcast_to(np.asarray(band, dtype=float), (n - 1,)))
+        h, reb = band_schedule(m * target, bw, rebalance_every)
+        idx = np.flatnonzero(reb)
+        since = t[:-1] - t[idx][np.cumsum(reb) - 1]
+    elif rebalance_every is not None:
         idx = np.arange(0, n - 1, rebalance_every)
         reb[idx] = True
         nxt = np.minimum(idx + rebalance_every, n - 1)
         sh = m * ch[idx] * charm_frac * (t[nxt] - t[idx]) if charm_adjust else np.zeros(len(idx))
         seg = np.cumsum(reb) - 1  # which rebalance each bar is held under
-        h = (m * dlt[idx] + sh)[seg]
+        h = (m * target[idx] + sh)[seg]
         shift = sh[seg]
         since = t[:-1] - t[idx][seg]
 
@@ -270,6 +358,8 @@ def hedge_pnl(S, V, iv_call, iv_put, T, K, rebalance_every: int | None, charm_ad
         "delta_err_charm": (shift - m * ch * since) * dS if rebalance_every is not None else np.zeros(n - 1),
         "hedge": h, "cost": cost[:-1] + np.r_[np.zeros(n - 2), cost[-1]],
     }
+    if bw is not None:
+        bars["band"] = np.asarray(bw, dtype=float)
     bars["res1"] = actual - sum(bars[k] for k in ATTR[:4])
     bars["res2"] = bars["res1"] - sum(bars[k] for k in ATTR[4:])
     entry_fill, exit_fill = (V[0], V[-1]) if fills is None else fills
@@ -291,8 +381,46 @@ def hedge_pnl(S, V, iv_call, iv_put, T, K, rebalance_every: int | None, charm_ad
     return out
 
 
-def run_day(symbol: str, day: date, dte: int, mid: bool = False, bps: float = 0.0) -> list[dict]:
-    """All hedge variants for one day; [] when the day has no eligible straddle."""
+def smile_stats(d: dict) -> tuple[float, float, int]:
+    """Sufficient statistics (sum xy, sum xx, n) of dsigma_K = beta * dS / (S sqrt(T)) for one day,
+    over bars starting more than SMILE_MIN_T before expiry (the settlement bar excluded)."""
+    S, T = d["S"], np.maximum(d["T"], MIN_T_INTRADAY)
+    iv = (d["iv_call"] + d["iv_put"]) / 2
+    x, y = np.diff(S) / (S[:-1] * np.sqrt(T[:-1])), np.diff(iv)
+    ok = (d["T"][:-1] > SMILE_MIN_T) & np.isfinite(x) & np.isfinite(y)
+    if d["settle"]:
+        ok[-1] = False
+    return float((x[ok] * y[ok]).sum()), float((x[ok] ** 2).sum()), int(ok.sum())
+
+
+def smile_betas(stats: dict[str, tuple[float, float, int]]) -> dict[str, float | None]:
+    """Out-of-sample beta per day: pooled OLS over the prior SMILE_WINDOW days that have stats
+    (None until SMILE_MIN_DAYS exist). stats: {iso date: smile_stats(...)}."""
+    days = sorted(stats)
+    out = {}
+    for i, day in enumerate(days):
+        prior = days[max(0, i - SMILE_WINDOW):i]
+        sxx = sum(stats[p][1] for p in prior)
+        out[day] = sum(stats[p][0] for p in prior) / sxx if len(prior) >= SMILE_MIN_DAYS and sxx > 0 else None
+    return out
+
+
+def smile_dsig_dS(d: dict, beta: float) -> np.ndarray:
+    """Per-point dsigma/dS = beta / (S sqrt(T)), 0 within SMILE_MIN_T of expiry."""
+    T = np.maximum(d["T"], MIN_T_INTRADAY)
+    return np.where(d["T"] > SMILE_MIN_T, beta / (d["S"] * np.sqrt(T)), 0.0)
+
+
+def day_smile_stats(symbol: str, day: date, dte: int) -> tuple[str, tuple[float, float, int]] | None:
+    """Pass-1 worker: (iso date, smile_stats) or None when the day has no eligible straddle."""
+    d = load_day(symbol, day, dte)
+    return None if d is None else (d["date"], smile_stats(d))
+
+
+def run_day(symbol: str, day: date, dte: int, mid: bool = False, bps: float = 0.0,
+            beta: float | None = None) -> list[dict]:
+    """All hedge variants for one day; [] when the day has no eligible straddle. beta: the day's
+    out-of-sample smile beta (None -> the +smile variants hedge with plain BS delta)."""
     d = load_day(symbol, day, dte)
     if d is None:
         return []
@@ -300,18 +428,60 @@ def run_day(symbol: str, day: date, dte: int, mid: bool = False, bps: float = 0.
     base = {k: d[k] for k in ("symbol", "date", "expiration", "dte", "strike", "settle",
                               "n_ffill_quote", "n_ffill_iv", "n_borrow_iv")}
     base["spot0"] = float(d["S"][0])
+    base["smile_beta"] = np.nan if beta is None else beta
+    dsig = smile_dsig_dS(d, 0.0 if beta is None else beta)
     rows = []
-    for name, (every, charm_adj) in VARIANTS.items():
-        res = hedge_pnl(**p, rebalance_every=every, charm_adjust=charm_adj, hedge_cost_bps=bps)
+    for name, (every, charm_adj, smile) in VARIANTS.items():
+        res = hedge_pnl(**p, rebalance_every=every, charm_adjust=charm_adj, hedge_cost_bps=bps,
+                        dsig_dS=dsig if smile else None)
         res.pop("bars")
         rows.append({**base, "variant": name, **res, "pnl_pct": res["pnl"] / res["premium"]})
     return rows
+
+
+def frontier_kwargs(kind: str, param: float) -> dict:
+    """hedge_pnl schedule arguments for a FRONTIER entry (bands are checked on every bar)."""
+    if kind == "clock":
+        return {"rebalance_every": param}
+    return {"rebalance_every": 1, "band" if kind == "band" else "ww_scale": param}
+
+
+def run_frontier_day(symbol: str, day: date, dte: int, mid: bool = False,
+                     costs: tuple[float, ...] = FRONTIER_COSTS) -> list[dict]:
+    """Every FRONTIER schedule at every hedge cost for one day (BS delta); [] when no straddle."""
+    d = load_day(symbol, day, dte)
+    if d is None:
+        return []
+    p = straddle_path(d, mid)
+    base = {k: d[k] for k in ("symbol", "date", "expiration", "dte", "strike", "settle")}
+    rows = []
+    for bps in costs:
+        for name, (kind, param) in FRONTIER.items():
+            res = hedge_pnl(**p, hedge_cost_bps=bps, **frontier_kwargs(kind, param))
+            bars = res.pop("bars")
+            rows.append({**base, "cost_bps": bps, "variant": name, "kind": kind, "param": float(param), **res,
+                         "band_mean": float(bars["band"].mean()) if "band" in bars else np.nan,
+                         "pnl_pct": res["pnl"] / res["premium"]})
+    return rows
+
+
+def tail_stats(pnl: np.ndarray) -> dict:
+    """Left-tail risk of a date-ordered daily P&L series: worst day, max drawdown of the cumulative
+    P&L (peak to trough, starting from 0), skewness, and CVaR 5% (mean of the worst 5% of days)."""
+    pnl = np.asarray(pnl, dtype=float)
+    cum = np.r_[0.0, np.cumsum(pnl)]
+    sd = pnl.std()
+    k = max(1, int(np.ceil(0.05 * len(pnl))))
+    return {"worst": pnl.min(), "max_dd": (np.maximum.accumulate(cum) - cum).max(),
+            "skew": ((pnl - pnl.mean()) ** 3).mean() / sd ** 3 if sd > 0 else np.nan,
+            "cvar5": np.sort(pnl)[:k].mean()}
 
 
 def summarize(df: pd.DataFrame) -> pd.DataFrame:
     """Per-variant summary of a run_day DataFrame (pure; reused by plotting scripts)."""
     out = {}
     for name, x in df.groupby("variant", sort=False):
+        x = x.sort_values("date")
         pnl, theo = x["pnl"].to_numpy(), x["theo_vol_pnl"].to_numpy()
         sd = pnl.std(ddof=1) if len(x) > 1 else np.nan
         slope, r2 = np.nan, np.nan
@@ -328,8 +498,119 @@ def summarize(df: pd.DataFrame) -> pd.DataFrame:
             "res_red_bar": 1 - x["res2_absbar"].mean() / x["res1_absbar"].mean(),
             "costs": (x["hedge_cost"] + x["spread_cost"]).mean(),
             "iv_rv": (x["entry_iv"] - x["rv"]).mean(), "slope": slope, "r2": r2,
+            **tail_stats(pnl),
         }
     return pd.DataFrame.from_dict(out, orient="index")
+
+
+def interp_frontier(cost, val, at) -> np.ndarray:
+    """val of a frontier (points cost, val) at cost `at`: linear in log cost, NaN outside the range."""
+    cost, val = np.asarray(cost, dtype=float), np.asarray(val, dtype=float)
+    o = np.argsort(cost)
+    x, at = np.log(cost[o]), np.log(np.asarray(at, dtype=float))
+    return np.where((at >= x[0]) & (at <= x[-1]), np.interp(at, x, val[o]), np.nan)
+
+
+def _cvar5(pnl: np.ndarray) -> np.ndarray:
+    """Column-wise CVaR 5% (tail_stats' definition) of a days x variants matrix."""
+    k = max(1, int(np.ceil(0.05 * len(pnl))))
+    return np.sort(pnl, axis=0)[:k].mean(axis=0)
+
+
+def frontier_gaps(pnl: np.ndarray, cost: np.ndarray, names: list[str], kinds: list[str],
+                  match: tuple[str, ...] = MATCH_CLOCKS) -> dict[str, float]:
+    """Matched-cost risk gaps (band minus clock; negative = the band has less risk) for one sample.
+
+    pnl, cost: days x variants matrices (daily P&L and hedge cost) in `names` order, kinds[j] in
+    {"clock", "band", "ww"}. entry-only is left out of the clock frontier (its chord to 120m would
+    be long). Keys: "std|<variant>" and "cvar|<variant>" at each band's own mean cost (vs the
+    interpolated clock frontier), "std|<family>@<clock>" for each family's frontier at each
+    `match` clock's cost (vs that clock) and "std|ww-band@<clock>" = WW minus fixed band there."""
+    sd, cv, c = pnl.std(axis=0, ddof=1), _cvar5(pnl), cost.mean(axis=0)
+    kinds = np.asarray(kinds)
+    clk = (kinds == "clock") & (np.asarray(names) != "entry-only")
+    out = {}
+    for j in np.flatnonzero(kinds != "clock"):
+        out[f"std|{names[j]}"] = float(sd[j] - interp_frontier(c[clk], sd[clk], c[j]))
+        out[f"cvar|{names[j]}"] = float(cv[j] - interp_frontier(c[clk], cv[clk], c[j]))
+    for fam in ("band", "ww"):
+        f = kinds == fam
+        if f.any():
+            for name in match:
+                j = names.index(name)
+                out[f"std|{fam}@{name}"] = float(interp_frontier(c[f], sd[f], c[j]) - sd[j])
+    for name in match:
+        if f"std|ww@{name}" in out and f"std|band@{name}" in out:
+            out[f"std|ww-band@{name}"] = out[f"std|ww@{name}"] - out[f"std|band@{name}"]
+    return out
+
+
+def block_boot_idx(n: int, n_boot: int, block: int, rng: np.random.Generator) -> np.ndarray:
+    """n_boot x n day indices of a moving-block bootstrap (blocks of `block` consecutive days)."""
+    block = min(block, n)
+    starts = rng.integers(0, n - block + 1, size=(n_boot, -(-n // block)))
+    return (starts[:, :, None] + np.arange(block)).reshape(n_boot, -1)[:, :n]
+
+
+def frontier_summary(df: pd.DataFrame, n_boot: int = BOOT_N, block: int = BOOT_BLOCK,
+                     seed: int = 0) -> pd.DataFrame:
+    """Per cost x frontier variant: mean hedge cost, trades/day (resets incl. entry), mean P&L, std,
+    CVaR 5%, Sharpe, mean band, and the matched-cost gaps of frontier_gaps with a paired moving-
+    block bootstrap 95% CI and two-sided p (2 * min share of resampled gaps on either side of 0).
+    Family-vs-clock gaps come back as extra rows named "<family>@<clock>" (pure; reused by plots)."""
+    rows = []
+    for bps, x in df.groupby("cost_bps", sort=True):
+        piv = lambda col: x.pivot(index="date", columns="variant", values=col).sort_index()  # noqa: E731
+        pnl, cost = piv("pnl"), piv("hedge_cost")
+        names = [v for v in FRONTIER if v in pnl.columns] + [v for v in pnl.columns if v not in FRONTIER]
+        pnl, cost = pnl[names].to_numpy(), cost[names].to_numpy()
+        kinds = [x.loc[x["variant"] == v, "kind"].iloc[0] for v in names]
+        gaps = frontier_gaps(pnl, cost, names, kinds)
+        idx = block_boot_idx(len(pnl), n_boot, block, np.random.default_rng(seed))
+        boot = pd.DataFrame([frontier_gaps(pnl[i], cost[i], names, kinds) for i in idx])
+        g = x.groupby("variant", sort=False)
+        sd = g["pnl"].std(ddof=1)
+        for j, v in enumerate(names):
+            xv = g.get_group(v)
+            r = {"cost_bps": bps, "variant": v, "kind": kinds[j], "param": xv["param"].iloc[0], "n": len(xv),
+                 "cost": xv["hedge_cost"].mean(), "trades": xv["n_rebalances"].mean(), "mean": xv["pnl"].mean(),
+                 "std": sd[v], "cvar5": _cvar5(pnl[:, [j]])[0], "sharpe": xv["pnl"].mean() / sd[v] * np.sqrt(252),
+                 "band_mean": xv["band_mean"].mean()}
+            for m in ("std", "cvar"):
+                key = f"{m}|{v}"
+                if key in gaps:
+                    b = boot[key].dropna()
+                    r[f"{m}_gap"] = gaps[key]
+                    if m == "std" and len(b) and np.isfinite(gaps[key]):
+                        r["gap_lo"], r["gap_hi"] = np.percentile(b, [2.5, 97.5])
+                        r["gap_p"] = min(1.0, 2 * min((b >= 0).mean(), (b <= 0).mean()))
+            rows.append(r)
+        for key in [k for k in gaps if "@" in k]:
+            fam, clock = key[4:].split("@")
+            b = boot[key].dropna()
+            ok = np.isfinite(gaps[key]) and len(b)
+            rows.append({"cost_bps": bps, "variant": f"{fam}@{clock}", "kind": f"{fam}@clock",
+                         "cost": cost[:, names.index(clock)].mean(), "std_gap": gaps[key],
+                         "std_gap_pct": 100 * gaps[key] / pnl[:, names.index(clock)].std(ddof=1),
+                         "gap_lo": np.percentile(b, 2.5) if ok else np.nan,
+                         "gap_hi": np.percentile(b, 97.5) if ok else np.nan,
+                         "gap_p": min(1.0, 2 * min((b >= 0).mean(), (b <= 0).mean())) if ok else np.nan})
+    return pd.DataFrame(rows)
+
+
+def print_frontier(s: pd.DataFrame) -> None:
+    cols = ["variant", "cost", "trades", "band_mean", "mean", "std", "cvar5", "sharpe",
+            "std_gap", "gap_lo", "gap_hi", "gap_p", "cvar_gap"]
+    fam = ["variant", "cost", "std_gap", "std_gap_pct", "gap_lo", "gap_hi", "gap_p"]
+    with pd.option_context("display.width", 220, "display.max_columns", 30, "display.float_format", "{:.2f}".format):
+        for bps, x in s.groupby("cost_bps", sort=True):
+            print(f"\nhedge cost {bps:g} bp ($/straddle). cost = mean hedge cost, trades = resets/day incl. entry, "
+                  "band_mean = mean band (shares);\n  std_gap / cvar_gap = band minus clock frontier at the band's "
+                  "cost (std_gap < 0: less std; cvar_gap > 0: smaller tail loss), 95% CI + p (std_gap): paired "
+                  f"{BOOT_BLOCK}-day block bootstrap")
+            print(x[~x["kind"].str.endswith("@clock")][cols].to_string(index=False))
+            print("  family frontier minus clock (ww-band: WW minus fixed band), at the clock's cost:")
+            print(x[x["kind"].str.endswith("@clock")][fam].to_string(index=False))
 
 
 def print_summary(s: pd.DataFrame) -> None:
@@ -341,6 +622,31 @@ def print_summary(s: pd.DataFrame) -> None:
         print("\nmean attribution ($); second = vanna+volga+charm; res_red = 1 - mean|res2|/mean|res1| "
               "(daily sums), res_red_bar = same on per-bar |res|")
         print(s[attr].to_string())
+        print("\nleft tail ($): worst day, max drawdown of cumulative P&L, skewness, CVaR 5% (mean of worst 5% of days)")
+        print(s[["worst", "max_dd", "skew", "cvar5"]].to_string())
+
+
+def run_frontier(symbol: str, days: list[date], dte: int, mid: bool, costs: tuple[float, ...], workers: int) -> int:
+    """--frontier: every FRONTIER schedule x cost per day -> frontier parquet + printed frontier."""
+    t0, rows, n = time.time(), [], len(days)
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        for i, day_rows in enumerate(ex.map(run_frontier_day, [symbol] * n, days, [dte] * n, [mid] * n,
+                                            [costs] * n, chunksize=4)):
+            rows.extend(day_rows)
+            if (i + 1) % 100 == 0 or i + 1 == n:
+                print(f"  {i + 1}/{n} days, {len(rows) // (len(FRONTIER) * len(costs))} traded "
+                      f"({time.time() - t0:.0f}s)", flush=True)
+    if not rows:
+        print(f"{symbol}: no eligible dte={dte} days")
+        return 2
+    df = pd.DataFrame(rows)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUT_DIR / f"frontier_{symbol.lower()}_dte{dte}{'_mid' if mid else ''}.parquet"
+    df.to_parquet(out, index=False)
+    print(f"{symbol} dte>={dte}: {df['date'].nunique()} days {df['date'].min()}..{df['date'].max()}, "
+          f"fills={'mid' if mid else 'bid/ask'}, hedge costs {', '.join(f'{c:g}' for c in costs)} bp -> {out}")
+    print_frontier(frontier_summary(df))
+    return 0
 
 
 def main() -> int:
@@ -352,6 +658,10 @@ def main() -> int:
     ap.add_argument("--mid", action="store_true", help="fill entry and exit at mid instead of bid/ask")
     ap.add_argument("--hedge-cost-bps", type=float, default=0.5)
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--frontier", action="store_true",
+                    help="run the clock / band / WW frontier at --costs instead of VARIANTS")
+    ap.add_argument("--costs", default=",".join(f"{c:g}" for c in FRONTIER_COSTS),
+                    help="comma-separated hedge costs in bp for --frontier (--hedge-cost-bps is ignored)")
     args = ap.parse_args()
     symbol = args.symbol.upper()
 
@@ -362,12 +672,22 @@ def main() -> int:
     if not days:
         print(f"no downloaded iv_5m days for {symbol}")
         return 2
+    if args.frontier:
+        return run_frontier(symbol, days, args.dte, args.mid, tuple(float(c) for c in args.costs.split(",")),
+                            args.workers)
     t0 = time.time()
     rows = []
     n = len(days)
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
+        stats = dict(s for s in ex.map(day_smile_stats, [symbol] * n, days, [args.dte] * n, chunksize=4) if s)
+        betas = smile_betas(stats)
+        fitted = [b for b in betas.values() if b is not None]
+        if fitted:
+            print(f"  smile beta (dsigma per dS/(S sqrt T)), out of sample: median {np.median(fitted):+.4f}, "
+                  f"IQR {np.percentile(fitted, 25):+.4f}..{np.percentile(fitted, 75):+.4f} ({time.time() - t0:.0f}s)")
+        day_betas = [betas.get(d.isoformat()) for d in days]
         for i, day_rows in enumerate(ex.map(run_day, [symbol] * n, days, [args.dte] * n, [args.mid] * n,
-                                            [args.hedge_cost_bps] * n, chunksize=4)):
+                                            [args.hedge_cost_bps] * n, day_betas, chunksize=4)):
             rows.extend(day_rows)
             if (i + 1) % 100 == 0 or i + 1 == n:
                 print(f"  {i + 1}/{n} days, {len(rows) // len(VARIANTS)} traded ({time.time() - t0:.0f}s)", flush=True)
