@@ -36,3 +36,6 @@ frontend/backtest-results/
 # Strategy lab: research-only exports and run ledgers (regenerable / per-machine)
 frontend/lab/data/
 frontend/lab/runs/
+
+# Flybrain: private research ledgers, frozen models, and reports
+functions/ml/flybrain/runs/
