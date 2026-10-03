@@ -11,7 +11,7 @@ PRICE_FEATURES = ['log_return_5m', 'log_return_15m', 'log_return_30m', 'log_retu
 OPTIONAL_FEATURES = ['log_iv_front', 'log_iv_0dte', 'log_rv_lag30m', 'log_rv_lag1d', 'log_rv_lag5d', 'ret_1d', 'ret_5d']
 GEX_FEATURES = ['gex_regime', 'gex_slog', 'above_zero_gamma', 'zero_gamma_dist', 'gex_0dte_slog',
     'vex_slog', 'cex_slog', 'vex_0dte_slog', 'cex_0dte_slog', 'dist_call_wall_atr',
-    'dist_put_wall_atr', 'dist_zero_gamma_atr', 'gamma_regime_strength']
+    'dist_put_wall_atr', 'dist_zero_gamma_atr']
 
 
 def _moments(count, total, square):

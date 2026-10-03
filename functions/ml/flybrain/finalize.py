@@ -12,7 +12,7 @@ from .engine import backtest
 from .prop import resolve_plan, prop_lift
 from .stats import bonferroni_ci, break_even_cost
 from .search import (ledger_lock, read_ledger, refresh_deflation, complete_groups, dump, durable_write, result_metrics,
-                     code_version, leaderboard, passes_edge_gates)
+                     code_version, leaderboard, passes_edge_gates, evaluate_variant, config_hash)
 
 
 def verdict(metrics,research_dsr,lift):
@@ -59,6 +59,23 @@ def finalize(night,top=config.TOP_K,runs_dir=config.RUNS_DIR,frame_loader=load_r
         previous=[]
         for path in (root/'nights').glob('*/preregistered.json'):
             previous+=json.loads(path.read_text())['variants']
+        seen={config_hash(r['params'],r['circuit'],version) for r in previous}
+        for row in selected:
+            identity=config_hash(row['params'],row['circuit'],version)
+            if identity in seen:
+                raise ValueError('Configuration already preregistered or duplicated; no second holdout look')
+            seen.add(identity)
+        # Guard every member of selected paired groups before opening any holdout data.
+        discovery_frames=None; failed_groups=set()
+        for row in selected:
+            if (row.get('guard') or {}).get('ok') is True: continue
+            if discovery_frames is None:
+                discovery_frames={s:load_research_frame(s,discovery_only=True) for s in config.SYMBOLS}
+            _,rejected,guard=evaluate_variant(row['circuit'],row['params'],discovery_frames,
+                                              check_guard=True,guard_only=True)
+            row['guard']=guard
+            if rejected or (guard or {}).get('ok') is not True: failed_groups.add(row['group_id'])
+        selected=[r for r in selected if r['group_id'] not in failed_groups]
         family=(len(previous)+len(selected))*len(config.SYMBOLS)
         prereg=dict(night=night,family_size=family,created_at=datetime.now(timezone.utc).isoformat(),variants=selected)
         # Exclusive writes and fsync make the one-look guard survive interrupted scoring.
@@ -87,7 +104,7 @@ def finalize(night,top=config.TOP_K,runs_dir=config.RUNS_DIR,frame_loader=load_r
                     m=result_metrics(result)
                     m['family_ci']=bonferroni_ci(m['inference'],family)
                     m['break_even']=break_even_cost(holdout,signal,s,p['horizon_bars'])
-                    prop=prop_lift(result,holdout,plan,p['seed'],s,p['horizon_bars'],eval_fee=p.get('eval_fee',config.EVAL_FEE))
+                    prop=prop_lift(result,holdout,plan,p['seed'],s,p['horizon_bars'],eval_fee=row.get('eval_fee',p.get('eval_fee',config.EVAL_FEE)))
                     outcome['per_symbol'][s]=dict(metrics=m,prop=prop,verdict=verdict(m,row['per_symbol'][s]['dsr']['dsr'],prop),
                         frozen_file=artifact.name,frozen_sha256=hashlib.sha256(artifact.read_bytes()).hexdigest())
                 passed=sum(v['verdict']=='CANDIDATE' for v in outcome['per_symbol'].values())

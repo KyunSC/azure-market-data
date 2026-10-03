@@ -37,4 +37,11 @@ class ParityTests(unittest.TestCase):
                 result=run_prop(f['result'],f['time'],c['plan'],f['initialCapital'],paths=f['paths'],block_size=f['blockSize'],horizon=f['horizon'],seed=f['seed'])
                 self.equal(result,c['output'])
 
+    def test_skipping_history_preserves_bootstrap(self):
+        f=json.loads((BASE/'prop_parity.json').read_text())
+        for c in f['cases']:
+            result=run_prop(f['result'],f['time'],c['plan'],f['initialCapital'],paths=f['paths'],block_size=f['blockSize'],horizon=f['horizon'],seed=f['seed'],replay_history=False)
+            self.assertIsNone(result['historical'])
+            self.equal(result['bootstrap'],c['output']['bootstrap'])
+
 if __name__ == '__main__': unittest.main()

@@ -73,6 +73,24 @@ class ReservoirTests(unittest.TestCase):
             self.assertTrue((signals[signals != 0] == sign).all())
             self.assertGreater(sign * w[0], sign * w0[0])
 
+    def test_frozen_dan_trade_fraction(self):
+        from flybrain.readout import fit_frozen, frozen_signals
+        df=frame(n=60,bars=20); p=dict(params(),readout='dan',threshold_q=.9,dan_lr=.1)
+        X=df[['z_x']].to_numpy()
+        fitted=fit_frozen(df,{'kc':X},p)
+        self.assertAlmostEqual(np.count_nonzero(frozen_signals({'kc':X},p,fitted))/len(df),.1,delta=.002)
+
+    def test_model_cache_keys_training_values(self):
+        from unittest.mock import patch
+        from flybrain.readout import fit_ridge
+        df=frame(); p=params(); df.attrs['fold_schedule']=fold_schedule(df,1)
+        X=df[['z_x']].to_numpy(); cache={}
+        with patch('flybrain.readout.fit_ridge',wraps=fit_ridge) as fit:
+            oos_signals(df,{'kc':X},p,model_cache=cache)
+            count=fit.call_count
+            oos_signals(df,{'kc':-X},p,model_cache=cache)
+            self.assertEqual(fit.call_count,2*count)
+
     def test_cache_rejects_truncated_files(self):
         import tempfile
         from pathlib import Path

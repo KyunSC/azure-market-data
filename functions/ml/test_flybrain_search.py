@@ -12,6 +12,132 @@ from flybrain.prop import random_entry_signal
 from test_flybrain_reservoir import frame, params
 
 class SearchTests(unittest.TestCase):
+    def test_configuration_identity_ignores_fee_and_seed(self):
+        from flybrain.search import config_hash
+        p=params()
+        self.assertEqual(config_hash(dict(p,eval_fee=0),'fly','v'),
+                         config_hash(dict(p,seed=999,eval_fee=.01),'fly','v'))
+        self.assertNotEqual(config_hash(p,'fly','v'),config_hash(dict(p,rho=1.1),'fly','v'))
+
+    def test_group_seeds_are_distinct_and_reproducible(self):
+        def evaluator(*args,**kwargs): return {},'test',None
+        outputs=[]
+        for _ in range(2):
+            with tempfile.TemporaryDirectory() as d:
+                outputs.append(run(2,'2000-01-01',42,d,frame_loader=lambda s:frame(),evaluator=evaluator))
+        seeds=[r['params']['seed'] for r in outputs[0]]
+        self.assertEqual(len(set(seeds)),2)
+        self.assertEqual(seeds,[r['params']['seed'] for r in outputs[1]])
+        self.assertEqual(len(set(seeds[:4])),1)
+
+    def test_duplicate_draw_resamples_with_bound(self):
+        from unittest.mock import patch
+        space={k:[v] for k,v in dict(params(),hemisphere='right').items() if k!='seed'}
+        space['rho']=[.5,.8]
+        class Rng:
+            draws=iter([0]*len(space)+[0]*len(space)+[1]+[0]*(len(space)-1))
+            def integers(self,n): return next(self.draws)
+        with tempfile.TemporaryDirectory() as d, patch.object(config,'SEARCH_SPACE',space), patch('flybrain.search.np.random.default_rng',return_value=Rng()):
+            rows=run(2,'2000-01-01',42,d,frame_loader=lambda s:None,evaluator=lambda *a,**k:({},'test',None))
+            self.assertEqual(len(rows),8)
+
+    def test_guard_detects_completed_session_state_leak(self):
+        from unittest.mock import patch
+        from flybrain.search import evaluate_variant
+        df=frame(); p=dict(params(),hemisphere='right',eval_fee=0)
+        # The cache contains a future-dependent value in an already completed session.
+        leaked=df[['z_x']].to_numpy().copy(); leaked[0]+=df.close.iloc[-1]
+        def signal(d,states,p,**kw):
+            return (states['kc'][:,0]>10).astype(int),np.zeros(len(d),dtype=int)
+        def probe(d,f):
+            full=f(d); prefix=f(d.iloc[:len(d)//2].copy())
+            return dict(ok=bool(np.array_equal(full[:len(prefix)],prefix)))
+        with patch('flybrain.search.cached_states',return_value={'kc':leaked}), patch('flybrain.search.oos_signals',side_effect=signal), patch('flybrain.search.lookahead_check',side_effect=probe), patch('flybrain.search.backtest',side_effect=AssertionError('leak passed guard')):
+            _,rejected,guard=evaluate_variant('none',p,{'QQQ':df},circuit_factory=lambda *a:None,check_guard=True)
+        self.assertEqual(rejected,'lookahead')
+        self.assertFalse(guard['ok'])
+
+    def test_finalize_guards_before_holdout(self):
+        from unittest.mock import patch
+        from flybrain.finalize import finalize
+        from flybrain.search import code_version
+        rows=[dict(hash=k,group_id='g',night='2000-01-01',circuit=k,params=dict(params(),hemisphere='right'),
+                   eligible=True,score=1.,rejected=None,guard=None,code_version=code_version()) for k in config.CIRCUITS]
+        with tempfile.TemporaryDirectory() as d, patch('flybrain.finalize.read_ledger',return_value=rows), patch('flybrain.finalize.refresh_deflation',side_effect=lambda r:r):
+            with patch('flybrain.finalize.load_research_frame',return_value=frame()) as discovery, patch('flybrain.finalize.evaluate_variant',return_value=({},'lookahead',{'ok':False}),create=True) as guard:
+                out=finalize('2000-01-01',1,d,frame_loader=lambda s:self.fail('holdout loaded before guard passed'))
+            self.assertEqual(out['variants'],[])
+            self.assertTrue(guard.called)
+            self.assertTrue(all(c.kwargs.get('discovery_only') for c in discovery.call_args_list))
+
+    def test_finalize_rejects_legacy_second_look(self):
+        from unittest.mock import patch
+        from flybrain.finalize import finalize
+        from flybrain.search import code_version, dump
+        rows=[dict(hash=k,group_id='g',night='2000-01-01',circuit=k,params=dict(params(),hemisphere='right'),
+                   eligible=True,score=1.,rejected=None,guard={'ok':True},code_version=code_version()) for k in config.CIRCUITS]
+        with tempfile.TemporaryDirectory() as d, patch('flybrain.finalize.read_ledger',return_value=rows), patch('flybrain.finalize.refresh_deflation',side_effect=lambda r:r):
+            previous=dict(rows[0],hash='legacy',params=dict(rows[0]['params'],seed=99,eval_fee=.01))
+            folder=Path(d)/'nights'/'1999-01-01'; folder.mkdir(parents=True)
+            (folder/'preregistered.json').write_text(dump(dict(variants=[previous])))
+            with self.assertRaisesRegex(ValueError,'no second holdout'):
+                finalize('2000-01-01',1,d,frame_loader=lambda s:self.fail('second holdout load'))
+            self.assertFalse((Path(d)/'nights'/'2000-01-01'/'preregistered.json').exists())
+
+    def test_legacy_fee_seed_duplicates_exhaust_retries(self):
+        from unittest.mock import patch
+        space={k:[v] for k,v in dict(params(),hemisphere='right').items() if k!='seed'}
+        with tempfile.TemporaryDirectory() as d, patch.object(config,'SEARCH_SPACE',space):
+            old=dict(params(),hemisphere='right',eval_fee=0)
+            append_record(d,dict(hash='legacy',params=old,circuit='fly',group_id='old',night='1999-01-01',per_symbol={},rejected='test'))
+            before=(Path(d)/'ledger.jsonl').read_bytes()
+            with self.assertRaisesRegex(ValueError,'100 attempts'):
+                run(1,'2000-01-01',99,d,frame_loader=lambda s:None,eval_fee=.01,
+                    evaluator=lambda *a,**k:self.fail('duplicate evaluated'))
+            self.assertEqual(before,(Path(d)/'ledger.jsonl').read_bytes())
+
+    def test_evaluation_reuses_full_signals_for_guard(self):
+        from unittest.mock import patch
+        from flybrain.search import evaluate_variant
+        df=frame(); p=dict(params(),hemisphere='right'); frames={'QQQ':df}; cache={}
+        with patch('flybrain.search.cached_states',return_value={'kc':df[['z_x']].to_numpy()}) as states, patch('flybrain.search.oos_signals',wraps=oos_signals) as signals, patch('flybrain.search.backtest',wraps=backtest) as bt, patch('flybrain.search.break_even_cost',return_value=0), patch('flybrain.search.prop_lift',return_value=dict(lift=0.)):
+            first=evaluate_variant('none',p,frames,circuit_factory=lambda *a:None,evaluation_cache=cache)
+            before=(states.call_count,signals.call_count,bt.call_count)
+            with patch('flybrain.search.guard_signals',return_value={'ok':True}) as guard:
+                second=evaluate_variant('none',p,frames,circuit_factory=lambda *a:None,evaluation_cache=cache,check_guard=True)
+            self.assertEqual(before,(states.call_count,signals.call_count,bt.call_count))
+            self.assertEqual(first[0],second[0]); self.assertEqual(second[2],{'ok':True})
+            self.assertEqual(guard.call_count,1)
+
+    def test_uncached_guard_accepts_causal_readouts(self):
+        from flybrain.search import guard_signals
+        from flybrain.reservoir import pack_sessions, run_reservoir
+        from test_flybrain_reservoir import ReservoirTests
+        df=frame(n=20,bars=6); df.attrs['fold_schedule']=fold_schedule(df,1)
+        for readout in ('ridge','dan'):
+            p=dict(params(),readout=readout)
+            c=ReservoirTests().circuit()
+            X,mask=pack_sessions(df,False); states=run_reservoir(c,X,mask,p)
+            signal,_=oos_signals(df,states,p)
+            self.assertTrue(guard_signals(df,states,signal,c,p)['ok'])
+
+    def test_deflation_uses_memory_and_all_trials(self):
+        from unittest.mock import patch
+        from flybrain.search import dump
+        m,_,_=self.signals(0,False)
+        def evaluator(*a,**kw):
+            return {s:dict(metrics=m,prop=dict(lift=0.,lift_ci=[-.1,.1])) for s in config.SYMBOLS},None,{'ok':True}
+        with tempfile.TemporaryDirectory() as d, patch('flybrain.search.read_ledger',wraps=read_ledger) as reads, patch('flybrain.search.refresh_deflation',wraps=refresh_deflation) as refresh:
+            out=run(2,'2000-01-01',42,d,frame_loader=lambda s:None,evaluator=evaluator,eval_fee=.01)
+            self.assertEqual(reads.call_count,1)
+            self.assertEqual(refresh.call_count,1)
+            rows=read_ledger(d)
+            for i,row in enumerate(rows):
+                expected=refresh_deflation(rows[:i+1])[-1]
+                self.assertEqual(dump(row),dump(expected))
+                self.assertNotIn('eval_fee',row['params']); self.assertEqual(row['eval_fee'],.01)
+            self.assertTrue(all(r['per_symbol']['QQQ']['dsr']['trials']==8 for r in out))
+
     def test_append_duplicate_cap(self):
         with tempfile.TemporaryDirectory() as d:
             append_record(d,{'hash':'a'},cap=2)
@@ -61,9 +187,11 @@ class SearchTests(unittest.TestCase):
             rows=run(1,'2000-01-01',42,d,frame_loader=lambda s:frame(),evaluator=evaluator,cap=8)
             self.assertEqual(len(rows),4)
             self.assertEqual({r['circuit'] for r in rows},set(config.CIRCUITS))
-            with self.assertRaisesRegex(ValueError,'Duplicate'): run(1,'2000-01-01',42,d,frame_loader=lambda s:frame(),evaluator=evaluator,cap=8)
+            more=run(1,'2000-01-02',42,d,frame_loader=lambda s:frame(),evaluator=evaluator,cap=8)
+            self.assertEqual(len({r['hash'] for r in more}),8)
+            self.assertNotEqual(more[0]['params']['seed'],more[4]['params']['seed'])
             lock=Path(d)/'nights'/'2000-01-01'/'finalize.lock'; lock.parent.mkdir(parents=True); lock.touch()
-            with self.assertRaisesRegex(ValueError,'finalized'): run(1,'2000-01-01',7,d,frame_loader=lambda s:frame(),evaluator=evaluator,cap=8)
+            with self.assertRaisesRegex(ValueError,'finalized'): run(1,'2000-01-01',7,d,frame_loader=lambda s:frame(),evaluator=evaluator,cap=12)
 
     def test_control_matches_trade_count_and_holds(self):
         _,df,r=self.signals(2,True)
@@ -90,15 +218,18 @@ class SearchTests(unittest.TestCase):
             for k in config.CIRCUITS:
                 row=dict(id=len(read_ledger(d))+1,hash=k,group_id='g',night='2000-01-01',circuit=k,params=p,
                     per_symbol={s:dict(metrics=m,prop=dict(lift=.5,lift_ci=[.4,.6])) for s in config.SYMBOLS},
-                    rejected=None,score=m['inference']['sharpe'],code_version=code_version())
+                    rejected=None,guard=None,score=m['inference']['sharpe'],code_version=code_version())
                 append_record(d,row)
             def loader(symbol):
                 folder=Path(d)/'nights'/'2000-01-01'
                 self.assertTrue((folder/'preregistered.json').exists())
                 self.assertTrue((folder/'finalize.lock').exists())
+                registered=json.loads((folder/'preregistered.json').read_text())
+                self.assertTrue(all(r['guard']['ok'] for r in registered['variants']))
+                self.assertEqual(guard.call_count,4)
                 result=df.copy(); result.attrs['symbol']=symbol
                 return result
-            with patch('flybrain.finalize.build_circuit',return_value=None), patch('flybrain.finalize.prop_lift',return_value=dict(lift=.5,lift_ci=[.4,.6])):
+            with patch('flybrain.finalize.build_circuit',return_value=None), patch('flybrain.finalize.prop_lift',return_value=dict(lift=.5,lift_ci=[.4,.6])), patch('flybrain.finalize.load_research_frame',return_value=df), patch('flybrain.finalize.evaluate_variant',return_value=({},None,{'ok':True})) as guard:
                 output=finalize('2000-01-01',1,d,frame_loader=loader)
             self.assertEqual(len(output['variants']),4)
             with self.assertRaisesRegex(ValueError,'already'): finalize('2000-01-01',1,d,frame_loader=loader)

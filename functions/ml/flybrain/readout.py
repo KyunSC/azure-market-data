@@ -1,5 +1,6 @@
 """Purged walk-forward readouts. Frozen fold schedules survive prefix probes."""
 from bisect import insort
+import hashlib
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
@@ -94,7 +95,10 @@ def oos_signals(df, states, params, diagnostics=None, model_cache=None):
     for k, (tr, te) in enumerate(folds):
         if not len(tr):
             continue
-        key = (k, len(tr), str(df.date.iloc[tr[-1]]))
+        train_X = np.ascontiguousarray(X[tr], dtype=float)
+        train_y = np.ascontiguousarray(target[TARGET_COL].to_numpy()[tr], dtype=float)
+        digest = hashlib.sha256(train_X.tobytes() + train_y.tobytes()).hexdigest()
+        key = (train_X.shape, digest, params['ridge_lambda'], params['threshold_q'])
         if model_cache is not None and key in model_cache:
             model, thr = model_cache[key]
         else:
@@ -111,8 +115,8 @@ def oos_signals(df, states, params, diagnostics=None, model_cache=None):
 def fit_frozen(df, states, params):
     X = np.asarray(states[params['readout_from']])
     if params['readout'] == 'dan':
-        pred, _, w = dan_path(df, X, params)
-        return dict(coef=w, intercept=0., threshold=float(np.quantile(abs(pred), params['threshold_q'])))
+        _, _, w = dan_path(df, X, params)
+        return dict(coef=w, intercept=0., threshold=float(np.quantile(abs(X @ w), params['threshold_q'])))
     target = compute_target(df, params['horizon_bars'])
     valid = target[TARGET_COL].notna().to_numpy()
     model, thr = fit_ridge(X[valid], target[TARGET_COL].to_numpy()[valid], params)

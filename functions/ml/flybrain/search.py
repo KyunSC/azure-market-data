@@ -45,7 +45,9 @@ def code_version():
 
 
 def config_hash(params,circuit,version):
-    return hashlib.sha256(dump(dict(params=params,circuit=circuit,code_version=version)).encode()).hexdigest()
+    # Random draws and reporting costs are replicates/metadata, not new configurations.
+    model_params={k:v for k,v in params.items() if k not in ('seed','eval_fee')}
+    return hashlib.sha256(dump(dict(params=model_params,circuit=circuit,code_version=version)).encode()).hexdigest()
 
 
 @contextmanager
@@ -73,9 +75,9 @@ def read_ledger(runs_dir):
     return read_jsonl(Path(runs_dir)/'ledger.jsonl')
 
 
-def append_record(runs_dir,row,cap=None):
+def append_record(runs_dir,row,cap=None,rows=None):
     cap=config.MAX_TRIALS_LIFETIME if cap is None else cap
-    rows=read_ledger(runs_dir)
+    rows=read_ledger(runs_dir) if rows is None else rows
     if len(rows)>=cap: raise ValueError('Lifetime trial cap exhausted')
     if any(r['hash']==row['hash'] for r in rows): raise ValueError('Duplicate configuration hash')
     root=Path(runs_dir); root.mkdir(parents=True,exist_ok=True)
@@ -132,22 +134,55 @@ def score_of(per_symbol):
     return min((v['metrics']['inference']['sharpe'] for v in per_symbol.values()),default=-math.inf)
 
 
+def trial_sharpes(rows):
+    return {s:[r['per_symbol'][s]['metrics']['inference']['sr'] for r in rows
+               if s in r.get('per_symbol',{}) and r['per_symbol'][s]['metrics']['inference']['sr'] is not None]
+            for s in config.SYMBOLS}
+
+
+def deflate_row(row,srs):
+    row=clean(row)
+    for s,r in row.get('per_symbol',{}).items():
+        r['dsr']=deflated_sharpe(r['metrics']['inference'],srs[s])
+    row['eligible']=not row.get('rejected') and len(row.get('per_symbol',{}))==len(config.SYMBOLS) and all(eligible_symbol(r) for r in row['per_symbol'].values())
+    return row
+
+
 def refresh_deflation(rows):
     """Derived view; original ledger lines are never rewritten as trial count grows."""
-    rows=json.loads(dump(rows))
-    srs={s:[r['per_symbol'][s]['metrics']['inference']['sr'] for r in rows
-            if s in r.get('per_symbol',{}) and r['per_symbol'][s]['metrics']['inference']['sr'] is not None]
-         for s in config.SYMBOLS}
-    for row in rows:
-        for s,r in row.get('per_symbol',{}).items():
-            r['dsr']=deflated_sharpe(r['metrics']['inference'],srs[s])
-        row['eligible']=not row.get('rejected') and len(row.get('per_symbol',{}))==len(config.SYMBOLS) and all(eligible_symbol(r) for r in row['per_symbol'].values())
-    return rows
+    srs=trial_sharpes(rows)
+    return [deflate_row(row,srs) for row in rows]
 
 
-def evaluate_variant(kind,params,frames,circuit_factory=build_circuit,check_guard=False,metric_cache=None):
+def guard_signals(df,states,signal,circuit,params):
+    state_failure=None
+    def signal_fn(prefix):
+        nonlocal state_failure
+        if len(prefix)==len(df): return signal
+        # Recompute every session without state or fitted-model caches.
+        X,mask=pack_sessions(prefix,params['gex_off'])
+        st=run_reservoir(circuit,X,mask,params)
+        for k in states:
+            mismatch=np.flatnonzero(np.any(~np.isclose(st[k],states[k][:len(prefix)],rtol=1e-10,atol=1e-12),axis=1))
+            if len(mismatch):
+                state_failure=dict(ok=False,bar=int(mismatch[0]),truncated_at=len(prefix)-1,source='states')
+        return oos_signals(prefix,st,params)[0]
+    guard=lookahead_check(df,signal_fn)
+    return state_failure or guard
+
+
+def evaluate_variant(kind,params,frames,circuit_factory=build_circuit,check_guard=False,evaluation_cache=None,eval_fee=config.EVAL_FEE,guard_only=False):
+    cache_key=(kind,dump(params),eval_fee,tuple((s,id(df)) for s,df in frames.items()))
+    if evaluation_cache is not None and cache_key in evaluation_cache:
+        per_symbol,prepared=evaluation_cache[cache_key]
+        if check_guard:
+            for df,states,signal,circuit in prepared:
+                guard=guard_signals(df,states,signal,circuit,params)
+                if not guard['ok']: return {},'lookahead',guard
+        return per_symbol,None,{'ok':True} if check_guard else None
+    if evaluation_cache is not None: evaluation_cache.clear()
     circuit=circuit_factory(kind,params['hemisphere'],params['seed'])
-    per_symbol={}; plan=resolve_plan()
+    per_symbol={}; prepared=[]; plan=resolve_plan()
     for symbol,frame in frames.items():
         df=frame.copy(); df.attrs=frame.attrs.copy()
         df['session_end']=df.session.ne(df.session.shift(-1))
@@ -157,22 +192,12 @@ def evaluate_variant(kind,params,frames,circuit_factory=build_circuit,check_guar
         print(f'  {kind} {symbol}: states ready ({time.monotonic()-stage:.1f}s)',flush=True)
         model_cache={}
         signal,fold_id=oos_signals(df,states,params,model_cache=model_cache)
+        prepared.append((df,states,signal,circuit))
         if check_guard:
-            def signal_fn(prefix):
-                if len(prefix)==len(df): return signal
-                # Completed sessions are unchanged cache entries. Recompute the partial session.
-                start=int(np.flatnonzero(prefix.session.to_numpy()==prefix.session.iloc[-1])[0])
-                X,mask=pack_sessions(prefix.iloc[start:],params['gex_off'])
-                tail=run_reservoir(circuit,X,mask,params)
-                st={k:np.concatenate((states[k][:start],tail[k])) for k in states}
-                return oos_signals(prefix,st,params,model_cache=model_cache)[0]
-            guard=lookahead_check(df,signal_fn)
+            guard=guard_signals(df,states,signal,circuit,params)
             if not guard['ok']: return {},'lookahead',guard
+        if guard_only: continue
         print(f'  {kind} {symbol}: readout/guard ready ({time.monotonic()-stage:.1f}s)',flush=True)
-        cache_key=(kind,symbol,dump(params))
-        if metric_cache is not None and cache_key in metric_cache:
-            per_symbol[symbol]=metric_cache[cache_key]
-            continue
         result=backtest(df,signal,symbol,params['horizon_bars'])
         metrics=result_metrics(result,fold_id)
         metrics['break_even']=break_even_cost(df,signal,symbol,params['horizon_bars'])
@@ -180,10 +205,10 @@ def evaluate_variant(kind,params,frames,circuit_factory=build_circuit,check_guar
         first=int(np.flatnonzero(fold_id>=0)[0])
         oos=df.iloc[first:].reset_index(drop=True)
         scored=backtest(oos,signal[first:],symbol,params['horizon_bars'])
-        lift=prop_lift(scored,oos,plan,params['seed'],symbol,params['horizon_bars'],eval_fee=params['eval_fee'])
+        lift=prop_lift(scored,oos,plan,params['seed'],symbol,params['horizon_bars'],eval_fee=eval_fee)
         per_symbol[symbol]=dict(metrics=metrics,prop=lift)
-        if metric_cache is not None: metric_cache[cache_key]=per_symbol[symbol]
         print(f"  {kind:7} {symbol}: SR={metrics['inference']['sharpe']:.3f} trades={metrics['n_trades']} P&L={metrics['total_pnl']:.2f} lift={lift['lift']:.3f}",flush=True)
+    if evaluation_cache is not None and not guard_only: evaluation_cache[cache_key]=(per_symbol,prepared)
     return per_symbol,None,{'ok':True} if check_guard else None
 
 
@@ -193,24 +218,31 @@ def run(trials=config.TRIALS_PER_NIGHT,night=None,seed=42,runs_dir=config.RUNS_D
     if trials<1: raise ValueError('trials must be positive')
     root=Path(runs_dir); cap=config.MAX_TRIALS_LIFETIME if cap is None else cap
     frame_loader=frame_loader or (lambda s:load_research_frame(s,discovery_only=True))
-    evaluator=evaluator or partial(evaluate_variant,metric_cache={})
+    evaluator=evaluator or partial(evaluate_variant,evaluation_cache={},eval_fee=eval_fee)
     with ledger_lock(root):
         rows=read_ledger(root)
         if len(rows)+len(config.CIRCUITS)>cap: raise ValueError('Lifetime cap cannot fit a paired trial group')
         if (root/'nights'/night/'finalize.lock').exists(): raise ValueError('Night already finalized')
         frames={s:frame_loader(s) for s in config.SYMBOLS}
         rng=np.random.default_rng(seed); version=code_version()
+        srs=trial_sharpes(rows)
+        group_offset=len({r['group_id'] for r in rows})
+        # Normalize legacy hashes too: changing fee, seed or code cannot evade dedupe.
+        used={config_hash(r['params'],r['circuit'],version) for r in rows if r.get('params')}
         for group in range(trials):
             if len(rows)+len(config.CIRCUITS)>cap: break
-            params={k:values[int(rng.integers(len(values)))] for k,values in config.SEARCH_SPACE.items()}
-            params.update(seed=seed,eval_fee=eval_fee)
-            hashes=[config_hash(params,k,version) for k in config.CIRCUITS]
-            if any(r['hash'] in hashes for r in rows): raise ValueError('Duplicate sampled paired group; use a different seed')
-            group_id=hashlib.sha256(dump(dict(params=params,version=version)).encode()).hexdigest()[:16]
+            for attempt in range(100):
+                params={k:values[int(rng.integers(len(values)))] for k,values in config.SEARCH_SPACE.items()}
+                params['seed']=int(np.random.SeedSequence([seed,group_offset+group]).generate_state(1)[0])
+                hashes=[config_hash(params,k,version) for k in config.CIRCUITS]
+                if not any(h in used for h in hashes): break
+            else:
+                raise ValueError('Duplicate sampled paired group after 100 attempts; search space may be exhausted')
+            group_id=hashlib.sha256(dump(hashes).encode()).hexdigest()[:16]
             start=time.monotonic(); first=not any(r['night']==night for r in rows)
             for kind,h in zip(config.CIRCUITS,hashes):
                 guarded=first
-                base=dict(id=len(rows)+1,hash=h,group_id=group_id,night=night,circuit=kind,params=params,code_version=version)
+                base=dict(id=len(rows)+1,hash=h,group_id=group_id,night=night,circuit=kind,params=params,code_version=version,eval_fee=eval_fee,run_seed=seed,group_index=group_offset+group)
                 try:
                     per,rejected,guard=evaluator(kind,params,frames,circuit_factory=circuit_factory,check_guard=guarded)
                     score=score_of(per)
@@ -223,8 +255,10 @@ def run(trials=config.TRIALS_PER_NIGHT,night=None,seed=42,runs_dir=config.RUNS_D
                     row=dict(base,per_symbol=per,score=score,eligible=False,rejected=rejected,guard=guard,
                              created_at=datetime.now(timezone.utc).isoformat())
                     # Deflate against every earlier recorded variant, not merely the night's winners.
-                    row=refresh_deflation(rows+[row])[-1]
-                    append_record(root,row,cap); rows.append(row)
+                    for symbol,values in trial_sharpes([row]).items(): srs[symbol].extend(values)
+                    row=deflate_row(row,srs)
+                    append_record(root,row,cap,rows=rows); rows.append(row)
+                    used.add(h)
                 except (Exception, KeyboardInterrupt) as exc:
                     # An interrupted or failed variant still spends one lifetime slot, so aborting
                     # after peeking at partial progress cannot reset the budget.
@@ -236,7 +270,7 @@ def run(trials=config.TRIALS_PER_NIGHT,night=None,seed=42,runs_dir=config.RUNS_D
                     raise
             elapsed=time.monotonic()-start
             print(f'Group {group_id}: {elapsed:.2f}s; lifetime {len(rows)}/{cap}',flush=True)
-            if any(r['eligible'] for r in refresh_deflation(rows) if r['group_id']==group_id): break
+            if any(deflate_row(r,srs)['eligible'] for r in rows[-len(config.CIRCUITS):]): break
     return refresh_deflation(rows)
 
 
@@ -294,7 +328,7 @@ def matched_gex_ablation(rows):
     keyed={}
     for g in complete_groups(rows).values():
         p=g['fly']['params']
-        keyed.setdefault(dump({k:v for k,v in p.items() if k!='gex_off'}),{})[bool(p['gex_off'])]=g
+        keyed.setdefault(dump({k:v for k,v in p.items() if k not in ('gex_off','seed','eval_fee')}),{})[bool(p['gex_off'])]=g
     pairs=[v for v in keyed.values() if True in v and False in v]
     out=dict(pairs=len(pairs),differences={})
     for metric in ('sharpe','lift'):
